@@ -116,12 +116,22 @@ export function initApp(config = {}) {
     }
 
     function normalizeState(rawState) {
+      const defaults = createInitialState();
+      const mergeList = (rawList, defaultList, normalizer) => {
+        const sourceList = Array.isArray(rawList) && rawList.length ? rawList : defaultList;
+        return sourceList.map(normalizer);
+      };
       return {
+        ...defaults,
         ...rawState,
         dataVersion: 3,
-        coaches: (rawState.coaches || []).map(normalizeCoach),
-        reports: (rawState.reports || []).map(normalizeReport),
-        reportDrafts: Object.fromEntries(Object.entries(rawState.reportDrafts || {}).map(([key, draft]) => [key, normalizeDraft(draft)]))
+        auth: rawState.auth || defaults.auth,
+        ui: rawState.ui || defaults.ui,
+        adminProfile: rawState.adminProfile || defaults.adminProfile,
+        coaches: mergeList(rawState.coaches, defaults.coaches, normalizeCoach),
+        students: mergeList(rawState.students, defaults.students, student => ({ ...student })),
+        reports: mergeList(rawState.reports, defaults.reports, normalizeReport),
+        reportDrafts: Object.fromEntries(Object.entries(rawState.reportDrafts && Object.keys(rawState.reportDrafts).length ? rawState.reportDrafts : defaults.reportDrafts).map(([key, draft]) => [key, normalizeDraft(draft)]))
       };
     }
 
@@ -1994,10 +2004,18 @@ export function initApp(config = {}) {
       });
     }
 
-    (async function bootstrap() {
-      state = await loadState();
+    (function bootstrap() {
       render();
-      persist();
-      subscribeToRealtime();
+      loadState()
+        .then(nextState => {
+          state = nextState;
+          render();
+          persist();
+          subscribeToRealtime();
+        })
+        .catch(() => {
+          state = normalizeState(createInitialState());
+          render();
+        });
     })();
 }

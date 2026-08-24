@@ -1,8 +1,9 @@
 import "./styles.css";
-import template from "./app-template.html?raw";
 import { initApp } from "./legacy-app.js";
 
-document.querySelector("#app").innerHTML = template;
+const root = document.querySelector("#app");
+root.classList.add("app-shell");
+root.innerHTML = '<div style="display:grid;place-items:center;min-height:100vh;color:#0f1a33;font-family:Outfit,sans-serif;"><div>Loading dashboard...</div></div>';
 
 initApp({
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "",

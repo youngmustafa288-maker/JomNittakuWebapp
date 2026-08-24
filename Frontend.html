@@ -1450,9 +1450,7 @@
   <div id="app" class="app-shell"></div>
 
   <script>
-    const SUPABASE_URL = "https://vjhjvcvmtfpkoyjxfmxu.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_-4RCnrND3IuzVIKrYNv63w_5c4xR1YK";
-    const API_STATE_URL = `${SUPABASE_URL}/rest/v1/dashboard_state?id=eq.dashboard&select=payload&limit=1`;
+    const STORAGE_KEY = "daoSportsMethodAppV2";
     const MONTH_LABEL = "July 2026";
     const CURRENT_MONTH_PREFIX = "2026-07";
     const REPORT_TEMPLATE_SRC = "Updated Certificate Image.png";
@@ -1507,11 +1505,10 @@
       { ref: "0006RAZI5", studentName: "Razif Zain", coachName: "Coach Raj", lessonNumber: 5, date: "2026-07-03", time: "14:00", status: "Sent" }
     ];
 
-    let state = createInitialState();
+    let state = loadState();
     let wizardDraftId = null;
     let onboardingModal = null;
     let draftProfileUploadContext = null;
-    let persistTimer = null;
 
     function initials(name) {
       return name.split(" ").map(part => part[0] || "").join("").slice(0, 2).toUpperCase();
@@ -1568,39 +1565,18 @@
       };
     }
 
-    async function loadState() {
+    function loadState() {
       try {
-        const response = await fetch(API_STATE_URL, {
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            Accept: "application/json"
-          }
-        });
-        if (response.ok) {
-          const payload = await response.json();
-          if (payload?.[0]?.payload && payload[0].payload.dataVersion >= 2) {
-            return normalizeState(payload[0].payload);
-          }
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (saved && saved.dataVersion >= 2) {
+          return normalizeState(saved);
         }
       } catch (error) {}
       return normalizeState(createInitialState());
     }
 
     function persist() {
-      clearTimeout(persistTimer);
-      persistTimer = setTimeout(() => {
-        fetch(`${SUPABASE_URL}/rest/v1/dashboard_state?on_conflict=id`, {
-          method: "POST",
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            "Content-Type": "application/json",
-            Prefer: "resolution=merge-duplicates,return=representation"
-          },
-          body: JSON.stringify({ id: "dashboard", payload: state })
-        }).catch(() => {});
-      }, 250);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
 
     function createInitialState() {
@@ -3405,11 +3381,7 @@
       });
     }
 
-    (async function bootstrap() {
-      state = await loadState();
-      render();
-      persist();
-    })();
+    render();
   </script>
 </body>
 </html>

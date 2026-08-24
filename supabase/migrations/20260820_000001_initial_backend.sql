@@ -154,7 +154,12 @@ end;
 $$;
 
 insert into public.dashboard_state (id, payload)
-values ('dashboard', '{"dataVersion":3}'::jsonb)
+values ('dashboard', '{
+  "dataVersion": 3,
+  "auth": { "role": "admin", "coachId": "coach-1" },
+  "ui": { "page": "overview", "avatarMenuOpen": false, "reportViewId": null, "adminToast": "" },
+  "adminProfile": { "fullName": "Dao Sports Method Admin", "photo": "" }
+}'::jsonb)
 on conflict (id) do nothing;
 
 insert into public.coaches (id, name, branch, centre_contact, email, phone, status, photo, branch_address, reports_generated_this_month, reports_total)

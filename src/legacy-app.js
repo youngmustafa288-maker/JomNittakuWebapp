@@ -61,12 +61,12 @@ export function initApp(config = {}) {
     const STUDENT_LAST_NAMES = ["Tan", "Lim", "Goh", "Lee", "Wong", "Ng", "Chew", "Chan", "Low", "Teh", "Ong", "Lai", "Yap", "Khoo"];
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
     const REPORT_SAMPLE_DATA = [
-      { ref: "0001AMIR7", studentName: "Amir Hakim", coachName: "Coach Ahmad", lessonNumber: 7, date: "2026-07-05", time: "09:14", status: "Sent" },
-      { ref: "0002SARA4", studentName: "Sarah Aisyah", coachName: "Coach Mei", lessonNumber: 4, date: "2026-07-05", time: "09:08", status: "Sent" },
-      { ref: "0003DANI12", studentName: "Daniel Lim", coachName: "Coach Ahmad", lessonNumber: 12, date: "2026-07-05", time: "10:30", status: "Sent" },
+      { ref: "0001AMIR7", studentName: "Amir Hakim", coachName: "Coach Ahmad", lessonNumber: 7, date: "2026-07-05", time: "09:14", status: "Generated" },
+      { ref: "0002SARA4", studentName: "Sarah Aisyah", coachName: "Coach Mei", lessonNumber: 4, date: "2026-07-05", time: "09:08", status: "Generated" },
+      { ref: "0003DANI12", studentName: "Daniel Lim", coachName: "Coach Ahmad", lessonNumber: 12, date: "2026-07-05", time: "10:30", status: "Generated" },
       { ref: "0004NURF2", studentName: "Nur Farhana", coachName: "Coach Mei", lessonNumber: 2, date: "2026-07-04", time: "17:33", status: "Pending" },
-      { ref: "0005IZZA9", studentName: "Izzat Mazlan", coachName: "Coach Raj", lessonNumber: 9, date: "2026-07-04", time: "16:15", status: "Sent" },
-      { ref: "0006RAZI5", studentName: "Razif Zain", coachName: "Coach Raj", lessonNumber: 5, date: "2026-07-03", time: "14:00", status: "Sent" }
+      { ref: "0005IZZA9", studentName: "Izzat Mazlan", coachName: "Coach Raj", lessonNumber: 9, date: "2026-07-04", time: "16:15", status: "Generated" },
+      { ref: "0006RAZI5", studentName: "Razif Zain", coachName: "Coach Raj", lessonNumber: 5, date: "2026-07-03", time: "14:00", status: "Generated" }
     ];
 
     const supabase = hasSupabaseConfig()
@@ -81,6 +81,7 @@ export function initApp(config = {}) {
     let persistTimer = null;
     let isApplyingRemoteState = false;
     let realtimeChannel = null;
+    let renderQueued = false;
 
     function initials(name) {
       return name.split(" ").map(part => part[0] || "").join("").slice(0, 2).toUpperCase();
@@ -284,7 +285,7 @@ export function initApp(config = {}) {
       reports.forEach(report => {
         const coach = coaches.find(item => item.id === report.coachId);
         coach.reportsTotal += 1;
-        if (report.status === "Sent" && report.date.startsWith(CURRENT_MONTH_PREFIX)) {
+        if (report.status === "Generated" && report.date.startsWith(CURRENT_MONTH_PREFIX)) {
           coach.reportsGeneratedThisMonth += 1;
         }
       });
@@ -470,7 +471,7 @@ export function initApp(config = {}) {
     }
 
     function statusBadge(status) {
-      const key = status === "Sent" ? "green" : status === "Pending" ? "amber" : "grey";
+      const key = status === "Generated" ? "green" : status === "Pending" ? "amber" : "grey";
       return `<span class="badge ${key}"><span class="dot"></span>${status}</span>`;
     }
 
@@ -488,7 +489,7 @@ export function initApp(config = {}) {
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
       persist();
-      render();
+      scheduleRender();
     }
 
     function logout() {
@@ -498,7 +499,7 @@ export function initApp(config = {}) {
       state.ui.reportViewId = null;
       wizardDraftId = null;
       persist();
-      render();
+      scheduleRender();
     }
 
     function navigate(page) {
@@ -508,7 +509,7 @@ export function initApp(config = {}) {
       state.ui.page = page;
       state.ui.avatarMenuOpen = false;
       persist();
-      render();
+      scheduleRender();
     }
 
     function overviewStats() {
@@ -671,7 +672,7 @@ export function initApp(config = {}) {
                     <th>STUDENT</th>
                     <th>LESSON</th>
                     <th>DATE & TIME</th>
-                    <th>REPORT SENT</th>
+                    <th>REPORT STATUS</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -720,7 +721,7 @@ export function initApp(config = {}) {
               </select>
               <select id="reportsStatusFilter" class="filter-select">
                 <option value="">All statuses</option>
-                <option value="Sent">Sent</option>
+                <option value="Generated">Generated</option>
                 <option value="Pending">Pending</option>
               </select>
             </div>
@@ -733,7 +734,7 @@ export function initApp(config = {}) {
                     <th>COACH</th>
                     <th>LESSON</th>
                     <th>DATE & TIME</th>
-                    <th>REPORT SENT</th>
+                    <th>REPORT STATUS</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -959,7 +960,7 @@ export function initApp(config = {}) {
                       <p>Character Transformation thru Sports</p>
                     </div>
                   </div>
-                  <div class="badge ${report.status === "Sent" ? "green" : report.status === "Pending" ? "amber" : "grey"}">${report.status}</div>
+                  <div class="badge ${report.status === "Generated" ? "green" : report.status === "Pending" ? "amber" : "grey"}">${report.status}</div>
                 </div>
                 <div class="decorative-title">This Is A Training Report</div>
                 <div class="report-info-grid">
@@ -1082,10 +1083,6 @@ export function initApp(config = {}) {
                 <div class="field">
                   <label for="wizardLessonNumber">Lesson Number</label>
                   <input id="wizardLessonNumber" class="text-input" type="number" min="1" value="${draft.lessonNumber || ""}">
-                </div>
-                <div class="field">
-                  <label>Auto pulled</label>
-                  <div class="notice">Centre: ${coach.branch}<br>Coach Name: ${coach.name}</div>
                 </div>
               </div>
             </div>
@@ -1254,6 +1251,19 @@ export function initApp(config = {}) {
             ["reports", "Reports"],
             ["students", "Students"]
           ];
+      const pageContent = state.ui.page === "reports"
+        ? renderReportsPage()
+        : state.ui.page === "coaches"
+          ? (state.auth.role === "admin" ? renderCoachesPage() : renderOverviewPage())
+          : state.ui.page === "students"
+            ? renderStudentsPage()
+            : state.ui.page === "settings"
+              ? renderAdminProfilePage()
+              : state.ui.page === "profile"
+                ? renderCoachProfilePage()
+                : state.ui.page === "report-view"
+                  ? renderReportViewPage()
+                  : renderOverviewPage();
       return `
         <div class="dashboard">
           <aside class="sidebar">
@@ -1269,13 +1279,7 @@ export function initApp(config = {}) {
                 <p>JomNittaku Coach Reporting System · July 2026</p>
               </div>
             </header>
-            ${renderOverviewPage()}
-            ${renderReportsPage()}
-            ${state.auth.role === "admin" ? renderCoachesPage() : ""}
-            ${renderStudentsPage()}
-            ${renderAdminProfilePage()}
-            ${renderCoachProfilePage()}
-            ${renderReportViewPage()}
+            ${pageContent}
           </main>
         </div>
         ${renderReportWizard()}
@@ -1283,6 +1287,15 @@ export function initApp(config = {}) {
         <input id="hiddenStudentUpload" type="file" accept="image/*" class="hidden">
         <input id="hiddenProfileUpload" type="file" accept="image/*" class="hidden">
       `;
+    }
+
+    function scheduleRender() {
+      if (renderQueued) return;
+      renderQueued = true;
+      requestAnimationFrame(() => {
+        renderQueued = false;
+        render();
+      });
     }
 
     function render() {
@@ -1608,7 +1621,7 @@ export function initApp(config = {}) {
         lessonNumber: Number(draft.lessonNumber) || 1,
         date: draft.date,
         time: draft.time,
-        status: "Sent",
+        status: "Generated",
         generatedAt: `${draft.date}T${draft.time}:00`,
         summary: { ...draft.summary }
       };
@@ -1638,7 +1651,7 @@ export function initApp(config = {}) {
     }
 
     function exportCsv() {
-      const rows = [["REF #", "Student", "Coach", "Lesson", "Date", "Time", "Report Sent"]];
+      const rows = [["REF #", "Student", "Coach", "Lesson", "Date", "Time", "Report Status"]];
       getVisibleReports().forEach(report => {
         const student = getStudentById(report.studentId);
         const coach = getCoachById(report.coachId);

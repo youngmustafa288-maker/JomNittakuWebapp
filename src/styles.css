@@ -1,11 +1,11 @@
 :root {
-      --navy-950: #091225;
-      --navy-900: #0f1a33;
-      --navy-850: #142240;
-      --navy-800: #18294b;
-      --navy-700: #233a69;
+      --navy-950: #f8fafc;
+      --navy-900: #111827;
+      --navy-850: #1f2937;
+      --navy-800: #334155;
+      --navy-700: #475569;
       --red-600: #c51935;
-      --red-500: #d62845;
+      --red-500: #c81e45;
       --red-400: #eb4b67;
       --gold-300: #f2d8ab;
       --slate-50: #f6f8fc;
@@ -39,9 +39,9 @@
       font-family: "Outfit", sans-serif;
       color: var(--navy-900);
       background:
-        radial-gradient(circle at top left, rgba(214, 40, 69, 0.18), transparent 32%),
-        radial-gradient(circle at bottom right, rgba(35, 58, 105, 0.12), transparent 36%),
-        linear-gradient(180deg, #f7f9fd 0%, #eef2f8 100%);
+        radial-gradient(circle at top left, rgba(200, 30, 69, 0.08), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.05), transparent 36%),
+        linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     }
 
     button,
@@ -75,20 +75,18 @@
       place-items: center;
       padding: 32px;
       background:
-        radial-gradient(circle at top, rgba(235, 75, 103, 0.24), transparent 28%),
-        linear-gradient(135deg, rgba(9, 18, 37, 0.96), rgba(24, 41, 75, 0.98));
-      color: var(--white);
+        radial-gradient(circle at top, rgba(200, 30, 69, 0.08), transparent 28%),
+        linear-gradient(135deg, #ffffff, #f3f4f6);
+      color: var(--navy-900);
     }
 
     .login-panel {
       width: min(980px, 100%);
       padding: 42px;
       border-radius: 34px;
-      background:
-        linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
-        rgba(8, 16, 31, 0.72);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      box-shadow: 0 28px 80px rgba(15, 23, 42, 0.08);
       backdrop-filter: blur(18px);
     }
 
@@ -102,18 +100,18 @@
     .login-credential {
       padding: 14px 16px;
       border-radius: 18px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(248, 250, 252, 0.96);
+      border: 1px solid rgba(226, 232, 240, 0.9);
     }
 
     .login-credential strong {
       display: block;
       margin-bottom: 6px;
-      color: var(--gold-300);
+      color: var(--red-600);
     }
 
     .login-credential span {
-      color: rgba(255, 255, 255, 0.72);
+      color: #475569;
       font-size: 0.92rem;
       word-break: break-all;
     }
@@ -159,7 +157,7 @@
     .brand-copy p,
     .logo-copy span {
       margin: 3px 0 0;
-      color: rgba(255, 255, 255, 0.68);
+      color: #64748b;
       font-size: 0.94rem;
     }
 
@@ -172,7 +170,7 @@
     .login-subtitle {
       margin: 0 0 28px;
       max-width: 560px;
-      color: rgba(255, 255, 255, 0.72);
+      color: #475569;
       line-height: 1.6;
     }
 
@@ -187,11 +185,9 @@
       padding: 28px;
       border-radius: 26px;
       min-height: 228px;
-      color: var(--white);
-      background:
-        linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)),
-        rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--navy-900);
+      background: #ffffff;
+      border: 1px solid rgba(226, 232, 240, 0.9);
       transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
       display: flex;
       flex-direction: column;
@@ -200,22 +196,20 @@
 
     .role-card:hover {
       transform: translateY(-4px);
-      border-color: rgba(255, 255, 255, 0.28);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+      border-color: rgba(200, 30, 69, 0.18);
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
     }
 
     .role-card.admin {
       background:
-        radial-gradient(circle at top right, rgba(242, 216, 171, 0.22), transparent 35%),
-        linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
-        rgba(255, 255, 255, 0.04);
+        radial-gradient(circle at top right, rgba(200, 30, 69, 0.08), transparent 35%),
+        #ffffff;
     }
 
     .role-card.coach {
       background:
-        radial-gradient(circle at bottom left, rgba(235, 75, 103, 0.2), transparent 42%),
-        linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
-        rgba(255, 255, 255, 0.04);
+        radial-gradient(circle at bottom left, rgba(15, 23, 42, 0.06), transparent 42%),
+        #ffffff;
     }
 
     .role-card .role-icon {
@@ -226,8 +220,8 @@
       place-items: center;
       font-size: 1.2rem;
       font-weight: 700;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: #f8fafc;
+      border: 1px solid rgba(226, 232, 240, 0.9);
     }
 
     .role-card h2 {
@@ -237,7 +231,7 @@
 
     .role-card p {
       margin: 0;
-      color: rgba(255, 255, 255, 0.74);
+      color: #475569;
       line-height: 1.6;
     }
 
@@ -246,7 +240,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      color: var(--gold-300);
+      color: var(--red-600);
       font-weight: 600;
       letter-spacing: 0.02em;
     }
@@ -259,10 +253,8 @@
     }
 
     .sidebar {
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 22%),
-        linear-gradient(180deg, var(--navy-950), var(--navy-900));
-      color: var(--white);
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--navy-900);
       padding: 28px 22px;
       display: flex;
       flex-direction: column;
@@ -270,6 +262,7 @@
       position: sticky;
       top: 0;
       height: 100vh;
+      border-right: 1px solid rgba(226, 232, 240, 0.9);
     }
 
     .sidebar-logo {
@@ -279,7 +272,7 @@
     }
 
     .sidebar-month {
-      color: rgba(255, 255, 255, 0.62);
+      color: #64748b;
       font-size: 0.93rem;
       margin-top: 6px;
       display: block;
@@ -299,14 +292,14 @@
       padding: 14px 16px;
       border-radius: 16px;
       background: transparent;
-      color: rgba(255, 255, 255, 0.72);
+      color: #475569;
       transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
     }
 
     .nav-item:hover,
     .nav-item.active {
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--white);
+      background: rgba(15, 23, 42, 0.05);
+      color: var(--navy-900);
       transform: translateX(2px);
     }
 
@@ -316,7 +309,7 @@
       border-radius: 12px;
       display: grid;
       place-items: center;
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(15, 23, 42, 0.06);
       font-size: 0.92rem;
       font-weight: 700;
     }
@@ -374,15 +367,15 @@
       padding: 14px 16px;
       border-radius: 16px;
       background: transparent;
-      color: rgba(255, 255, 255, 0.72);
+      color: #475569;
       font-weight: 600;
       transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
     }
 
     .sidebar-nav-item:hover,
     .sidebar-nav-item.active {
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--white);
+      background: rgba(15, 23, 42, 0.05);
+      color: var(--navy-900);
       transform: translateX(2px);
     }
 
@@ -864,7 +857,7 @@
     .onboarding-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(9, 18, 37, 0.62);
+      background: rgba(15, 23, 42, 0.28);
       display: none;
       align-items: center;
       justify-content: center;
@@ -880,9 +873,9 @@
     .onboarding-modal {
       width: min(560px, 100%);
       background: rgba(255, 255, 255, 0.98);
-      border: 1px solid rgba(215, 222, 235, 0.9);
+      border: 1px solid rgba(226, 232, 240, 0.9);
       border-radius: 26px;
-      box-shadow: 0 28px 60px rgba(9, 18, 37, 0.24);
+      box-shadow: 0 28px 60px rgba(15, 23, 42, 0.12);
       padding: 24px;
     }
 
@@ -1393,7 +1386,7 @@
     .notice {
       padding: 14px 16px;
       border-radius: 14px;
-      background: rgba(24, 41, 75, 0.06);
+      background: rgba(15, 23, 42, 0.05);
       color: var(--slate-700);
     }
 

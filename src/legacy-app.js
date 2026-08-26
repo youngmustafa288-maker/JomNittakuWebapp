@@ -1051,7 +1051,7 @@ export function initApp(config = {}) {
                 <h2>Generate Report</h2>
                 <p>${draft.ref} · ${coach.name}</p>
               </div>
-              <button class="ghost-btn" data-action="save-close-wizard">Save Draft & Close</button>
+              <button class="ghost-btn" data-action="save-close-wizard">X</button>
             </div>
             <div class="wizard-steps">
               ${[

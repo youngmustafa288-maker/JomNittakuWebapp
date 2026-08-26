@@ -498,7 +498,8 @@ export function initApp(config = {}) {
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
       wizardDraftId = null;
-      persist();
+      clearTimeout(persistTimer);
+      flushStateToSupabase().catch(() => {});
       scheduleRender();
     }
 

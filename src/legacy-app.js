@@ -32,6 +32,18 @@ export function initApp(config = {}) {
         <path d="M30 116c4-24 18-36 30-36s26 12 30 36" fill="#C4CBD6"></path>
       </svg>
     `;
+    const DEMO_ACCOUNTS = {
+      admin: {
+        title: "Admin Account",
+        email: "admin@jomnittaku.com",
+        password: "admin123"
+      },
+      coach: {
+        title: "Coach Account",
+        email: "coach@jomnittaku.com",
+        password: "coach123"
+      }
+    };
 
     const COACH_SEEDS = [
       { id: "coach-1", name: "Coach Ahmad", branch: "Dao Sports Method HQ", centreContact: "+60 12-300 9101", email: "ahmad@daosportsmethod.com", phone: "+60 12-300 9101" },
@@ -279,9 +291,9 @@ export function initApp(config = {}) {
 
       return {
         dataVersion: 3,
-        auth: { role: "admin", coachId: "coach-1" },
+        auth: { role: null, coachId: "coach-1" },
         ui: { page: "overview", avatarMenuOpen: false, reportViewId: null, adminToast: "" },
-        adminProfile: { fullName: "Dao Sports Method Admin", photo: "" },
+        adminProfile: { fullName: "JomNittaku Admin", photo: "" },
         coaches,
         students,
         reports,
@@ -490,6 +502,9 @@ export function initApp(config = {}) {
     }
 
     function navigate(page) {
+      if (state.auth.role === "coach" && page === "coaches") {
+        return;
+      }
       state.ui.page = page;
       state.ui.avatarMenuOpen = false;
       persist();
@@ -526,12 +541,22 @@ export function initApp(config = {}) {
             <div class="brand-lockup">
               <div class="brand-mark"></div>
               <div class="brand-copy">
-                <h1>Dao Sports Method</h1>
-                <p>Table tennis training academy dashboard</p>
+                <h1>JomNittaku</h1>
+                <p>Coach Reporting System</p>
               </div>
             </div>
-            <h2 class="login-title">Welcome Back</h2>
-            <p class="login-subtitle">Choose the account type to enter the dashboard. Login state is saved locally so your session stays active after refresh.</p>
+            <h2 class="login-title">Select an account</h2>
+            <p class="login-subtitle">Use the clean demo accounts below to enter as Admin or Coach. Coaches do not see the Coaches tab.</p>
+            <div class="login-accounts">
+              <div class="login-credential">
+                <strong>Admin</strong>
+                <span>${DEMO_ACCOUNTS.admin.email} / ${DEMO_ACCOUNTS.admin.password}</span>
+              </div>
+              <div class="login-credential">
+                <strong>Coach</strong>
+                <span>${DEMO_ACCOUNTS.coach.email} / ${DEMO_ACCOUNTS.coach.password}</span>
+              </div>
+            </div>
             <div class="role-grid">
               <button class="role-card admin" data-action="login-admin">
                 <div>
@@ -577,7 +602,7 @@ export function initApp(config = {}) {
             <div class="sidebar-logo">
               <div class="logo-ball"></div>
               <div class="logo-copy">
-                <strong>Dao Sports Method</strong>
+                <strong>JomNittaku</strong>
                 <span>${MONTH_LABEL}</span>
               </div>
             </div>
@@ -1217,14 +1242,23 @@ export function initApp(config = {}) {
     }
 
     function renderDashboard() {
+      const navItems = state.auth.role === "admin"
+        ? [
+            ["overview", "Overview"],
+            ["reports", "Reports"],
+            ["coaches", "Coaches"],
+            ["students", "Students"]
+          ]
+        : [
+            ["overview", "Overview"],
+            ["reports", "Reports"],
+            ["students", "Students"]
+          ];
       return `
         <div class="dashboard">
           <aside class="sidebar">
             <nav class="sidebar-nav" aria-label="Dashboard sections">
-              <button class="sidebar-nav-item ${state.ui.page === "overview" ? "active" : ""}" data-nav="overview">Overview</button>
-              <button class="sidebar-nav-item ${state.ui.page === "reports" ? "active" : ""}" data-nav="reports">Reports</button>
-              <button class="sidebar-nav-item ${state.ui.page === "coaches" ? "active" : ""}" data-nav="coaches">Coaches</button>
-              <button class="sidebar-nav-item ${state.ui.page === "students" ? "active" : ""}" data-nav="students">Students</button>
+              ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${label}</button>`).join("")}
             </nav>
           </aside>
           <main class="main">
@@ -1232,12 +1266,12 @@ export function initApp(config = {}) {
             <header class="page-header">
               <div class="header-copy">
                 <h1>Academy Overview 🏓</h1>
-                <p>Dao Sports Method Table Tennis · July 2026</p>
+                <p>JomNittaku Coach Reporting System · July 2026</p>
               </div>
             </header>
             ${renderOverviewPage()}
             ${renderReportsPage()}
-            ${renderCoachesPage()}
+            ${state.auth.role === "admin" ? renderCoachesPage() : ""}
             ${renderStudentsPage()}
             ${renderAdminProfilePage()}
             ${renderCoachProfilePage()}

@@ -298,8 +298,8 @@
 
     .nav-item:hover,
     .nav-item.active {
-      background: rgba(15, 23, 42, 0.05);
-      color: var(--navy-900);
+      background: linear-gradient(135deg, var(--navy-800), var(--navy-700));
+      color: var(--white);
       transform: translateX(2px);
     }
 
@@ -374,8 +374,8 @@
 
     .sidebar-nav-item:hover,
     .sidebar-nav-item.active {
-      background: rgba(22, 42, 74, 0.08);
-      color: var(--navy-800);
+      background: linear-gradient(135deg, var(--navy-800), var(--navy-700));
+      color: var(--white);
       transform: translateX(2px);
     }
 

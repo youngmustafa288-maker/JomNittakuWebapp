@@ -82,6 +82,7 @@ export function initApp(config = {}) {
     let isApplyingRemoteState = false;
     let realtimeChannel = null;
     let renderQueued = false;
+    let appEventsBound = false;
 
     function initials(name) {
       return name.split(" ").map(part => part[0] || "").join("").slice(0, 2).toUpperCase();
@@ -1311,13 +1312,23 @@ export function initApp(config = {}) {
     }
 
     function attachEvents() {
-      document.querySelectorAll("[data-action]").forEach(button => {
-        button.addEventListener("click", handleAction);
-      });
-
-      document.querySelectorAll("[data-nav]").forEach(button => {
-        button.addEventListener("click", () => navigate(button.dataset.nav));
-      });
+      if (!appEventsBound) {
+        const app = document.getElementById("app");
+        app.addEventListener("click", event => {
+          const actionButton = event.target.closest("[data-action]");
+          if (actionButton) {
+            event.preventDefault();
+            handleAction({ currentTarget: actionButton });
+            return;
+          }
+          const navButton = event.target.closest("[data-nav]");
+          if (navButton) {
+            event.preventDefault();
+            navigate(navButton.dataset.nav);
+          }
+        });
+        appEventsBound = true;
+      }
 
       const reportsSearch = document.getElementById("reportsSearch");
       const reportsDate = document.getElementById("reportsDateFilter");

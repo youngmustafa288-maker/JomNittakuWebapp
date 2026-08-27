@@ -144,6 +144,26 @@ export function initApp(config = {}) {
       return `${window.location.origin}/coach/${coach.slug}`;
     }
 
+    function qrImageUrl(coach) {
+      return `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(coachPublicUrl(coach))}`;
+    }
+
+    function loadQrDataUrl(coach) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 512;
+          canvas.height = 512;
+          canvas.getContext("2d").drawImage(image, 0, 0, 512, 512);
+          resolve(canvas.toDataURL("image/png"));
+        };
+        image.onerror = reject;
+        image.src = qrImageUrl(coach);
+      });
+    }
+
     function getCoachBySlug(slug) {
       return state.coaches.find(coach => coach.slug === String(slug || "").toLowerCase());
     }
@@ -1077,8 +1097,10 @@ export function initApp(config = {}) {
                     <strong>${coach.centreContact}</strong><br>
                     Dao Sports Method
                   </div>
-                  <div>
-                    <div class="qr-box"></div>
+                    <div>
+                    <div class="qr-box" data-qr-coach="${coach.id}">
+                      <img class="report-qr-image" alt="Scan to open coach profile">
+                    </div>
                   </div>
                 </div>
                 <div class="report-bottom-bar">JOMNITTAKU - Passion · Focus · Excellent</div>
@@ -1408,7 +1430,19 @@ export function initApp(config = {}) {
         hydrateReportsTable();
         hydrateCoachesTable();
         hydrateStudentsTable();
+        hydrateReportQr();
       }
+    }
+
+    function hydrateReportQr() {
+      const qrBox = document.querySelector(".qr-box[data-qr-coach]");
+      if (!qrBox) return;
+      const coach = getCoachById(qrBox.dataset.qrCoach);
+      if (!coach) return;
+      loadQrDataUrl(coach).then(dataUrl => {
+        const image = qrBox.querySelector(".report-qr-image");
+        if (image) image.src = dataUrl;
+      }).catch(() => {});
     }
 
     function attachEvents() {
@@ -1950,6 +1984,16 @@ export function initApp(config = {}) {
       drawWrappedLines(ctx, data.address, 325, 1022, 246, 31, 3);
       ctx.textAlign = "left";
 
+      try {
+        const coachQr = await loadImage(qrImageUrl(data.coach));
+        const qrSize = 112;
+        const qrX = canvas.width - qrSize - 52;
+        const qrY = canvas.height - qrSize - 48;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12);
+        ctx.drawImage(coachQr, qrX, qrY, qrSize, qrSize);
+      } catch (error) {}
+
       return canvas;
     }
 
@@ -2088,19 +2132,12 @@ export function initApp(config = {}) {
     }
 
     function downloadCoachQr(coach) {
-      const image = new Image();
-      image.crossOrigin = "anonymous";
-      image.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 512;
-        canvas.height = 512;
-        canvas.getContext("2d").drawImage(image, 0, 0, 512, 512);
+      loadQrDataUrl(coach).then(dataUrl => {
         const link = document.createElement("a");
         link.download = `coach-qr-${coach.slug}.png`;
-        link.href = canvas.toDataURL("image/png");
+        link.href = dataUrl;
         link.click();
-      };
-      image.src = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(coachPublicUrl(coach))}`;
+      }).catch(() => {});
     }
 
     function openOnboarding(type) {

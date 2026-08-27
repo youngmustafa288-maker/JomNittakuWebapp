@@ -114,13 +114,6 @@ export function initApp(config = {}) {
     function centreLinkUrl(link) {
       return String(link.url || "").trim();
     }
-    function loadCentreQrDataUrl() {
-      return QRCode.toDataURL(`${BASE_URL}/centre`, {
-        width: 120,
-        margin: 1,
-        color: { dark: "#000000", light: "#ffffff" }
-      });
-    }
 
     function initials(name) {
       return name.split(" ").map(part => part[0] || "").join("").slice(0, 2).toUpperCase();
@@ -1097,8 +1090,7 @@ export function initApp(config = {}) {
                     Dao Sports Method
                   </div>
                     <div>
-                    <div class="qr-box" data-centre-qr>
-                      <img class="report-qr-image" alt="Scan QR">
+                    <div class="qr-box" data-centre-qr aria-label="Scan QR"></div>
                     </div>
                   </div>
                 </div>
@@ -1473,8 +1465,14 @@ export function initApp(config = {}) {
 
     function hydrateQrImages() {
       document.querySelectorAll("[data-centre-qr]").forEach(container => {
-        const image = container.tagName === "IMG" ? container : container.querySelector("img");
-        if (image) loadCentreQrDataUrl().then(dataUrl => { image.src = dataUrl; }).catch(() => {});
+        const size = container.offsetWidth || 60;
+        QRCode.toCanvas(`${BASE_URL}/centre`, { width: size, margin: 1, color: { dark: "#000000", light: "#ffffff" } })
+          .then(canvas => {
+            container.innerHTML = "";
+            canvas.style.width = "100%";
+            canvas.style.height = "100%";
+            container.appendChild(canvas);
+          }).catch(() => {});
       });
       document.querySelectorAll("[data-qr-coach]").forEach(container => {
         const coach = getCoachById(container.dataset.qrCoach);
@@ -2032,15 +2030,6 @@ export function initApp(config = {}) {
       ctx.font = 'italic 700 31px "Kalam", cursive';
       drawWrappedLines(ctx, data.address, 325, 1022, 246, 31, 3);
       ctx.textAlign = "left";
-
-      try {
-        const centreQr = await loadCentreQrDataUrl();
-        const qrImage = await loadImage(centreQr);
-        const qrSize = 60;
-        const qrX = canvas.width - qrSize - 52;
-        const qrY = canvas.height - qrSize - 48;
-        ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
-      } catch (error) {}
 
       return canvas;
     }

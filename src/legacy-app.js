@@ -502,6 +502,9 @@ export function initApp(config = {}) {
             <div class="template-text template-session template-session-centre" style="left:17.9%;top:31.94%;width:25%;">${escapeHtml(data.session.centre)}</div>
             <div class="template-text template-session" style="left:24.25%;top:34.34%;width:19%;">${escapeHtml(data.session.coachName)}</div>
 
+            ${renderTemplatePhoto(data.studentPhoto, 63.62, 24.92)}
+            ${renderTemplatePhoto(data.coachPhoto, 77.46, 24.92)}
+
             ${REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
             `).join("")}

@@ -988,40 +988,6 @@ export function initApp(config = {}) {
                 <label for="coachPhone">Phone Number (optional)</label>
                 <input id="coachPhone" class="text-input" type="text" value="${coach.phone || ""}">
               </div>
-              <div class="field">
-                <label for="coachRole">Role / Squad</label>
-                <input id="coachRole" class="text-input" type="text" value="${coach.role || ""}">
-              </div>
-              <div class="field">
-                <label for="coachSlug">Public URL slug</label>
-                <input id="coachSlug" class="text-input" type="text" value="${coach.slug || ""}">
-                <small class="muted">Public URL: ${escapeHtml(coachPublicUrl(coach))}</small>
-              </div>
-              <div class="field coach-qr-panel">
-                <label>Coach QR code</label>
-                <img class="coach-qr-preview" data-qr-coach="${coach.id}" alt="QR code for ${escapeHtml(coach.name)}">
-                <div class="coach-qr-actions">
-                  <button class="secondary-btn" type="button" data-action="download-coach-qr" data-coach-id="${coach.id}">Download QR</button>
-                  <a class="secondary-btn" href="/coach/${encodeURIComponent(coach.slug)}" target="_blank" rel="noreferrer">Preview profile</a>
-                </div>
-              </div>
-              <div class="field" style="grid-column:1/-1;">
-                <label for="coachBio">Public bio</label>
-                <textarea id="coachBio" class="text-area">${escapeHtml(coach.bio || "")}</textarea>
-              </div>
-              <div class="field" style="grid-column:1/-1;">
-                <label>Public links</label>
-                <div class="coach-links-editor">
-                  ${(coach.links || []).sort((a, b) => (a.order || 0) - (b.order || 0)).map((link, index) => `
-                    <div class="coach-link-row">
-                      <input class="text-input coach-link-title" data-link-index="${index}" value="${escapeHtml(link.title || "")}" placeholder="Link title">
-                      <input class="text-input coach-link-url" data-link-index="${index}" value="${escapeHtml(link.url || "")}" placeholder="https://...">
-                      <label class="coach-link-toggle"><input type="checkbox" class="coach-link-visible" data-link-index="${index}" ${link.visible !== false ? "checked" : ""}> Visible</label>
-                    </div>
-                  `).join("")}
-                  <button class="secondary-btn" type="button" data-action="add-coach-link">+ Add link</button>
-                </div>
-              </div>
             </div>
             <div style="margin-top:20px;">
               <button class="primary-btn" data-action="save-coach-profile">Save Changes</button>

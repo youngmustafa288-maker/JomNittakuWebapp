@@ -1468,13 +1468,21 @@ export function initApp(config = {}) {
 
     function hydrateQrImages() {
       document.querySelectorAll("[data-centre-qr]").forEach(container => {
-        const size = container.offsetWidth || 60;
-        QRCode.toCanvas(`${BASE_URL}/centre`, { width: 300, margin: 2, errorCorrectionLevel: "H", color: { dark: "#000000", light: "#ffffff" } })
-          .then(canvas => {
+        QRCode.toDataURL(`${BASE_URL}/centre`, {
+          width: 500,
+          margin: 3,
+          errorCorrectionLevel: "H",
+          color: { dark: "#000000", light: "#ffffff" }
+        }).then(dataUrl => {
             container.innerHTML = "";
-            canvas.style.width = "100%";
-            canvas.style.height = "100%";
-            container.appendChild(canvas);
+            const image = document.createElement("img");
+            image.src = dataUrl;
+            image.alt = "Scan QR";
+            image.style.width = "100%";
+            image.style.height = "100%";
+            image.style.objectFit = "contain";
+            image.style.display = "block";
+            container.appendChild(image);
           }).catch(() => {});
       });
       document.querySelectorAll("[data-qr-coach]").forEach(container => {

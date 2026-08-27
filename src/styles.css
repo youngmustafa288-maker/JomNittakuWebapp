@@ -1502,6 +1502,18 @@
       object-fit: contain;
     }
 
+    .public-centre-page { min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; background: linear-gradient(145deg, #f3eadb, #dce8e4); }
+    .public-centre-card { width: min(100%, 520px); padding: 40px 24px; text-align: center; background: rgba(255,255,255,.9); border: 1px solid rgba(15,26,51,.08); border-radius: 28px; box-shadow: 0 20px 60px rgba(15,26,51,.12); }
+    .public-centre-mark { width: 72px; height: 72px; margin: 0 auto 18px; display: grid; place-items: center; border-radius: 50%; background: #0f1a33; color: #fff; font-size: 24px; font-weight: 800; }
+    .public-centre-card h1 { margin: 0 0 26px; color: #0f1a33; }
+    .public-centre-links { display: grid; gap: 12px; }
+    .public-centre-link { display: block; padding: 16px 20px; border-radius: 14px; background: #fff; color: #0f1a33; font-weight: 700; text-decoration: none; border: 1px solid #dce2e7; transition: transform .18s ease, box-shadow .18s ease; }
+    .public-centre-link:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,26,51,.12); }
+    .centre-links-editor { display: grid; gap: 12px; margin-top: 20px; }
+    .centre-link-row { display: grid; grid-template-columns: 34px 34px minmax(100px, 1fr) 130px minmax(140px, 1.4fr) auto auto; gap: 8px; align-items: center; padding: 12px; border: 1px solid #dce2e7; border-radius: 12px; }
+    .profile-actions { display: flex; gap: 10px; margin-top: 20px; }
+    @media (max-width: 760px) { .centre-link-row { grid-template-columns: 34px 34px 1fr auto; } .centre-link-row .centre-link-label, .centre-link-row .centre-link-type, .centre-link-row .centre-link-value { grid-column: 1 / -1; } }
+
     .template-report-overlay .template-footer-number {
       font-size: 2.9cqw;
       font-weight: 700;

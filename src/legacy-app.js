@@ -1,4 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
+import QRCode from "qrcode";
+
+const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
+const CENTRE_PROFILE_KEY = "centre_profile";
 
 export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
@@ -80,6 +84,7 @@ export function initApp(config = {}) {
         })
       : null;
     let state = createInitialState();
+    state.centreProfile = getCentreProfile();
     let wizardDraftId = null;
     let onboardingModal = null;
     let draftProfileUploadContext = null;
@@ -88,6 +93,36 @@ export function initApp(config = {}) {
     let realtimeChannel = null;
     let renderQueued = false;
     let appEventsBound = false;
+
+    const LINK_TYPES = ["phone", "whatsapp", "instagram", "email", "website", "custom"];
+    function getCentreProfile() {
+      try {
+        const value = JSON.parse(localStorage.getItem(CENTRE_PROFILE_KEY) || "null");
+        return value && typeof value === "object"
+          ? { centreName: value.centreName || "", links: Array.isArray(value.links) ? value.links : [] }
+          : { centreName: "", links: [] };
+      } catch (error) {
+        return { centreName: "", links: [] };
+      }
+    }
+    function saveCentreProfile() {
+      localStorage.setItem(CENTRE_PROFILE_KEY, JSON.stringify(state.centreProfile));
+    }
+    function centreLinkUrl(link) {
+      const value = String(link.value || "").trim();
+      if (link.type === "phone") return `tel:${value}`;
+      if (link.type === "whatsapp") return `https://wa.me/${value.replace(/[\s-]/g, "")}`;
+      if (link.type === "instagram") return `https://instagram.com/${value.replace(/^@/, "")}`;
+      if (link.type === "email") return `mailto:${value}`;
+      return value;
+    }
+    function loadCentreQrDataUrl() {
+      return QRCode.toDataURL(`${BASE_URL}/centre`, {
+        width: 120,
+        margin: 1,
+        color: { dark: "#000000", light: "#ffffff" }
+      });
+    }
 
     function initials(name) {
       return name.split(" ").map(part => part[0] || "").join("").slice(0, 2).toUpperCase();
@@ -144,23 +179,11 @@ export function initApp(config = {}) {
       return `${window.location.origin}/coach/${coach.slug}`;
     }
 
-    function qrImageUrl(coach) {
-      return `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(coachPublicUrl(coach))}`;
-    }
-
-    function loadQrDataUrl(coach) {
-      return new Promise((resolve, reject) => {
-        const image = new Image();
-        image.crossOrigin = "anonymous";
-        image.onload = () => {
-          const canvas = document.createElement("canvas");
-          canvas.width = 512;
-          canvas.height = 512;
-          canvas.getContext("2d").drawImage(image, 0, 0, 512, 512);
-          resolve(canvas.toDataURL("image/png"));
-        };
-        image.onerror = reject;
-        image.src = qrImageUrl(coach);
+    async function loadQrDataUrl(coach, width = 200) {
+      return QRCode.toDataURL(coachPublicUrl(coach), {
+        width,
+        margin: 1,
+        errorCorrectionLevel: "M"
       });
     }
 
@@ -517,6 +540,7 @@ export function initApp(config = {}) {
 
             <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
             <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
+            <img class="report-qr-image template-centre-qr" data-centre-qr alt="Scan QR">
           </div>
         </div>
       `;
@@ -565,6 +589,10 @@ export function initApp(config = {}) {
     }
 
     function navigate(page) {
+      if (page === "centre-settings" && !["admin", "coach"].includes(state.auth.role)) {
+        state.ui.page = "overview";
+        return scheduleRender();
+      }
       if (state.auth.role === "coach" && page === "coaches") {
         return;
       }
@@ -971,6 +999,14 @@ export function initApp(config = {}) {
                 <input id="coachSlug" class="text-input" type="text" value="${coach.slug || ""}">
                 <small class="muted">Public URL: ${escapeHtml(coachPublicUrl(coach))}</small>
               </div>
+              <div class="field coach-qr-panel">
+                <label>Coach QR code</label>
+                <img class="coach-qr-preview" data-qr-coach="${coach.id}" alt="QR code for ${escapeHtml(coach.name)}">
+                <div class="coach-qr-actions">
+                  <button class="secondary-btn" type="button" data-action="download-coach-qr" data-coach-id="${coach.id}">Download QR</button>
+                  <a class="secondary-btn" href="/coach/${encodeURIComponent(coach.slug)}" target="_blank" rel="noreferrer">Preview profile</a>
+                </div>
+              </div>
               <div class="field" style="grid-column:1/-1;">
                 <label for="coachBio">Public bio</label>
                 <textarea id="coachBio" class="text-area">${escapeHtml(coach.bio || "")}</textarea>
@@ -1342,13 +1378,16 @@ export function initApp(config = {}) {
             ["reports", "Reports"],
             ["students", "Students"]
           ];
+      navItems.push(["centre-settings", "Centre Links"]);
       const pageContent = state.ui.page === "reports"
         ? renderReportsPage()
         : state.ui.page === "coaches"
           ? (state.auth.role === "admin" ? renderCoachesPage() : renderOverviewPage())
           : state.ui.page === "students"
             ? renderStudentsPage()
-            : state.ui.page === "settings"
+              : state.ui.page === "centre-settings"
+                ? renderCentreSettingsPage()
+              : state.ui.page === "settings"
               ? renderAdminProfilePage()
               : state.ui.page === "profile"
                 ? renderCoachProfilePage()
@@ -1378,6 +1417,46 @@ export function initApp(config = {}) {
         <input id="hiddenStudentUpload" type="file" accept="image/*" class="hidden">
         <input id="hiddenProfileUpload" type="file" accept="image/*" class="hidden">
       `;
+    }
+
+    function renderCentreSettingsPage() {
+      const profile = state.centreProfile;
+      const links = [...profile.links].sort((a, b) => (a.order || 0) - (b.order || 0));
+      return `
+        <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
+          <div class="profile-card centre-settings-card">
+            <div class="section-title"><h2>Centre Contact Links</h2><p>Manage the public links shown when someone scans your report QR code.</p></div>
+            <div class="field"><label for="centreName">Centre Name</label><input id="centreName" class="text-input" value="${escapeHtml(profile.centreName)}"></div>
+            <div class="centre-links-editor">
+              ${links.map((link, index) => `
+                <div class="centre-link-row" data-link-id="${escapeHtml(link.id)}">
+                  <button class="icon-btn" data-action="move-centre-link" data-link-id="${escapeHtml(link.id)}" data-direction="up" aria-label="Move up">↑</button>
+                  <button class="icon-btn" data-action="move-centre-link" data-link-id="${escapeHtml(link.id)}" data-direction="down" aria-label="Move down">↓</button>
+                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label)}" placeholder="Label">
+                  <select class="filter-select centre-link-type" data-link-field="type">${LINK_TYPES.map(type => `<option value="${type}" ${link.type === type ? "selected" : ""}>${type}</option>`).join("")}</select>
+                  <input class="text-input centre-link-value" data-link-field="value" value="${escapeHtml(link.value)}" placeholder="Value or URL">
+                  <label class="coach-link-toggle"><input type="checkbox" data-link-field="visible" ${link.visible !== false ? "checked" : ""}> Visible</label>
+                  <button class="ghost-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}">Delete</button>
+                </div>
+              `).join("")}
+            </div>
+            <div class="profile-actions">
+              <button class="secondary-btn" data-action="add-centre-link">+ Add Link</button>
+              <button class="primary-btn" data-action="save-centre-profile">Save</button>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderCentrePage() {
+      const profile = getCentreProfile();
+      const links = profile.links.filter(link => link.visible !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
+      return `<main class="public-centre-page"><section class="public-centre-card">
+        <div class="public-centre-mark">${escapeHtml(initials(profile.centreName || "Centre"))}</div>
+        <h1>${escapeHtml(profile.centreName || "Centre")}</h1>
+        ${links.length ? `<div class="public-centre-links">${links.map(link => `<a class="public-centre-link" href="${escapeHtml(centreLinkUrl(link))}" ${/^(https?:|mailto:|tel:)/.test(centreLinkUrl(link)) ? 'target="_blank" rel="noreferrer"' : ""}>${escapeHtml(link.label || link.type)}</a>`).join("")}</div>` : "<p class=\"muted\">No contact info available</p>"}
+      </section></main>`;
     }
 
     function renderPublicCoachPage(coach) {
@@ -1423,6 +1502,10 @@ export function initApp(config = {}) {
       const app = document.getElementById("app");
       const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
       const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
+      if (/^\/centre\/?$/i.test(window.location.pathname)) {
+        app.innerHTML = renderCentrePage();
+        return;
+      }
       app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
       if (publicCoach) return;
       attachEvents();
@@ -1430,19 +1513,24 @@ export function initApp(config = {}) {
         hydrateReportsTable();
         hydrateCoachesTable();
         hydrateStudentsTable();
-        hydrateReportQr();
+        hydrateQrImages();
       }
     }
 
-    function hydrateReportQr() {
-      const qrBox = document.querySelector(".qr-box[data-qr-coach]");
-      if (!qrBox) return;
-      const coach = getCoachById(qrBox.dataset.qrCoach);
-      if (!coach) return;
-      loadQrDataUrl(coach).then(dataUrl => {
-        const image = qrBox.querySelector(".report-qr-image");
-        if (image) image.src = dataUrl;
-      }).catch(() => {});
+    function hydrateQrImages() {
+      document.querySelectorAll("[data-centre-qr]").forEach(image => {
+        loadCentreQrDataUrl().then(dataUrl => { image.src = dataUrl; }).catch(() => {});
+      });
+      document.querySelectorAll("[data-qr-coach]").forEach(container => {
+        const coach = getCoachById(container.dataset.qrCoach);
+        if (!coach) return;
+        const image = container.tagName === "IMG" ? container : container.querySelector("img");
+        if (!image) return;
+        const width = Number(container.dataset.qrWidth || image.dataset.qrWidth || image.width || 200);
+        loadQrDataUrl(coach, width).then(dataUrl => {
+          image.src = dataUrl;
+        }).catch(() => {});
+      });
     }
 
     function attachEvents() {
@@ -1558,6 +1646,20 @@ export function initApp(config = {}) {
       if (action === "upload-coach-photo") return triggerProfileUpload("coach");
       if (action === "save-admin-profile") return saveAdminProfile();
       if (action === "save-coach-profile") return saveCoachProfile();
+      if (action === "add-centre-link") {
+        state.centreProfile.links.push({ id: crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`, label: "", value: "", type: "custom", visible: true, order: state.centreProfile.links.length + 1 });
+        return render();
+      }
+      if (action === "delete-centre-link") { state.centreProfile.links = state.centreProfile.links.filter(link => link.id !== event.currentTarget.dataset.linkId); return render(); }
+      if (action === "move-centre-link") {
+        const sorted = [...state.centreProfile.links].sort((a, b) => a.order - b.order);
+        const index = sorted.findIndex(link => link.id === event.currentTarget.dataset.linkId);
+        const next = index + (event.currentTarget.dataset.direction === "up" ? -1 : 1);
+        if (sorted[next]) [sorted[index].order, sorted[next].order] = [sorted[next].order, sorted[index].order];
+        state.centreProfile.links = sorted;
+        return render();
+      }
+      if (action === "save-centre-profile") return saveCentreProfileFromInputs();
       if (action === "add-coach-link") return addCoachLink();
       if (action === "download-coach-qr") {
         const coach = state.coaches.find(item => item.id === event.currentTarget.dataset.coachId);
@@ -1985,7 +2087,8 @@ export function initApp(config = {}) {
       ctx.textAlign = "left";
 
       try {
-        const coachQr = await loadImage(qrImageUrl(data.coach));
+        const centreQr = await loadCentreQrDataUrl();
+        const coachQr = await loadImage(centreQr);
         const qrSize = 112;
         const qrX = canvas.width - qrSize - 52;
         const qrY = canvas.height - qrSize - 48;
@@ -1995,6 +2098,19 @@ export function initApp(config = {}) {
       } catch (error) {}
 
       return canvas;
+    }
+
+    function saveCentreProfileFromInputs() {
+      state.centreProfile.centreName = document.getElementById("centreName")?.value.trim() || "";
+      document.querySelectorAll(".centre-link-row").forEach((row, index) => {
+        const link = state.centreProfile.links.find(item => item.id === row.dataset.linkId);
+        if (!link) return;
+        row.querySelectorAll("[data-link-field]").forEach(input => { link[input.dataset.linkField] = input.type === "checkbox" ? input.checked : input.value.trim(); });
+        link.order = index + 1;
+      });
+      saveCentreProfile();
+      state.ui.adminToast = "Centre links saved";
+      render();
     }
 
     function dataUrlToUint8Array(dataUrl) {
@@ -2132,7 +2248,7 @@ export function initApp(config = {}) {
     }
 
     function downloadCoachQr(coach) {
-      loadQrDataUrl(coach).then(dataUrl => {
+      loadQrDataUrl(coach, 200).then(dataUrl => {
         const link = document.createElement("a");
         link.download = `coach-qr-${coach.slug}.png`;
         link.href = dataUrl;

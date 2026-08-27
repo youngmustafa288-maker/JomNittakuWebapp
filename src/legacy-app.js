@@ -1013,6 +1013,7 @@ export function initApp(config = {}) {
                 </div>
                 <div class="report-actions">
                   <button class="secondary-btn" data-action="download-report-image">Download Image</button>
+                  <button class="secondary-btn" data-action="download-report-qr">Download QR</button>
                   <button class="primary-btn" data-action="download-report-pdf">Download PDF</button>
                 </div>
               </div>
@@ -1585,6 +1586,7 @@ export function initApp(config = {}) {
       if (action === "view-report") return openReportView(event.currentTarget.dataset.reportId);
       if (action === "close-report-view") return navigate("reports");
       if (action === "download-report-image") return downloadReportImage();
+      if (action === "download-report-qr") return downloadReportQr();
       if (action === "download-report-pdf") return downloadReportPdf();
       if (action === "export-csv") return exportCsv();
       if (action === "upload-admin-photo") return triggerProfileUpload("admin");
@@ -2128,6 +2130,22 @@ export function initApp(config = {}) {
       const canvas = await renderReportCanvas(report);
       const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
       downloadBlob(blob, `${report.ref || report.id}-training-report.png`);
+    }
+
+    async function downloadReportQr() {
+      const qrDataUrl = await QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
+        width: 800,
+        margin: 4,
+        errorCorrectionLevel: "L",
+        color: {
+          dark: "#000000",
+          light: "#ffffff"
+        }
+      });
+      const link = document.createElement("a");
+      link.download = "centre-qr.png";
+      link.href = qrDataUrl;
+      link.click();
     }
 
     async function downloadReportPdf() {

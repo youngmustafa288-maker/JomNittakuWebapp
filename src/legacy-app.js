@@ -1948,7 +1948,7 @@ export function initApp(config = {}) {
       const ctx = canvas.getContext("2d");
       ctx.scale(SCALE, SCALE);
       const template = await loadImage(REPORT_TEMPLATE_SRC);
-      ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(template, 0, 0, baseWidth, baseHeight);
 
       ctx.fillStyle = "#000000";
       ctx.textBaseline = "top";
@@ -1991,10 +1991,10 @@ export function initApp(config = {}) {
 
       ctx.fillStyle = "#f6efe4";
       REPORT_TEMPLATE_BULLET_MASKS.forEach(mask => {
-        const x = (mask.left / 100) * canvas.width;
-        const y = (mask.top / 100) * canvas.height;
-        const width = 0.0325 * canvas.width;
-        const height = 0.022 * canvas.height;
+        const x = (mask.left / 100) * baseWidth;
+        const y = (mask.top / 100) * baseHeight;
+        const width = 0.0325 * baseWidth;
+        const height = 0.022 * baseHeight;
         roundedRectPath(ctx, x, y, width, height, height / 2);
         ctx.fill();
       });

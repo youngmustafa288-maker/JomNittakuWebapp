@@ -1931,6 +1931,9 @@ export function initApp(config = {}) {
     }
 
     async function renderReportCanvas(report) {
+      const SCALE = 3;
+      const baseWidth = REPORT_TEMPLATE_SIZE.width;
+      const baseHeight = REPORT_TEMPLATE_SIZE.height;
       const data = getReportTemplateData(report);
       const footerY = data.remarksLines.length
         ? Math.min(
@@ -1940,9 +1943,10 @@ export function initApp(config = {}) {
         : REPORT_CANVAS_FOOTER_Y_DEFAULT;
       await document.fonts.ready;
       const canvas = document.createElement("canvas");
-      canvas.width = REPORT_TEMPLATE_SIZE.width;
-      canvas.height = REPORT_TEMPLATE_SIZE.height;
+      canvas.width = baseWidth * SCALE;
+      canvas.height = baseHeight * SCALE;
       const ctx = canvas.getContext("2d");
+      ctx.scale(SCALE, SCALE);
       const template = await loadImage(REPORT_TEMPLATE_SRC);
       ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
 
@@ -2038,11 +2042,14 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = Math.floor(canvasWidth * 0.10);
-        const qrX = canvasWidth - qrSize - 20;
-        const qrY = canvasHeight - qrSize - 20;
-        console.log("Report QR dimensions", { canvasWidth, canvasHeight, qrSize });
+        const qrSize = Math.floor(canvasWidth * 0.15);
+        const qrX = canvasWidth - qrSize - 40;
+        const qrY = canvasHeight - qrSize - 40;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        console.log("Report QR dimensions", { canvasWidth, canvasHeight, qrSize, url: "https://jom-nittaku-webapp.vercel.app/centre" });
         ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+        ctx.restore();
       } catch (error) {}
 
       return canvas;

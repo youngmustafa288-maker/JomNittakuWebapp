@@ -1510,9 +1510,9 @@
     .public-centre-link { display: block; padding: 16px 20px; border-radius: 14px; background: #fff; color: #0f1a33; font-weight: 700; text-decoration: none; border: 1px solid #dce2e7; transition: transform .18s ease, box-shadow .18s ease; }
     .public-centre-link:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,26,51,.12); }
     .centre-links-editor { display: grid; gap: 12px; margin-top: 20px; }
-    .centre-link-row { display: grid; grid-template-columns: 34px 34px minmax(100px, 1fr) 130px minmax(140px, 1.4fr) auto auto; gap: 8px; align-items: center; padding: 12px; border: 1px solid #dce2e7; border-radius: 12px; }
+    .centre-link-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(180px, 1.5fr) auto; gap: 8px; align-items: center; padding: 12px; border: 1px solid #dce2e7; border-radius: 12px; }
     .profile-actions { display: flex; gap: 10px; margin-top: 20px; }
-    @media (max-width: 760px) { .centre-link-row { grid-template-columns: 34px 34px 1fr auto; } .centre-link-row .centre-link-label, .centre-link-row .centre-link-type, .centre-link-row .centre-link-value { grid-column: 1 / -1; } }
+    @media (max-width: 760px) { .centre-link-row { grid-template-columns: 1fr auto; } .centre-link-row .centre-link-label, .centre-link-row .centre-link-url { grid-column: 1 / -1; } }
 
     .template-report-overlay .template-footer-number {
       font-size: 2.9cqw;

@@ -94,13 +94,16 @@ export function initApp(config = {}) {
     let renderQueued = false;
     let appEventsBound = false;
 
-    const LINK_TYPES = ["phone", "whatsapp", "instagram", "email", "website", "custom"];
     function getCentreProfile() {
       try {
         const value = JSON.parse(localStorage.getItem(CENTRE_PROFILE_KEY) || "null");
         return value && typeof value === "object"
-          ? { centreName: value.centreName || "", links: Array.isArray(value.links) ? value.links : [] }
-          : { centreName: "", links: [] };
+          ? { links: Array.isArray(value.links) ? value.links.map(link => ({
+              id: link.id || `link-${Date.now()}-${Math.random()}`,
+              label: link.label || link.title || "",
+              url: link.url || link.value || ""
+            })) : [] }
+          : { links: [] };
       } catch (error) {
         return { centreName: "", links: [] };
       }
@@ -109,12 +112,7 @@ export function initApp(config = {}) {
       localStorage.setItem(CENTRE_PROFILE_KEY, JSON.stringify(state.centreProfile));
     }
     function centreLinkUrl(link) {
-      const value = String(link.value || "").trim();
-      if (link.type === "phone") return `tel:${value}`;
-      if (link.type === "whatsapp") return `https://wa.me/${value.replace(/[\s-]/g, "")}`;
-      if (link.type === "instagram") return `https://instagram.com/${value.replace(/^@/, "")}`;
-      if (link.type === "email") return `mailto:${value}`;
-      return value;
+      return String(link.url || "").trim();
     }
     function loadCentreQrDataUrl() {
       return QRCode.toDataURL(`${BASE_URL}/centre`, {
@@ -1421,21 +1419,15 @@ export function initApp(config = {}) {
 
     function renderCentreSettingsPage() {
       const profile = state.centreProfile;
-      const links = [...profile.links].sort((a, b) => (a.order || 0) - (b.order || 0));
       return `
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
           <div class="profile-card centre-settings-card">
-            <div class="section-title"><h2>Centre Contact Links</h2><p>Manage the public links shown when someone scans your report QR code.</p></div>
-            <div class="field"><label for="centreName">Centre Name</label><input id="centreName" class="text-input" value="${escapeHtml(profile.centreName)}"></div>
+            <div class="section-title"><h2>Centre Links</h2></div>
             <div class="centre-links-editor">
-              ${links.map((link, index) => `
+              ${profile.links.map(link => `
                 <div class="centre-link-row" data-link-id="${escapeHtml(link.id)}">
-                  <button class="icon-btn" data-action="move-centre-link" data-link-id="${escapeHtml(link.id)}" data-direction="up" aria-label="Move up">↑</button>
-                  <button class="icon-btn" data-action="move-centre-link" data-link-id="${escapeHtml(link.id)}" data-direction="down" aria-label="Move down">↓</button>
                   <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label)}" placeholder="Label">
-                  <select class="filter-select centre-link-type" data-link-field="type">${LINK_TYPES.map(type => `<option value="${type}" ${link.type === type ? "selected" : ""}>${type}</option>`).join("")}</select>
-                  <input class="text-input centre-link-value" data-link-field="value" value="${escapeHtml(link.value)}" placeholder="Value or URL">
-                  <label class="coach-link-toggle"><input type="checkbox" data-link-field="visible" ${link.visible !== false ? "checked" : ""}> Visible</label>
+                  <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://...">
                   <button class="ghost-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}">Delete</button>
                 </div>
               `).join("")}
@@ -1451,11 +1443,8 @@ export function initApp(config = {}) {
 
     function renderCentrePage() {
       const profile = getCentreProfile();
-      const links = profile.links.filter(link => link.visible !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
       return `<main class="public-centre-page"><section class="public-centre-card">
-        <div class="public-centre-mark">${escapeHtml(initials(profile.centreName || "Centre"))}</div>
-        <h1>${escapeHtml(profile.centreName || "Centre")}</h1>
-        ${links.length ? `<div class="public-centre-links">${links.map(link => `<a class="public-centre-link" href="${escapeHtml(centreLinkUrl(link))}" ${/^(https?:|mailto:|tel:)/.test(centreLinkUrl(link)) ? 'target="_blank" rel="noreferrer"' : ""}>${escapeHtml(link.label || link.type)}</a>`).join("")}</div>` : "<p class=\"muted\">No contact info available</p>"}
+        ${profile.links.length ? `<div class="public-centre-links">${profile.links.map(link => `<a class="public-centre-link" href="${escapeHtml(centreLinkUrl(link))}">${escapeHtml(link.label)}</a>`).join("")}</div>` : "<p class=\"muted\">No contact info available</p>"}
       </section></main>`;
     }
 
@@ -1647,18 +1636,10 @@ export function initApp(config = {}) {
       if (action === "save-admin-profile") return saveAdminProfile();
       if (action === "save-coach-profile") return saveCoachProfile();
       if (action === "add-centre-link") {
-        state.centreProfile.links.push({ id: crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`, label: "", value: "", type: "custom", visible: true, order: state.centreProfile.links.length + 1 });
+        state.centreProfile.links.push({ id: crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`, label: "", url: "" });
         return render();
       }
       if (action === "delete-centre-link") { state.centreProfile.links = state.centreProfile.links.filter(link => link.id !== event.currentTarget.dataset.linkId); return render(); }
-      if (action === "move-centre-link") {
-        const sorted = [...state.centreProfile.links].sort((a, b) => a.order - b.order);
-        const index = sorted.findIndex(link => link.id === event.currentTarget.dataset.linkId);
-        const next = index + (event.currentTarget.dataset.direction === "up" ? -1 : 1);
-        if (sorted[next]) [sorted[index].order, sorted[next].order] = [sorted[next].order, sorted[index].order];
-        state.centreProfile.links = sorted;
-        return render();
-      }
       if (action === "save-centre-profile") return saveCentreProfileFromInputs();
       if (action === "add-coach-link") return addCoachLink();
       if (action === "download-coach-qr") {
@@ -2101,12 +2082,10 @@ export function initApp(config = {}) {
     }
 
     function saveCentreProfileFromInputs() {
-      state.centreProfile.centreName = document.getElementById("centreName")?.value.trim() || "";
-      document.querySelectorAll(".centre-link-row").forEach((row, index) => {
+      document.querySelectorAll(".centre-link-row").forEach(row => {
         const link = state.centreProfile.links.find(item => item.id === row.dataset.linkId);
         if (!link) return;
         row.querySelectorAll("[data-link-field]").forEach(input => { link[input.dataset.linkField] = input.type === "checkbox" ? input.checked : input.value.trim(); });
-        link.order = index + 1;
       });
       saveCentreProfile();
       state.ui.adminToast = "Centre links saved";

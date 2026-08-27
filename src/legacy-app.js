@@ -2036,9 +2036,13 @@ export function initApp(config = {}) {
           qrImg.onload = resolve;
           qrImg.onerror = reject;
         });
-        const qrX = canvas.width - 80 - 52;
-        const qrY = canvas.height - 80 - 48;
-        ctx.drawImage(qrImg, qrX, qrY, 80, 80);
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const qrSize = Math.floor(canvasWidth * 0.10);
+        const qrX = canvasWidth - qrSize - 20;
+        const qrY = canvasHeight - qrSize - 20;
+        console.log("Report QR dimensions", { canvasWidth, canvasHeight, qrSize });
+        ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
       } catch (error) {}
 
       return canvas;

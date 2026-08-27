@@ -1495,19 +1495,6 @@
       color: #111111;
     }
 
-    .qr-box {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      overflow: hidden;
-    }
-    .qr-box img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-
     .public-centre-page { min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; background: linear-gradient(145deg, #f3eadb, #dce8e4); }
     .public-centre-card { width: min(100%, 520px); padding: 40px 24px; text-align: center; background: rgba(255,255,255,.9); border: 1px solid rgba(15,26,51,.08); border-radius: 28px; box-shadow: 0 20px 60px rgba(15,26,51,.12); }
     .public-centre-mark { width: 72px; height: 72px; margin: 0 auto 18px; display: grid; place-items: center; border-radius: 50%; background: #0f1a33; color: #fff; font-size: 24px; font-weight: 800; }

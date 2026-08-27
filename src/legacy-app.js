@@ -1093,7 +1093,6 @@ export function initApp(config = {}) {
                     Dao Sports Method
                   </div>
                     <div>
-                    <div class="qr-box" data-centre-qr aria-label="Scan QR"></div>
                     </div>
                   </div>
                 </div>
@@ -1467,24 +1466,6 @@ export function initApp(config = {}) {
     }
 
     function hydrateQrImages() {
-      document.querySelectorAll("[data-centre-qr]").forEach(container => {
-        QRCode.toDataURL(`${BASE_URL}/centre`, {
-          width: 500,
-          margin: 4,
-          errorCorrectionLevel: "L",
-          color: { dark: "#000000", light: "#ffffff" }
-        }).then(dataUrl => {
-            container.innerHTML = "";
-            const image = document.createElement("img");
-            image.src = dataUrl;
-            image.alt = "Scan QR";
-            image.style.width = "100%";
-            image.style.height = "100%";
-            image.style.objectFit = "contain";
-            image.style.display = "block";
-            container.appendChild(image);
-          }).catch(() => {});
-      });
       document.querySelectorAll("[data-qr-coach]").forEach(container => {
         const coach = getCoachById(container.dataset.qrCoach);
         if (!coach) return;
@@ -2043,22 +2024,21 @@ export function initApp(config = {}) {
       ctx.textAlign = "left";
 
       try {
-        const qrDataUrl = await QRCode.toDataURL(`${BASE_URL}/centre`, {
+        const qrDataUrl = await QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
           width: 500,
           margin: 4,
           errorCorrectionLevel: "L",
           color: { dark: "#000000", light: "#ffffff" }
         });
-        const qrImage = await loadImage(qrDataUrl);
-        const qrSize = 80;
-        const qrX = canvas.width - qrSize - 52;
-        const qrY = canvas.height - qrSize - 48;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(qrX, qrY, qrSize, qrSize);
-        ctx.clip();
-        ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
-        ctx.restore();
+        const qrImg = new Image();
+        qrImg.src = qrDataUrl;
+        await new Promise((resolve, reject) => {
+          qrImg.onload = resolve;
+          qrImg.onerror = reject;
+        });
+        const qrX = canvas.width - 80 - 52;
+        const qrY = canvas.height - 80 - 48;
+        ctx.drawImage(qrImg, qrX, qrY, 80, 80);
       } catch (error) {}
 
       return canvas;

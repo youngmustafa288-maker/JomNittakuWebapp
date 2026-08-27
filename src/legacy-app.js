@@ -1469,7 +1469,7 @@ export function initApp(config = {}) {
     function hydrateQrImages() {
       document.querySelectorAll("[data-centre-qr]").forEach(container => {
         const size = container.offsetWidth || 60;
-        QRCode.toCanvas(`${BASE_URL}/centre`, { width: size, margin: 1, color: { dark: "#000000", light: "#ffffff" } })
+        QRCode.toCanvas(`${BASE_URL}/centre`, { width: 300, margin: 2, errorCorrectionLevel: "H", color: { dark: "#000000", light: "#ffffff" } })
           .then(canvas => {
             container.innerHTML = "";
             canvas.style.width = "100%";

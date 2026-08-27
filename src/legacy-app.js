@@ -2053,7 +2053,12 @@ export function initApp(config = {}) {
         const qrSize = 80;
         const qrX = canvas.width - qrSize - 52;
         const qrY = canvas.height - qrSize - 48;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(qrX, qrY, qrSize, qrSize);
+        ctx.clip();
         ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
+        ctx.restore();
       } catch (error) {}
 
       return canvas;

@@ -2373,9 +2373,10 @@ export function initApp(config = {}) {
 
     (function bootstrap() {
       render();
-      loadState()
+    loadState()
         .then(nextState => {
           state = nextState;
+          state.centreProfile = getCentreProfile();
           render();
           persist();
           subscribeToRealtime();

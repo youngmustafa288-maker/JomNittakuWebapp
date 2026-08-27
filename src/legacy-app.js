@@ -1470,8 +1470,8 @@ export function initApp(config = {}) {
       document.querySelectorAll("[data-centre-qr]").forEach(container => {
         QRCode.toDataURL(`${BASE_URL}/centre`, {
           width: 500,
-          margin: 3,
-          errorCorrectionLevel: "H",
+          margin: 4,
+          errorCorrectionLevel: "L",
           color: { dark: "#000000", light: "#ffffff" }
         }).then(dataUrl => {
             container.innerHTML = "";
@@ -2041,6 +2041,20 @@ export function initApp(config = {}) {
       ctx.font = 'italic 700 31px "Kalam", cursive';
       drawWrappedLines(ctx, data.address, 325, 1022, 246, 31, 3);
       ctx.textAlign = "left";
+
+      try {
+        const qrDataUrl = await QRCode.toDataURL(`${BASE_URL}/centre`, {
+          width: 500,
+          margin: 4,
+          errorCorrectionLevel: "L",
+          color: { dark: "#000000", light: "#ffffff" }
+        });
+        const qrImage = await loadImage(qrDataUrl);
+        const qrSize = 80;
+        const qrX = canvas.width - qrSize - 52;
+        const qrY = canvas.height - qrSize - 48;
+        ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
+      } catch (error) {}
 
       return canvas;
     }

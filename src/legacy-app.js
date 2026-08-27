@@ -538,7 +538,6 @@ export function initApp(config = {}) {
 
             <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
             <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
-            <img class="report-qr-image template-centre-qr" data-centre-qr alt="Scan QR">
           </div>
         </div>
       `;
@@ -1098,8 +1097,8 @@ export function initApp(config = {}) {
                     Dao Sports Method
                   </div>
                     <div>
-                    <div class="qr-box" data-qr-coach="${coach.id}">
-                      <img class="report-qr-image" alt="Scan to open coach profile">
+                    <div class="qr-box" data-centre-qr>
+                      <img class="report-qr-image" alt="Scan QR">
                     </div>
                   </div>
                 </div>
@@ -1473,8 +1472,9 @@ export function initApp(config = {}) {
     }
 
     function hydrateQrImages() {
-      document.querySelectorAll("[data-centre-qr]").forEach(image => {
-        loadCentreQrDataUrl().then(dataUrl => { image.src = dataUrl; }).catch(() => {});
+      document.querySelectorAll("[data-centre-qr]").forEach(container => {
+        const image = container.tagName === "IMG" ? container : container.querySelector("img");
+        if (image) loadCentreQrDataUrl().then(dataUrl => { image.src = dataUrl; }).catch(() => {});
       });
       document.querySelectorAll("[data-qr-coach]").forEach(container => {
         const coach = getCoachById(container.dataset.qrCoach);
@@ -2035,13 +2035,11 @@ export function initApp(config = {}) {
 
       try {
         const centreQr = await loadCentreQrDataUrl();
-        const coachQr = await loadImage(centreQr);
-        const qrSize = 112;
+        const qrImage = await loadImage(centreQr);
+        const qrSize = 60;
         const qrX = canvas.width - qrSize - 52;
         const qrY = canvas.height - qrSize - 48;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12);
-        ctx.drawImage(coachQr, qrX, qrY, qrSize, qrSize);
+        ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
       } catch (error) {}
 
       return canvas;

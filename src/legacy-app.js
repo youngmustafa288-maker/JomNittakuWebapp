@@ -60,6 +60,7 @@ export function initApp(config = {}) {
     const STUDENT_FIRST_NAMES = ["Adam", "Aiden", "Aisha", "Brandon", "Caleb", "Chloe", "Darren", "Dylan", "Ethan", "Evelyn", "Faris", "Grace", "Hana", "Haziq", "Ian", "Iris", "Jason", "Jia", "Kai", "Kendra", "Lucas", "Megan", "Nathan", "Nina", "Owen", "Peyton", "Qisya", "Ray", "Sean", "Sofia", "Talia", "Uma", "Victor", "Wendy", "Yusuf", "Zara"];
     const STUDENT_LAST_NAMES = ["Tan", "Lim", "Goh", "Lee", "Wong", "Ng", "Chew", "Chan", "Low", "Teh", "Ong", "Lai", "Yap", "Khoo"];
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
+    const REPORT_STATUSES = ["Generated", "Pending"];
     const REPORT_SAMPLE_DATA = [
       { ref: "0001AMIR7", studentName: "Amir Hakim", coachName: "Coach Ahmad", lessonNumber: 7, date: "2026-07-05", time: "09:14", status: "Generated" },
       { ref: "0002SARA4", studentName: "Sarah Aisyah", coachName: "Coach Mei", lessonNumber: 4, date: "2026-07-05", time: "09:08", status: "Generated" },
@@ -118,6 +119,7 @@ export function initApp(config = {}) {
     function normalizeReport(report) {
       return {
         ...report,
+        status: REPORT_STATUSES.includes(report.status) ? report.status : "Pending",
         summary: normalizeSummary(report.summary)
       };
     }
@@ -472,8 +474,9 @@ export function initApp(config = {}) {
     }
 
     function statusBadge(status) {
-      const key = status === "Generated" ? "green" : status === "Pending" ? "amber" : "grey";
-      return `<span class="badge ${key}"><span class="dot"></span>${status}</span>`;
+      const normalizedStatus = REPORT_STATUSES.includes(status) ? status : "Pending";
+      const key = normalizedStatus === "Generated" ? "green" : "amber";
+      return `<span class="badge ${key}"><span class="dot"></span>${normalizedStatus}</span>`;
     }
 
     function avatarMarkup(name, photo, size = "avatar") {

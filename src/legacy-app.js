@@ -1434,7 +1434,7 @@ export function initApp(config = {}) {
             </div>
             <div class="profile-actions">
               <button class="secondary-btn" data-action="add-centre-link">+ Add Link</button>
-              <button class="primary-btn" data-action="save-centre-profile">Save</button>
+              <button class="primary-btn" type="button" data-action="save-centre-profile">Save</button>
             </div>
           </div>
         </section>
@@ -2082,14 +2082,18 @@ export function initApp(config = {}) {
     }
 
     function saveCentreProfileFromInputs() {
-      document.querySelectorAll(".centre-link-row").forEach(row => {
-        const link = state.centreProfile.links.find(item => item.id === row.dataset.linkId);
-        if (!link) return;
-        row.querySelectorAll("[data-link-field]").forEach(input => { link[input.dataset.linkField] = input.type === "checkbox" ? input.checked : input.value.trim(); });
-      });
+      const links = [...document.querySelectorAll(".centre-link-row")].map(row => ({
+        id: row.dataset.linkId || `link-${Date.now()}-${Math.random()}`,
+        label: row.querySelector('[data-link-field="label"]')?.value.trim() || "",
+        url: row.querySelector('[data-link-field="url"]')?.value.trim() || ""
+      }));
+      state.centreProfile = { links };
       saveCentreProfile();
-      state.ui.adminToast = "Centre links saved";
-      render();
+      const button = document.querySelector('[data-action="save-centre-profile"]');
+      if (button) {
+        button.textContent = "Saved";
+        window.setTimeout(() => { if (button.isConnected) button.textContent = "Save"; }, 1500);
+      }
     }
 
     function dataUrlToUint8Array(dataUrl) {

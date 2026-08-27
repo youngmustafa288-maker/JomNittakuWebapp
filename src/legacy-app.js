@@ -61,6 +61,10 @@ export function initApp(config = {}) {
     const STUDENT_LAST_NAMES = ["Tan", "Lim", "Goh", "Lee", "Wong", "Ng", "Chew", "Chan", "Low", "Teh", "Ong", "Lai", "Yap", "Khoo"];
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
     const REPORT_STATUSES = ["Generated", "Pending"];
+    const DEFAULT_COACH_LINKS = [
+      { id: "reports", title: "View Reports", url: "/reports", icon: "▦", visible: true, order: 1 },
+      { id: "contact", title: "Contact Coach", url: "mailto:", icon: "✉", visible: true, order: 2 }
+    ];
     const REPORT_SAMPLE_DATA = [
       { ref: "0001AMIR7", studentName: "Amir Hakim", coachName: "Coach Ahmad", lessonNumber: 7, date: "2026-07-05", time: "09:14", status: "Generated" },
       { ref: "0002SARA4", studentName: "Sarah Aisyah", coachName: "Coach Mei", lessonNumber: 4, date: "2026-07-05", time: "09:08", status: "Generated" },
@@ -112,8 +116,36 @@ export function initApp(config = {}) {
     function normalizeCoach(coach) {
       return {
         ...coach,
+        slug: coach.slug || slugify(coach.name),
+        role: coach.role || "Table Tennis Coach",
+        bio: coach.bio || "",
+        photo_url: coach.photo_url || coach.photo || "",
+        links: Array.isArray(coach.links) && coach.links.length
+          ? coach.links.map((link, index) => ({
+              ...link,
+              id: link.id || `link-${index + 1}`,
+              visible: link.visible !== false,
+              order: link.order || index + 1
+            }))
+          : DEFAULT_COACH_LINKS.map(link => ({ ...link })),
         branchAddress: coach.branchAddress || coach.branch || ""
       };
+    }
+
+    function slugify(value) {
+      return String(value || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "coach";
+    }
+
+    function coachPublicUrl(coach) {
+      return `${window.location.origin}/coach/${coach.slug}`;
+    }
+
+    function getCoachBySlug(slug) {
+      return state.coaches.find(coach => coach.slug === String(slug || "").toLowerCase());
     }
 
     function normalizeReport(report) {
@@ -221,6 +253,11 @@ export function initApp(config = {}) {
     function createInitialState() {
       const coaches = COACH_SEEDS.map((coach, index) => ({
         ...coach,
+        slug: slugify(coach.name),
+        role: "Table Tennis Coach",
+        bio: "Helping players build confident, consistent table tennis fundamentals.",
+        photo_url: "",
+        links: DEFAULT_COACH_LINKS.map(link => ({ ...link })),
         status: "Active",
         photo: "",
         reportsGeneratedThisMonth: 0,
@@ -773,6 +810,7 @@ export function initApp(config = {}) {
                     <th>STUDENTS</th>
                     <th>REPORTS</th>
                     <th>STATUS</th>
+                    <th>PUBLIC PROFILE</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -903,6 +941,32 @@ export function initApp(config = {}) {
               <div class="field">
                 <label for="coachPhone">Phone Number (optional)</label>
                 <input id="coachPhone" class="text-input" type="text" value="${coach.phone || ""}">
+              </div>
+              <div class="field">
+                <label for="coachRole">Role / Squad</label>
+                <input id="coachRole" class="text-input" type="text" value="${coach.role || ""}">
+              </div>
+              <div class="field">
+                <label for="coachSlug">Public URL slug</label>
+                <input id="coachSlug" class="text-input" type="text" value="${coach.slug || ""}">
+                <small class="muted">Public URL: ${escapeHtml(coachPublicUrl(coach))}</small>
+              </div>
+              <div class="field" style="grid-column:1/-1;">
+                <label for="coachBio">Public bio</label>
+                <textarea id="coachBio" class="text-area">${escapeHtml(coach.bio || "")}</textarea>
+              </div>
+              <div class="field" style="grid-column:1/-1;">
+                <label>Public links</label>
+                <div class="coach-links-editor">
+                  ${(coach.links || []).sort((a, b) => (a.order || 0) - (b.order || 0)).map((link, index) => `
+                    <div class="coach-link-row">
+                      <input class="text-input coach-link-title" data-link-index="${index}" value="${escapeHtml(link.title || "")}" placeholder="Link title">
+                      <input class="text-input coach-link-url" data-link-index="${index}" value="${escapeHtml(link.url || "")}" placeholder="https://...">
+                      <label class="coach-link-toggle"><input type="checkbox" class="coach-link-visible" data-link-index="${index}" ${link.visible !== false ? "checked" : ""}> Visible</label>
+                    </div>
+                  `).join("")}
+                  <button class="secondary-btn" type="button" data-action="add-coach-link">+ Add link</button>
+                </div>
               </div>
             </div>
             <div style="margin-top:20px;">
@@ -1294,6 +1358,36 @@ export function initApp(config = {}) {
       `;
     }
 
+    function renderPublicCoachPage(coach) {
+      const reports = state.reports.filter(report => report.coachId === coach.id);
+      const generated = reports.filter(report => report.status === "Generated").length;
+      const links = (coach.links || [])
+        .filter(link => link.visible !== false)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const avatar = coach.photo_url || coach.photo;
+      return `
+        <main class="public-coach-page">
+          <section class="public-coach-card">
+            <div class="public-coach-avatar" ${avatar ? `style="background-image:url('${avatar}')"` : ""}>
+              ${avatar ? "" : escapeHtml(initials(coach.name))}
+            </div>
+            <p class="public-coach-kicker">${escapeHtml(coach.role || "Coach")}</p>
+            <h1>${escapeHtml(coach.name)}</h1>
+            <p class="public-coach-bio">${escapeHtml(coach.bio || coach.branch || "")}</p>
+            <div class="public-coach-stats">
+              <span><strong>${reports.length}</strong> sessions</span>
+              <span><strong>${reports.length ? "100" : "0"}%</strong> attendance</span>
+              <span><strong>${generated}</strong> reports filed</span>
+            </div>
+            <div class="public-coach-links">
+              ${links.map(link => `<a href="${escapeHtml(link.url)}" class="public-coach-link" ${/^https?:|^mailto:|^tel:/.test(link.url) ? 'target="_blank" rel="noreferrer"' : ""}><span>${escapeHtml(link.icon || "↗")}</span>${escapeHtml(link.title)}</a>`).join("")}
+            </div>
+            <small>${escapeHtml(coach.branch || "")}</small>
+          </section>
+        </main>
+      `;
+    }
+
     function scheduleRender() {
       if (renderQueued) return;
       renderQueued = true;
@@ -1305,7 +1399,10 @@ export function initApp(config = {}) {
 
     function render() {
       const app = document.getElementById("app");
-      app.innerHTML = state.auth.role ? renderDashboard() : renderLogin();
+      const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
+      const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
+      app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
+      if (publicCoach) return;
       attachEvents();
       if (state.auth.role) {
         hydrateReportsTable();
@@ -1427,6 +1524,11 @@ export function initApp(config = {}) {
       if (action === "upload-coach-photo") return triggerProfileUpload("coach");
       if (action === "save-admin-profile") return saveAdminProfile();
       if (action === "save-coach-profile") return saveCoachProfile();
+      if (action === "add-coach-link") return addCoachLink();
+      if (action === "download-coach-qr") {
+        const coach = state.coaches.find(item => item.id === event.currentTarget.dataset.coachId);
+        if (coach) return downloadCoachQr(coach);
+      }
       if (action === "student-upload") return triggerStudentUpload(event.currentTarget.dataset.studentId);
       if (action === "add-student") return openAddStudentModal();
       if (action === "close-onboarding") return closeOnboardingModal();
@@ -1498,6 +1600,10 @@ export function initApp(config = {}) {
           <td>${state.students.filter(student => student.coachId === coach.id).length}</td>
           <td>${state.reports.filter(report => report.coachId === coach.id).length}</td>
           <td><span class="badge green"><span class="dot"></span>Active</span></td>
+          <td>
+            <a class="secondary-btn" href="/coach/${encodeURIComponent(coach.slug)}" target="_blank" rel="noreferrer">View Profile</a>
+            <button class="secondary-btn" data-action="download-coach-qr" data-coach-id="${coach.id}">Download QR</button>
+          </td>
         </tr>
       `).join("");
     }
@@ -1947,8 +2053,54 @@ export function initApp(config = {}) {
       coach.branchAddress = document.getElementById("coachBranchAddress")?.value.trim() || coach.branchAddress || coach.branch;
       coach.email = document.getElementById("coachEmail")?.value.trim();
       coach.phone = document.getElementById("coachPhone")?.value.trim();
+      const requestedSlug = slugify(document.getElementById("coachSlug")?.value || coach.name);
+      const slugConflict = state.coaches.some(item => item.id !== coach.id && item.slug === requestedSlug);
+      if (slugConflict) {
+        alert(`That public URL is already used. Try ${requestedSlug}-${slugify(coach.id)}.`);
+        return;
+      }
+      coach.slug = requestedSlug;
+      coach.role = document.getElementById("coachRole")?.value.trim() || "Table Tennis Coach";
+      coach.bio = document.getElementById("coachBio")?.value.trim() || "";
+      coach.links = Array.from(document.querySelectorAll(".coach-link-row")).map((row, index) => ({
+        id: row.querySelector(".coach-link-url")?.value.trim() || `link-${index + 1}`,
+        title: row.querySelector(".coach-link-title")?.value.trim() || "Link",
+        url: row.querySelector(".coach-link-url")?.value.trim() || "#",
+        icon: "↗",
+        visible: row.querySelector(".coach-link-visible")?.checked !== false,
+        order: index + 1
+      }));
       persist();
       render();
+    }
+
+    function addCoachLink() {
+      const coach = getCurrentCoach();
+      coach.links = [...(coach.links || []), {
+        id: `link-${Date.now()}`,
+        title: "New link",
+        url: "https://",
+        icon: "↗",
+        visible: true,
+        order: (coach.links || []).length + 1
+      }];
+      render();
+    }
+
+    function downloadCoachQr(coach) {
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 512;
+        canvas.height = 512;
+        canvas.getContext("2d").drawImage(image, 0, 0, 512, 512);
+        const link = document.createElement("a");
+        link.download = `coach-qr-${coach.slug}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      };
+      image.src = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(coachPublicUrl(coach))}`;
     }
 
     function openOnboarding(type) {

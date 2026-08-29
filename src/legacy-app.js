@@ -554,10 +554,7 @@ export function initApp(config = {}) {
 
             <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
             <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
-            <div class="template-report-qr-wrap">
-              <div class="template-report-qr-label">SCAN NIE</div>
-              <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
-            </div>
+            <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
           </div>
         </div>
       `;
@@ -2101,23 +2098,14 @@ export function initApp(config = {}) {
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
         const qrSize = 80 * SCALE;
-        const qrRight = 48 * SCALE;
-        const qrBottom = 100 * SCALE;
+        const qrRight = 16 * SCALE;
+        const qrBottom = 70 * SCALE;
         const qrX = canvasWidth - qrSize - qrRight;
         const qrY = canvasHeight - qrSize - qrBottom;
-        const qrPadding = 4 * SCALE;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.imageSmoothingEnabled = false;
-        console.log("Report QR dimensions", { canvasWidth, canvasHeight, qrSize, url: "https://jom-nittaku-webapp.vercel.app/centre" });
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(qrX - qrPadding, qrY - qrPadding, qrSize + qrPadding * 2, qrSize + qrPadding * 2);
         ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
-        ctx.fillStyle = "#333333";
-        ctx.font = `${9 * SCALE}px Arial, "Helvetica Neue", Helvetica, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.fillText("SCAN NIE", qrX + (qrSize / 2), qrY - (6 * SCALE));
-        ctx.textAlign = "left";
         ctx.restore();
       } catch (error) {}
 

@@ -2080,12 +2080,12 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = 90 * SCALE;
+        const qrSize = 80 * SCALE;
         const qrRight = 40 * SCALE;
-        const qrBottom = 70 * SCALE;
+        const qrBottom = 114 * SCALE;
         const qrX = canvasWidth - qrSize - qrRight;
         const qrY = canvasHeight - qrSize - qrBottom;
-        const qrPadding = 5 * SCALE;
+        const qrPadding = 4 * SCALE;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.imageSmoothingEnabled = false;

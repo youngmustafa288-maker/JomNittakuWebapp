@@ -2042,10 +2042,10 @@ export function initApp(config = {}) {
       await drawPhoto(data.studentPhoto, photoGroupX, photoGroupY, photoWidth, photoHeight);
       await drawPhoto(data.coachPhoto, photoGroupX + photoWidth + photoGap, photoGroupY, photoWidth, photoHeight);
       ctx.fillStyle = "#333333";
-      ctx.font = '700 9px Arial, "Helvetica Neue", Helvetica, sans-serif';
+      ctx.font = '700 13px Arial, "Helvetica Neue", Helvetica, sans-serif';
       ctx.textAlign = "center";
-      ctx.fillText("STUDENT", photoGroupX + (photoWidth / 2), photoGroupY + photoHeight + 13);
-      ctx.fillText("COACH", photoGroupX + photoWidth + photoGap + (photoWidth / 2), photoGroupY + photoHeight + 13);
+      ctx.fillText("STUDENT", photoGroupX + (photoWidth / 2), photoGroupY + photoHeight + 16);
+      ctx.fillText("COACH", photoGroupX + photoWidth + photoGap + (photoWidth / 2), photoGroupY + photoHeight + 16);
       ctx.textAlign = "left";
 
       ctx.fillStyle = "#f6efe4";
@@ -2096,9 +2096,9 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = 80 * SCALE;
-        const qrRight = 20 * SCALE;
-        const qrBottom = 40 * SCALE;
+        const qrSize = 71 * SCALE;
+        const qrRight = 26 * SCALE;
+        const qrBottom = 50 * SCALE;
         const qrX = canvasWidth - qrSize - qrRight;
         const qrY = canvasHeight - qrSize - qrBottom;
         ctx.save();

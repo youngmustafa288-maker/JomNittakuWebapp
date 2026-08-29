@@ -470,9 +470,12 @@ export function initApp(config = {}) {
       };
     }
 
-    function renderTemplatePhoto(photo, left, top) {
+    function renderTemplatePhoto(photo, label) {
       return `
-        <img class="template-photo" style="left:${left}%;top:${top}%;" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
+        <div class="template-photo-card">
+          <img class="template-photo" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
+          <div class="template-photo-label">${label}</div>
+        </div>
       `;
     }
 
@@ -517,8 +520,10 @@ export function initApp(config = {}) {
             <div class="template-text template-session template-session-centre" style="left:17.9%;top:31.94%;width:25%;">${escapeHtml(data.session.centre)}</div>
             <div class="template-text template-session" style="left:24.25%;top:34.34%;width:19%;">${escapeHtml(data.session.coachName)}</div>
 
-            ${renderTemplatePhoto(data.studentPhoto, 63.62, 24.92)}
-            ${renderTemplatePhoto(data.coachPhoto, 77.46, 24.92)}
+            <div class="template-report-photo-group">
+              ${renderTemplatePhoto(data.studentPhoto, "STUDENT")}
+              ${renderTemplatePhoto(data.coachPhoto, "COACH")}
+            </div>
 
             ${REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
@@ -2032,8 +2037,20 @@ export function initApp(config = {}) {
         ctx.restore();
       };
 
-      await drawPhoto(data.studentPhoto, 570, 299, 111, 123);
-      await drawPhoto(data.coachPhoto, 694, 299, 111, 123);
+      const photoWidth = 80;
+      const photoHeight = 90;
+      const photoGap = 10;
+      const photoGroupRight = 12;
+      const photoGroupX = baseWidth - photoGroupRight - (photoWidth * 2) - photoGap;
+      const photoGroupY = 299;
+      await drawPhoto(data.studentPhoto, photoGroupX, photoGroupY, photoWidth, photoHeight);
+      await drawPhoto(data.coachPhoto, photoGroupX + photoWidth + photoGap, photoGroupY, photoWidth, photoHeight);
+      ctx.fillStyle = "#333333";
+      ctx.font = '700 9px Arial, "Helvetica Neue", Helvetica, sans-serif';
+      ctx.textAlign = "center";
+      ctx.fillText("STUDENT", photoGroupX + (photoWidth / 2), photoGroupY + photoHeight + 13);
+      ctx.fillText("COACH", photoGroupX + photoWidth + photoGap + (photoWidth / 2), photoGroupY + photoHeight + 13);
+      ctx.textAlign = "left";
 
       ctx.fillStyle = "#f6efe4";
       REPORT_TEMPLATE_BULLET_MASKS.forEach(mask => {

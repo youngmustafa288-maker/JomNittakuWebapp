@@ -1534,12 +1534,11 @@
     .template-report-qr {
       position: absolute;
       right: 4.5%;
-      bottom: 3.3%;
+      bottom: 5.8%;
       z-index: 3;
       display: block;
-      width: 15%;
-      min-width: 80px;
-      aspect-ratio: 1;
+      width: 90px;
+      height: 90px;
       padding: 4px;
       box-sizing: border-box;
       background: #ffffff;

@@ -94,22 +94,31 @@ export function initApp(config = {}) {
     let renderQueued = false;
     let appEventsBound = false;
 
+    function normalizeCentreProfile(profile = {}) {
+      return {
+        ...profile,
+        links: Array.isArray(profile.links)
+          ? profile.links.map((link, index) => ({
+              id: link.id || `centre-link-${index + 1}`,
+              label: link.label || link.title || link.name || "Centre link",
+              url: String(link.url || link.value || "").trim()
+            })).filter(link => link.url)
+          : []
+      };
+    }
+
     function getCentreProfile() {
       try {
         const value = JSON.parse(localStorage.getItem(CENTRE_PROFILE_KEY) || "null");
-        return value && typeof value === "object"
-          ? { links: Array.isArray(value.links) ? value.links.map(link => ({
-              id: link.id || `link-${Date.now()}-${Math.random()}`,
-              label: link.label || link.title || "",
-              url: link.url || link.value || ""
-            })) : [] }
-          : { links: [] };
+        return normalizeCentreProfile(value && typeof value === "object" ? value : {});
       } catch (error) {
-        return { centreName: "", links: [] };
+        return normalizeCentreProfile();
       }
     }
     function saveCentreProfile() {
+      state.centreProfile = normalizeCentreProfile(state.centreProfile);
       localStorage.setItem(CENTRE_PROFILE_KEY, JSON.stringify(state.centreProfile));
+      persist();
     }
     function centreLinkUrl(link) {
       return String(link.url || "").trim();
@@ -214,6 +223,7 @@ export function initApp(config = {}) {
         auth: rawState.auth || defaults.auth,
         ui: rawState.ui || defaults.ui,
         adminProfile: rawState.adminProfile || defaults.adminProfile,
+        centreProfile: normalizeCentreProfile(rawState.centreProfile || defaults.centreProfile),
         coaches: mergeList(rawState.coaches, defaults.coaches, normalizeCoach),
         students: mergeList(rawState.students, defaults.students, student => ({ ...student })),
         reports: mergeList(rawState.reports, defaults.reports, normalizeReport),
@@ -373,6 +383,7 @@ export function initApp(config = {}) {
         auth: { role: null, coachId: "coach-1" },
         ui: { page: "overview", avatarMenuOpen: false, reportViewId: null, adminToast: "" },
         adminProfile: { fullName: "JomNittaku Admin", photo: "" },
+        centreProfile: { links: [] },
         coaches,
         students,
         reports,
@@ -1407,7 +1418,7 @@ export function initApp(config = {}) {
     }
 
     function renderCentrePage() {
-      const profile = getCentreProfile();
+      const profile = state.centreProfile;
       return `<main class="public-centre-page"><section class="public-centre-card">
         ${profile.links.length ? `<div class="public-centre-links">${profile.links.map(link => `<a class="public-centre-link" href="${escapeHtml(centreLinkUrl(link))}">${escapeHtml(link.label)}</a>`).join("")}</div>` : "<p class=\"muted\">No contact info available</p>"}
       </section></main>`;
@@ -1416,8 +1427,15 @@ export function initApp(config = {}) {
     function renderPublicCoachPage(coach) {
       const reports = state.reports.filter(report => report.coachId === coach.id);
       const generated = reports.filter(report => report.status === "Generated").length;
-      const links = (coach.links || [])
-        .filter(link => link.visible !== false)
+      const centreLinks = (state.centreProfile?.links || []).map(link => ({
+        ...link,
+        title: link.label || link.title || "Centre link",
+        icon: link.icon || ""
+      }));
+      const coachLinks = (coach.links || [])
+        .filter(link => link.visible !== false && String(link.url || "").trim())
+        .map(link => ({ ...link, title: link.title || link.label || "Coach link" }));
+      const links = [...centreLinks, ...coachLinks]
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       const avatar = coach.photo_url || coach.photo;
       return `
@@ -1434,6 +1452,7 @@ export function initApp(config = {}) {
               <span><strong>${reports.length ? "100" : "0"}%</strong> attendance</span>
               <span><strong>${generated}</strong> reports filed</span>
             </div>
+            ${links.length ? "" : `<div class="public-coach-links-empty">No centre or coach links have been added yet.</div>`}
             <div class="public-coach-links">
               ${links.map(link => `<a href="${escapeHtml(link.url)}" class="public-coach-link" ${/^https?:|^mailto:|^tel:/.test(link.url) ? 'target="_blank" rel="noreferrer"' : ""}><span>${escapeHtml(link.icon || "↗")}</span>${escapeHtml(link.title)}</a>`).join("")}
             </div>
@@ -2366,7 +2385,13 @@ export function initApp(config = {}) {
     loadState()
         .then(nextState => {
           state = nextState;
-          state.centreProfile = getCentreProfile();
+          const localCentreProfile = getCentreProfile();
+          if (!state.centreProfile?.links?.length && localCentreProfile.links.length) {
+            state.centreProfile = localCentreProfile;
+            persist();
+          } else {
+            state.centreProfile = normalizeCentreProfile(state.centreProfile);
+          }
           render();
           persist();
           subscribeToRealtime();

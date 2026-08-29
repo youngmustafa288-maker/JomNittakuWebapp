@@ -1531,6 +1531,23 @@
       font-style: italic;
     }
 
+    .template-report-qr {
+      position: absolute;
+      right: 4.5%;
+      bottom: 3.3%;
+      z-index: 3;
+      display: block;
+      width: 15%;
+      min-width: 80px;
+      aspect-ratio: 1;
+      padding: 4px;
+      box-sizing: border-box;
+      background: #ffffff;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
     .template-photo {
       position: absolute;
       width: 90px;

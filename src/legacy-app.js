@@ -172,9 +172,13 @@ export function initApp(config = {}) {
 
     async function loadQrDataUrl(coach, width = 200) {
       return QRCode.toDataURL(coachPublicUrl(coach), {
-        width,
-        margin: 1,
-        errorCorrectionLevel: "M"
+        width: Math.max(200, width),
+        margin: 2,
+        errorCorrectionLevel: "M",
+        color: {
+          dark: "#000000",
+          light: "#ffffff"
+        }
       });
     }
 
@@ -534,6 +538,7 @@ export function initApp(config = {}) {
 
             <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
             <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
+            <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
           </div>
         </div>
       `;
@@ -1477,6 +1482,23 @@ export function initApp(config = {}) {
           image.src = dataUrl;
         }).catch(() => {});
       });
+      document.querySelectorAll("[data-qr-centre]").forEach(image => {
+        loadCentreQrDataUrl().then(dataUrl => {
+          image.src = dataUrl;
+        }).catch(() => {});
+      });
+    }
+
+    async function loadCentreQrDataUrl() {
+      return QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
+        width: 200,
+        margin: 2,
+        errorCorrectionLevel: "M",
+        color: {
+          dark: "#000000",
+          light: "#ffffff"
+        }
+      });
     }
 
     function attachEvents() {
@@ -2030,12 +2052,7 @@ export function initApp(config = {}) {
       ctx.textAlign = "left";
 
       try {
-        const qrDataUrl = await QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
-          width: 500,
-          margin: 4,
-          errorCorrectionLevel: "L",
-          color: { dark: "#000000", light: "#ffffff" }
-        });
+        const qrDataUrl = await loadCentreQrDataUrl();
         const qrImg = new Image();
         qrImg.src = qrDataUrl;
         await new Promise((resolve, reject) => {
@@ -2047,9 +2064,13 @@ export function initApp(config = {}) {
         const qrSize = Math.floor(canvasWidth * 0.15);
         const qrX = canvasWidth - qrSize - 40;
         const qrY = canvasHeight - qrSize - 40;
+        const qrPadding = Math.max(4 * SCALE, Math.floor(qrSize * 0.03));
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = false;
         console.log("Report QR dimensions", { canvasWidth, canvasHeight, qrSize, url: "https://jom-nittaku-webapp.vercel.app/centre" });
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(qrX - qrPadding, qrY - qrPadding, qrSize + qrPadding * 2, qrSize + qrPadding * 2);
         ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
         ctx.restore();
       } catch (error) {}
@@ -2133,15 +2154,7 @@ export function initApp(config = {}) {
     }
 
     async function downloadReportQr() {
-      const qrDataUrl = await QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
-        width: 800,
-        margin: 4,
-        errorCorrectionLevel: "L",
-        color: {
-          dark: "#000000",
-          light: "#ffffff"
-        }
-      });
+      const qrDataUrl = await loadCentreQrDataUrl();
       const link = document.createElement("a");
       link.download = "centre-qr.png";
       link.href = qrDataUrl;

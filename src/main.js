@@ -8,5 +8,5 @@ root.innerHTML = '<div style="display:grid;place-items:center;min-height:100vh;c
 initApp({
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "",
   supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "",
-  reportTemplateSrc: "/Updated Certificate Image.png"
+  reportTemplateSrc: "/Image 1.jpg?v=2"
 });

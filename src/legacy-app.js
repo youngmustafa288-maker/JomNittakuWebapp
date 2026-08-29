@@ -7,7 +7,7 @@ const CENTRE_PROFILE_KEY = "centre_profile";
 export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
-    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Updated Certificate Image.png";
+    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Image 1.jpg?v=2";
     const MONTH_LABEL = "July 2026";
     const CURRENT_MONTH_PREFIX = "2026-07";
     const REPORT_TEMPLATE_SIZE = { width: 896, height: 1200 };
@@ -2034,11 +2034,10 @@ export function initApp(config = {}) {
         ctx.restore();
       };
 
-      const photoWidth = 80;
-      const photoHeight = 90;
-      const photoGap = 10;
-      const photoGroupRight = 12;
-      const photoGroupX = baseWidth - photoGroupRight - (photoWidth * 2) - photoGap;
+      const photoWidth = 111;
+      const photoHeight = 123;
+      const photoGap = 13;
+      const photoGroupX = 570;
       const photoGroupY = 299;
       await drawPhoto(data.studentPhoto, photoGroupX, photoGroupY, photoWidth, photoHeight);
       await drawPhoto(data.coachPhoto, photoGroupX + photoWidth + photoGap, photoGroupY, photoWidth, photoHeight);
@@ -2098,8 +2097,8 @@ export function initApp(config = {}) {
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
         const qrSize = 80 * SCALE;
-        const qrRight = 16 * SCALE;
-        const qrBottom = 70 * SCALE;
+        const qrRight = 20 * SCALE;
+        const qrBottom = 40 * SCALE;
         const qrX = canvasWidth - qrSize - qrRight;
         const qrY = canvasHeight - qrSize - qrBottom;
         ctx.save();

@@ -1542,12 +1542,12 @@
 
     .template-report-qr {
       position: absolute;
-      right: 16px;
-      bottom: 70px;
+      right: 2.23%;
+      bottom: 3.33%;
       z-index: 3;
       display: block;
-      width: 80px;
-      height: 80px;
+      width: 8.93cqw;
+      height: 8.93cqw;
       padding: 0;
       box-sizing: border-box;
       background: transparent;
@@ -1559,26 +1559,26 @@
     .template-report-photo-group {
       position: absolute;
       top: 24.92%;
-      right: 12px;
+      left: 63.62%;
       z-index: 3;
       display: flex;
-      gap: 10px;
-      max-width: calc(100% - 12px);
+      gap: 1.45cqw;
       overflow: hidden;
       box-sizing: border-box;
     }
 
     .template-photo-card {
-      width: 80px;
+      width: 12.39cqw;
       overflow: hidden;
       text-align: center;
-      flex: 0 0 80px;
+      flex: 0 0 12.39cqw;
     }
 
     .template-photo {
       display: block;
-      width: 80px;
-      height: 90px;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 111 / 123;
       border-radius: 6px;
       overflow: hidden;
       border: 1px solid #d5d9e0;

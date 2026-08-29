@@ -1540,11 +1540,25 @@
       font-style: italic;
     }
 
-    .template-report-qr {
+    .template-report-qr-wrap {
       position: absolute;
-      right: 4.5%;
-      bottom: 9.5%;
+      right: 48px;
+      bottom: 100px;
       z-index: 3;
+      width: 80px;
+      text-align: center;
+    }
+
+    .template-report-qr-label {
+      margin-bottom: 2px;
+      color: #333333;
+      font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+      font-size: 9px;
+      line-height: 11px;
+      text-align: center;
+    }
+
+    .template-report-qr {
       display: block;
       width: 80px;
       height: 80px;

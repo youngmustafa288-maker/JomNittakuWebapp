@@ -2096,10 +2096,10 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = 197 * SCALE;
-        const qrInset = 10 * SCALE;
-        const qrPadding = 8 * SCALE;
-        const qrRadius = 14 * SCALE;
+        const qrSize = 161 * SCALE;
+        const qrInset = 14 * SCALE;
+        const qrPadding = 7 * SCALE;
+        const qrRadius = 12 * SCALE;
         const qrX = canvasWidth - qrSize - qrInset;
         const qrY = canvasHeight - qrSize - qrInset;
         ctx.save();

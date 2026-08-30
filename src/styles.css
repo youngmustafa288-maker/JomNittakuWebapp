@@ -1331,7 +1331,8 @@
       aspect-ratio: 896 / 1200;
       margin: 0 auto;
       container-type: inline-size;
-      overflow: visible;
+      overflow: hidden;
+      border-radius: 24px;
     }
 
     .template-report-base {
@@ -1542,13 +1543,13 @@
 
     .template-report-qr {
       position: absolute;
-      right: 1.1cqw;
-      bottom: 1.1cqw;
-      z-index: 3;
+      right: 1.6cqw;
+      bottom: 1.6cqw;
+      z-index: 1;
       display: block;
-      width: 22cqw;
-      height: 22cqw;
-      padding: 0.9cqw;
+      width: 18cqw;
+      height: 18cqw;
+      padding: 0.75cqw;
       box-sizing: border-box;
       background: #ffffff;
       border: 1px solid rgba(17, 24, 39, 0.14);

@@ -1547,14 +1547,14 @@
       right: 2.3cqw;
       bottom: 3.7cqw;
       z-index: 4;
-      width: 10.2cqw;
-      height: 10.2cqw;
-      padding: 0;
+      width: 11.5cqw;
+      height: 11.5cqw;
+      padding: 0.65cqw;
       box-sizing: border-box;
-      background: none;
-      border: 0;
-      border-radius: 0;
-      box-shadow: none;
+      background: #ffffff;
+      border: 1px solid rgba(17, 24, 39, 0.14);
+      border-radius: 1.25cqw;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
       overflow: hidden;
     }
 

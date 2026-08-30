@@ -2107,15 +2107,21 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = 92 * SCALE;
-        const qrRight = 24 * SCALE;
-        const qrBottom = 36 * SCALE;
-        const qrX = canvasWidth - qrSize - qrRight;
-        const qrY = canvasHeight - qrSize - qrBottom;
+        const pocketSize = 104 * SCALE;
+        const qrPadding = 6 * SCALE;
+        const qrSize = pocketSize - qrPadding * 2;
+        const qrRight = 18 * SCALE;
+        const qrBottom = 30 * SCALE;
+        const pocketX = canvasWidth - pocketSize - qrRight;
+        const pocketY = canvasHeight - pocketSize - qrBottom;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.roundRect(pocketX, pocketY, pocketSize, pocketSize, 11 * SCALE);
+        ctx.fill();
+        ctx.drawImage(qrImg, pocketX + qrPadding, pocketY + qrPadding, qrSize, qrSize);
         ctx.restore();
       } catch (error) {}
 

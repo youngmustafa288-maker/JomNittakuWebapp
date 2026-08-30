@@ -1543,12 +1543,12 @@
 
     .template-report-qr-pocket {
       position: absolute;
-      right: 2.7cqw;
-      bottom: 3.1cqw;
+      right: 3.5cqw;
+      bottom: 3.8cqw;
       z-index: 1;
       width: 14.5cqw;
       height: 14.5cqw;
-      padding: 0.7cqw;
+      padding: 0.85cqw;
       box-sizing: border-box;
       background: #ffffff;
       border: 1px solid rgba(17, 24, 39, 0.14);
@@ -1561,6 +1561,7 @@
       display: block;
       width: 100%;
       height: 100%;
+      padding: 0.35cqw;
       background: transparent;
       object-fit: contain;
       image-rendering: pixelated;

@@ -1531,7 +1531,7 @@ export function initApp(config = {}) {
         errorCorrectionLevel: "M",
         color: {
           dark: "#000000",
-          light: "#ffffff"
+          light: "#00000000"
         }
       });
     }
@@ -2107,33 +2107,15 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = 112 * SCALE;
-        const qrRight = 16 * SCALE;
-        const qrBottom = 16 * SCALE;
-        const qrPadding = 6 * SCALE;
-        const qrRadius = 11 * SCALE;
+        const qrSize = 92 * SCALE;
+        const qrRight = 24 * SCALE;
+        const qrBottom = 36 * SCALE;
         const qrX = canvasWidth - qrSize - qrRight;
         const qrY = canvasHeight - qrSize - qrBottom;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.imageSmoothingEnabled = false;
-        ctx.fillStyle = "#ffffff";
-        ctx.beginPath();
-        ctx.moveTo(qrX + qrRadius, qrY);
-        ctx.arcTo(qrX + qrSize, qrY, qrX + qrSize, qrY + qrSize, qrRadius);
-        ctx.arcTo(qrX + qrSize, qrY + qrSize, qrX, qrY + qrSize, qrRadius);
-        ctx.arcTo(qrX, qrY + qrSize, qrX, qrY, qrRadius);
-        ctx.arcTo(qrX, qrY, qrX + qrSize, qrY, qrRadius);
-        ctx.closePath();
-        ctx.fill();
-        ctx.clip();
-        ctx.drawImage(
-          qrImg,
-          qrX + qrPadding,
-          qrY + qrPadding,
-          qrSize - qrPadding * 2,
-          qrSize - qrPadding * 2
-        );
+        ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
         ctx.restore();
       } catch (error) {}
 

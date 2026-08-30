@@ -2081,7 +2081,7 @@ export function initApp(config = {}) {
       });
 
       ctx.fillStyle = "#000000";
-      ctx.font = '400 14px Arial, "Helvetica Neue", Helvetica, sans-serif';
+      ctx.font = '400 16px Arial, "Helvetica Neue", Helvetica, sans-serif';
       const bulletGroups = [
         { lines: data.bullets.whatTaught, x: 109, ys: [546, 577], width: 302 },
         { lines: data.bullets.beforeCoaching, x: 109, ys: [654, 685], width: 302 },
@@ -2118,11 +2118,11 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const pocketSize = 104 * SCALE;
-        const qrPadding = 6 * SCALE;
+        const pocketSize = 86 * SCALE;
+        const qrPadding = 5 * SCALE;
         const qrSize = pocketSize - qrPadding * 2;
-        const qrRight = 18 * SCALE;
-        const qrBottom = 30 * SCALE;
+        const qrRight = 25 * SCALE;
+        const qrBottom = 38 * SCALE;
         const pocketX = canvasWidth - pocketSize - qrRight;
         const pocketY = canvasHeight - pocketSize - qrBottom;
         ctx.save();

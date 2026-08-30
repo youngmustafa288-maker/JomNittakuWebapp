@@ -1436,7 +1436,7 @@
     .template-report-overlay .template-bullet {
       display: flex;
       padding-left: 0;
-      font-size: clamp(0.84rem, 1.55cqw, 1rem);
+      font-size: clamp(0.95rem, 1.8cqw, 1.15rem);
       line-height: 1.12;
       max-height: 2.5em;
       height: auto !important;
@@ -1551,12 +1551,12 @@
 
     .template-report-qr-pocket {
       position: absolute;
-      right: 2.3cqw;
-      bottom: 3.7cqw;
+      right: 2.8cqw;
+      bottom: 4.2cqw;
       z-index: 4;
-      width: 11.5cqw;
-      height: 11.5cqw;
-      padding: 0.65cqw;
+      width: 9.5cqw;
+      height: 9.5cqw;
+      padding: 0.55cqw;
       box-sizing: border-box;
       background: #ffffff;
       border: 1px solid rgba(17, 24, 39, 0.14);

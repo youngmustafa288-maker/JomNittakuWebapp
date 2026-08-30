@@ -563,9 +563,9 @@ export function initApp(config = {}) {
 
             <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
             <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
-            <div class="template-report-qr-pocket">
-              <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
-            </div>
+          </div>
+          <div class="template-report-qr-pocket">
+            <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
           </div>
         </div>
       `;
@@ -2107,9 +2107,9 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = 130 * SCALE;
-        const qrRight = 50 * SCALE;
-        const qrBottom = 54 * SCALE;
+        const qrSize = 112 * SCALE;
+        const qrRight = 16 * SCALE;
+        const qrBottom = 16 * SCALE;
         const qrPadding = 6 * SCALE;
         const qrRadius = 11 * SCALE;
         const qrX = canvasWidth - qrSize - qrRight;

@@ -1333,6 +1333,7 @@
       container-type: inline-size;
       overflow: hidden;
       border-radius: 24px;
+      isolation: isolate;
     }
 
     .template-report-base {
@@ -1543,12 +1544,12 @@
 
     .template-report-qr-pocket {
       position: absolute;
-      right: 3.5cqw;
-      bottom: 3.8cqw;
-      z-index: 1;
-      width: 14.5cqw;
-      height: 14.5cqw;
-      padding: 0.85cqw;
+      right: 1.8cqw;
+      bottom: 1.8cqw;
+      z-index: 4;
+      width: 12.5cqw;
+      height: 12.5cqw;
+      padding: 0.7cqw;
       box-sizing: border-box;
       background: #ffffff;
       border: 1px solid rgba(17, 24, 39, 0.14);

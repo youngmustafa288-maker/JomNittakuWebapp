@@ -184,7 +184,7 @@ export function initApp(config = {}) {
     async function loadQrDataUrl(coach, width = 200) {
       return QRCode.toDataURL(coachPublicUrl(coach), {
         width: Math.max(200, width),
-        margin: 2,
+        margin: 1,
         errorCorrectionLevel: "M",
         color: {
           dark: "#000000",
@@ -1527,11 +1527,11 @@ export function initApp(config = {}) {
     async function loadCentreQrDataUrl() {
       return QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
         width: 200,
-        margin: 2,
+        margin: 1,
         errorCorrectionLevel: "M",
         color: {
           dark: "#000000",
-          light: "#00000000"
+          light: "#ffffff"
         }
       });
     }
@@ -1941,7 +1941,7 @@ export function initApp(config = {}) {
       ctx.closePath();
     }
 
-    function getWrappedLines(ctx, text, maxWidth, maxLines) {
+    function getWrappedLines(ctx, text, maxWidth, maxLines = Infinity) {
       const words = String(text || "").trim().split(/\s+/).filter(Boolean);
       if (!words.length) return [];
       const lines = [];
@@ -1980,7 +1980,18 @@ export function initApp(config = {}) {
     function drawBulletLine(ctx, text, x, y, maxWidth, lineHeight, maxLines, inset = 0) {
       const value = String(text || "").trim();
       if (!value) return;
-      const lines = getWrappedLines(ctx, value, maxWidth - inset, maxLines);
+      const originalFont = ctx.font;
+      const fontMatch = originalFont.match(/(\d+(?:\.\d+)?)px/);
+      const originalSize = fontMatch ? Number(fontMatch[1]) : 14;
+      let fontSize = originalSize;
+      let lines = [];
+      do {
+        ctx.font = `400 ${fontSize}px Arial, "Helvetica Neue", Helvetica, sans-serif`;
+        lines = getWrappedLines(ctx, value, maxWidth - inset);
+        if (lines.length <= maxLines || fontSize <= 10) break;
+        fontSize -= 0.5;
+      } while (fontSize > 10);
+      lines = lines.slice(0, maxLines);
       if (!lines.length) return;
       const textX = x + inset;
       ctx.fillText(lines[0], textX, y);

@@ -1296,7 +1296,7 @@
       display: block;
       font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
       font-size: 1.62cqw;
-      line-height: 1.16;
+      line-height: 1.12;
       font-weight: 400;
       color: #000000;
       background: transparent;
@@ -1399,9 +1399,9 @@
       box-sizing: border-box;
       padding-left: 0.52em;
       white-space: normal;
-      overflow-wrap: break-word;
-      overflow: hidden;
-      max-height: 2.32em;
+      overflow-wrap: anywhere;
+      word-break: normal;
+      max-height: 2.5em;
       background: transparent;
       background-color: transparent;
       backdrop-filter: none;
@@ -1436,9 +1436,12 @@
     .template-report-overlay .template-bullet {
       display: flex;
       padding-left: 0;
-      font-size: 1rem;
-      line-height: 1.16;
-      max-height: 2.32em;
+      font-size: clamp(0.84rem, 1.55cqw, 1rem);
+      line-height: 1.12;
+      max-height: 2.5em;
+      height: auto !important;
+      min-height: 1.12em;
+      overflow: visible;
       background: transparent;
       background-color: transparent;
       backdrop-filter: none;
@@ -1453,6 +1456,10 @@
 
     .template-report-overlay .template-bullet span {
       display: block;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: normal;
     }
 
     .template-report-overlay .template-bullet.empty {

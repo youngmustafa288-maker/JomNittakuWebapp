@@ -1543,13 +1543,13 @@
 
     .template-report-qr {
       position: absolute;
-      right: 1.6cqw;
-      bottom: 1.6cqw;
+      right: 2.4cqw;
+      bottom: 2.4cqw;
       z-index: 1;
       display: block;
-      width: 18cqw;
-      height: 18cqw;
-      padding: 0.75cqw;
+      width: 15.5cqw;
+      height: 15.5cqw;
+      padding: 0.7cqw;
       box-sizing: border-box;
       background: #ffffff;
       border: 1px solid rgba(17, 24, 39, 0.14);

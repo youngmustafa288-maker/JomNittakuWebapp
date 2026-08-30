@@ -1541,20 +1541,27 @@
       font-style: italic;
     }
 
-    .template-report-qr {
+    .template-report-qr-pocket {
       position: absolute;
-      right: 2.4cqw;
-      bottom: 2.4cqw;
+      right: 2.7cqw;
+      bottom: 3.1cqw;
       z-index: 1;
-      display: block;
-      width: 15.5cqw;
-      height: 15.5cqw;
+      width: 14.5cqw;
+      height: 14.5cqw;
       padding: 0.7cqw;
       box-sizing: border-box;
       background: #ffffff;
       border: 1px solid rgba(17, 24, 39, 0.14);
       border-radius: 1.6cqw;
       box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+      overflow: hidden;
+    }
+
+    .template-report-qr {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: transparent;
       object-fit: contain;
       image-rendering: pixelated;
       image-rendering: crisp-edges;

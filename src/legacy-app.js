@@ -149,12 +149,14 @@ export function initApp(config = {}) {
     }
 
     function normalizeCoach(coach) {
+      const photo = coach.photo || coach.photo_url || coach.photoUrl || coach.image_url || "";
       return {
         ...coach,
         slug: coach.slug || slugify(coach.name),
         role: coach.role || "Table Tennis Coach",
         bio: coach.bio || "",
-        photo_url: coach.photo_url || coach.photo || "",
+        photo,
+        photo_url: photo,
         links: Array.isArray(coach.links) && coach.links.length
           ? coach.links.map((link, index) => ({
               ...link,
@@ -203,6 +205,13 @@ export function initApp(config = {}) {
       };
     }
 
+    function normalizeStudent(student) {
+      return {
+        ...student,
+        photo: student.photo || student.photo_url || student.photoUrl || student.image_url || ""
+      };
+    }
+
     function normalizeDraft(draft) {
       return {
         ...draft,
@@ -225,7 +234,7 @@ export function initApp(config = {}) {
         adminProfile: rawState.adminProfile || defaults.adminProfile,
         centreProfile: normalizeCentreProfile(rawState.centreProfile || defaults.centreProfile),
         coaches: mergeList(rawState.coaches, defaults.coaches, normalizeCoach),
-        students: mergeList(rawState.students, defaults.students, student => ({ ...student })),
+        students: mergeList(rawState.students, defaults.students, normalizeStudent),
         reports: mergeList(rawState.reports, defaults.reports, normalizeReport),
         reportDrafts: Object.fromEntries(Object.entries(rawState.reportDrafts && Object.keys(rawState.reportDrafts).length ? rawState.reportDrafts : defaults.reportDrafts).map(([key, draft]) => [key, normalizeDraft(draft)]))
       };
@@ -465,8 +474,8 @@ export function initApp(config = {}) {
         remarksLines: splitRemarkLines(summary.remarks),
         centreContact: coach.centreContact || "",
           address: coach.branchAddress || coach.branch || "",
-        studentPhoto: student?.photo || "",
-        coachPhoto: coach?.photo || ""
+        studentPhoto: student?.photo || student?.photo_url || student?.photoUrl || student?.image_url || "",
+        coachPhoto: coach?.photo || coach?.photo_url || coach?.photoUrl || coach?.image_url || ""
       };
     }
 
@@ -554,7 +563,9 @@ export function initApp(config = {}) {
 
             <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
             <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
-            <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
+            <div class="template-report-qr-pocket">
+              <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
+            </div>
           </div>
         </div>
       `;
@@ -2096,12 +2107,13 @@ export function initApp(config = {}) {
         });
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const qrSize = 139 * SCALE;
-        const qrInset = 22 * SCALE;
+        const qrSize = 130 * SCALE;
+        const qrRight = 38 * SCALE;
+        const qrBottom = 42 * SCALE;
         const qrPadding = 6 * SCALE;
         const qrRadius = 11 * SCALE;
-        const qrX = canvasWidth - qrSize - qrInset;
-        const qrY = canvasHeight - qrSize - qrInset;
+        const qrX = canvasWidth - qrSize - qrRight;
+        const qrY = canvasHeight - qrSize - qrBottom;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.imageSmoothingEnabled = false;

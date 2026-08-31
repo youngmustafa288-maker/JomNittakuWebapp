@@ -1436,7 +1436,7 @@
     .template-report-overlay .template-bullet {
       display: flex;
       padding-left: 0;
-      font-size: clamp(0.95rem, 1.8cqw, 1.15rem);
+      font-size: clamp(0.85rem, 1.55cqw, 1rem);
       line-height: 1.12;
       max-height: 2.5em;
       height: auto !important;

@@ -1628,17 +1628,6 @@
       font-weight: 700;
     }
 
-    .pdf-export-mode .template-report-photo-group {
-      top: 26.1%;
-      left: 66.1%;
-      gap: 1.1cqw;
-    }
-
-    .pdf-export-mode .template-photo-card {
-      width: 9.6cqw;
-      flex: 0 0 9.6cqw;
-    }
-
     .template-photo svg {
       width: 100%;
       height: 100%;

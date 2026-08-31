@@ -2081,24 +2081,19 @@ export function initApp(config = {}) {
         throw new Error("Report template is not mounted");
       }
       const html2canvas = await getHtml2CanvasLib();
-      reportTemplate.classList.add("pdf-export-mode");
-      try {
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        await waitForReportReady(reportTemplate);
-        const rect = reportTemplate.getBoundingClientRect();
-        return await html2canvas(reportTemplate, {
-          scale: 3,
-          useCORS: true,
-          allowTaint: false,
-          logging: false,
-          removeContainer: true,
-          width: Math.ceil(rect.width),
-          height: Math.ceil(rect.height),
-          backgroundColor: null
-        });
-      } finally {
-        reportTemplate.classList.remove("pdf-export-mode");
-      }
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await waitForReportReady(reportTemplate);
+      const rect = reportTemplate.getBoundingClientRect();
+      return await html2canvas(reportTemplate, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        removeContainer: true,
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height),
+        backgroundColor: null
+      });
     }
 
     function saveCentreProfileFromInputs() {

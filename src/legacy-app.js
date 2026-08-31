@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
@@ -2045,54 +2046,6 @@ export function initApp(config = {}) {
       }
     }
 
-    function dataUrlToUint8Array(dataUrl) {
-      const base64 = dataUrl.split(",")[1];
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return bytes;
-    }
-
-    function jpegDataUrlToPdfBlob(dataUrl, width, height) {
-      const imageBytes = dataUrlToUint8Array(dataUrl);
-      const pdfParts = [];
-      const offsets = [];
-      let cursor = 0;
-      const pushText = value => {
-        const chunk = new TextEncoder().encode(value);
-        pdfParts.push(chunk);
-        cursor += chunk.length;
-      };
-      const pushBytes = value => {
-        pdfParts.push(value);
-        cursor += value.length;
-      };
-      const addObject = content => {
-        offsets.push(cursor);
-        pushText(`${offsets.length} 0 obj\n${content}\nendobj\n`);
-      };
-
-      pushText("%PDF-1.4\n");
-      addObject("<< /Type /Catalog /Pages 2 0 R >>");
-      addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
-      addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
-      offsets.push(cursor);
-      pushText(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);
-      pushBytes(imageBytes);
-      pushText("\nendstream\nendobj\n");
-      const contentStream = `q\n${width} 0 0 ${height} 0 0 cm\n/Im0 Do\nQ`;
-      addObject(`<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream`);
-      const xrefStart = cursor;
-      pushText(`xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`);
-      offsets.forEach(offset => {
-        pushText(`${String(offset).padStart(10, "0")} 00000 n \n`);
-      });
-      pushText(`trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
-      return new Blob(pdfParts, { type: "application/pdf" });
-    }
-
     function downloadBlob(blob, filename) {
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -2105,9 +2058,12 @@ export function initApp(config = {}) {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) return;
       const canvas = await renderReportCanvas();
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.96);
-      const blob = jpegDataUrlToPdfBlob(dataUrl, canvas.width, canvas.height);
-      downloadBlob(blob, `${report.ref || report.id}-training-report.pdf`);
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4", compress: true });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgData = canvas.toDataURL("image/png");
+      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
+      pdf.save(`${report.ref || report.id}-training-report.pdf`);
     }
 
     function triggerStudentUpload(studentId) {

@@ -1597,10 +1597,10 @@
     }
 
     .template-photo-card {
-      width: 12.39cqw;
+      width: 9.6cqw;
       overflow: hidden;
       text-align: center;
-      flex: 0 0 12.39cqw;
+      flex: 0 0 9.6cqw;
     }
 
     .template-photo {
@@ -1614,7 +1614,7 @@
       background: #eef0f3;
       box-sizing: border-box;
       object-fit: cover;
-      object-position: center top;
+      object-position: top;
     }
 
     .template-photo-label {

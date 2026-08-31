@@ -1,7 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
-import QRCode from "qrcode";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
 const CENTRE_PROFILE_KEY = "centre_profile";
@@ -10,7 +7,6 @@ export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
     const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Image 1.jpg?v=2";
-    const REPORT_EXPORT_WIDTH = 794;
     const MONTH_LABEL = "July 2026";
     const CURRENT_MONTH_PREFIX = "2026-07";
     const REPORT_TEMPLATE_SIZE = { width: 896, height: 1200 };
@@ -96,6 +92,35 @@ export function initApp(config = {}) {
     let realtimeChannel = null;
     let renderQueued = false;
     let appEventsBound = false;
+    let reportFilterTimer = null;
+    let coachFilterTimer = null;
+    let studentFilterTimer = null;
+    let centreQrDataUrlPromise = null;
+    const coachQrDataUrlCache = new Map();
+    let qrCodeModulePromise = null;
+    let html2canvasModulePromise = null;
+    let jsPdfModulePromise = null;
+
+    async function getQrCodeLib() {
+      if (!qrCodeModulePromise) {
+        qrCodeModulePromise = import("qrcode").then(module => module.default || module);
+      }
+      return qrCodeModulePromise;
+    }
+
+    async function getHtml2CanvasLib() {
+      if (!html2canvasModulePromise) {
+        html2canvasModulePromise = import("html2canvas").then(module => module.default || module);
+      }
+      return html2canvasModulePromise;
+    }
+
+    async function getJsPdfLib() {
+      if (!jsPdfModulePromise) {
+        jsPdfModulePromise = import("jspdf").then(module => module.jsPDF);
+      }
+      return jsPdfModulePromise;
+    }
 
     function normalizeCentreProfile(profile = {}) {
       return {
@@ -185,7 +210,12 @@ export function initApp(config = {}) {
     }
 
     async function loadQrDataUrl(coach, width = 200) {
-      return QRCode.toDataURL(coachPublicUrl(coach), {
+      const cacheKey = `${coach.id}:${Math.max(200, width)}`;
+      if (coachQrDataUrlCache.has(cacheKey)) {
+        return coachQrDataUrlCache.get(cacheKey);
+      }
+
+      const qrPromise = getQrCodeLib().then(QRCode => QRCode.toDataURL(coachPublicUrl(coach), {
         width: Math.max(200, width),
         margin: 1,
         errorCorrectionLevel: "M",
@@ -193,7 +223,13 @@ export function initApp(config = {}) {
           dark: "#000000",
           light: "#ffffff"
         }
+      })).catch(error => {
+        coachQrDataUrlCache.delete(cacheKey);
+        throw error;
       });
+
+      coachQrDataUrlCache.set(cacheKey, qrPromise);
+      return qrPromise;
     }
 
     function getCoachBySlug(slug) {
@@ -1513,20 +1549,28 @@ export function initApp(config = {}) {
         if (!coach) return;
         const image = container.tagName === "IMG" ? container : container.querySelector("img");
         if (!image) return;
+        if (image.dataset.qrReady === "true") return;
         const width = Number(container.dataset.qrWidth || image.dataset.qrWidth || image.width || 200);
         loadQrDataUrl(coach, width).then(dataUrl => {
           image.src = dataUrl;
+          image.dataset.qrReady = "true";
         }).catch(() => {});
       });
       document.querySelectorAll("[data-qr-centre]").forEach(image => {
+        if (image.dataset.qrReady === "true") return;
         loadCentreQrDataUrl().then(dataUrl => {
           image.src = dataUrl;
+          image.dataset.qrReady = "true";
         }).catch(() => {});
       });
     }
 
     async function loadCentreQrDataUrl() {
-      return QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
+      if (centreQrDataUrlPromise) {
+        return centreQrDataUrlPromise;
+      }
+
+      centreQrDataUrlPromise = getQrCodeLib().then(QRCode => QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
         width: 200,
         margin: 1,
         errorCorrectionLevel: "M",
@@ -1534,7 +1578,27 @@ export function initApp(config = {}) {
           dark: "#000000",
           light: "#ffffff"
         }
+      })).catch(error => {
+        centreQrDataUrlPromise = null;
+        throw error;
       });
+
+      return centreQrDataUrlPromise;
+    }
+
+    function scheduleReportsHydration() {
+      clearTimeout(reportFilterTimer);
+      reportFilterTimer = window.setTimeout(hydrateReportsTable, 120);
+    }
+
+    function scheduleCoachesHydration() {
+      clearTimeout(coachFilterTimer);
+      coachFilterTimer = window.setTimeout(hydrateCoachesTable, 120);
+    }
+
+    function scheduleStudentsHydration() {
+      clearTimeout(studentFilterTimer);
+      studentFilterTimer = window.setTimeout(hydrateStudentsTable, 120);
     }
 
     function attachEvents() {
@@ -1562,19 +1626,19 @@ export function initApp(config = {}) {
       const reportsCoach = document.getElementById("reportsCoachFilter");
 
       [reportsSearch, reportsDate, reportsStatus, reportsCoach].filter(Boolean).forEach(input => {
-        input.addEventListener("input", hydrateReportsTable);
+        input.addEventListener("input", scheduleReportsHydration);
         input.addEventListener("change", hydrateReportsTable);
       });
 
       const coachSearch = document.getElementById("coachSearch");
       if (coachSearch) {
-        coachSearch.addEventListener("input", hydrateCoachesTable);
+        coachSearch.addEventListener("input", scheduleCoachesHydration);
       }
 
       const studentSearch = document.getElementById("studentSearch");
       const studentCoachFilter = document.getElementById("studentCoachFilter");
       [studentSearch, studentCoachFilter].filter(Boolean).forEach(input => {
-        input.addEventListener("input", hydrateStudentsTable);
+        input.addEventListener("input", scheduleStudentsHydration);
         input.addEventListener("change", hydrateStudentsTable);
       });
 
@@ -1610,7 +1674,7 @@ export function initApp(config = {}) {
         });
       }
 
-      ["wizardDate", "wizardTime", "wizardLessonNumber", "wizardTechniques", "wizardFuture", "wizardProgress", "wizardAdditional", "wizardRemarks"].forEach(id => {
+      ["wizardDate", "wizardTime", "wizardLessonNumber", "wizardWhatTaught", "wizardAfterTraining", "wizardBeforeCoaching", "wizardNextLesson", "wizardRemarks"].forEach(id => {
         const element = document.getElementById(id);
         if (element) {
           element.addEventListener("input", updateWizardDraftFromInputs);
@@ -1703,7 +1767,6 @@ export function initApp(config = {}) {
           </tr>
         `;
       }).join("");
-      document.querySelectorAll('#reportsTable [data-action="view-report"]').forEach(button => button.addEventListener("click", handleAction));
     }
 
     function withinDateBucket(date, bucket) {
@@ -1720,6 +1783,14 @@ export function initApp(config = {}) {
       if (!tbody) return;
       const search = (document.getElementById("coachSearch")?.value || "").trim().toLowerCase();
       const coaches = state.coaches.filter(coach => coach.name.toLowerCase().includes(search));
+      const studentTotalsByCoach = state.students.reduce((totals, student) => {
+        totals[student.coachId] = (totals[student.coachId] || 0) + 1;
+        return totals;
+      }, {});
+      const reportTotalsByCoach = state.reports.reduce((totals, report) => {
+        totals[report.coachId] = (totals[report.coachId] || 0) + 1;
+        return totals;
+      }, {});
       tbody.innerHTML = coaches.map(coach => `
         <tr>
           <td>
@@ -1728,8 +1799,8 @@ export function initApp(config = {}) {
               <strong>${coach.name}</strong>
             </div>
           </td>
-          <td>${state.students.filter(student => student.coachId === coach.id).length}</td>
-          <td>${state.reports.filter(report => report.coachId === coach.id).length}</td>
+          <td>${studentTotalsByCoach[coach.id] || 0}</td>
+          <td>${reportTotalsByCoach[coach.id] || 0}</td>
           <td><span class="badge green"><span class="dot"></span>Active</span></td>
           <td>
             <a class="secondary-btn" href="/coach/${encodeURIComponent(coach.slug)}" target="_blank" rel="noreferrer">View Profile</a>
@@ -1776,7 +1847,6 @@ export function initApp(config = {}) {
           </tr>
         `;
       }).join("");
-      document.querySelectorAll('#studentsTable [data-action="student-upload"]').forEach(button => button.addEventListener("click", handleAction));
     }
 
     function startReportFlow() {
@@ -2010,25 +2080,20 @@ export function initApp(config = {}) {
       if (!reportTemplate) {
         throw new Error("Report template is not mounted");
       }
-      const previousWidth = reportTemplate.style.width;
-      try {
-        reportTemplate.style.width = `${REPORT_EXPORT_WIDTH}px`;
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        await waitForReportReady(reportTemplate);
-        const rect = reportTemplate.getBoundingClientRect();
-        return await html2canvas(reportTemplate, {
-          scale: 3,
-          useCORS: true,
-          allowTaint: false,
-          logging: false,
-          removeContainer: true,
-          width: Math.ceil(rect.width),
-          height: Math.ceil(rect.height),
-          backgroundColor: null
-        });
-      } finally {
-        reportTemplate.style.width = previousWidth;
-      }
+      const html2canvas = await getHtml2CanvasLib();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await waitForReportReady(reportTemplate);
+      const rect = reportTemplate.getBoundingClientRect();
+      return await html2canvas(reportTemplate, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        removeContainer: true,
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height),
+        backgroundColor: null
+      });
     }
 
     function saveCentreProfileFromInputs() {
@@ -2058,12 +2123,13 @@ export function initApp(config = {}) {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) return;
       const canvas = await renderReportCanvas();
+      const jsPDF = await getJsPdfLib();
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4", compress: true });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const imgData = canvas.toDataURL("image/png");
       pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
-      pdf.save(`${report.ref || report.id}-training-report.pdf`);
+      downloadBlob(pdf.output("blob"), `${report.ref || report.id}-training-report.pdf`);
     }
 
     function triggerStudentUpload(studentId) {

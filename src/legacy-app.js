@@ -508,15 +508,15 @@ export function initApp(config = {}) {
       return `
         <div class="template-report-bullet-column" style="left:${position.left}%;top:${position.top}%;width:${position.width}%;">
           ${sections.map((lines, index) => `
-            <div class="template-report-bullet-section ${index > 0 ? "template-report-bullet-section-spaced" : ""}">
-              <div class="template-report-bullet-list">
+            <section class="template-report-bullet-section ${index > 0 ? "template-report-bullet-section-spaced" : ""}">
+              <ul class="template-report-bullet-list">
                 ${lines.filter(Boolean).map(line => `
-                  <div class="template-text template-bullet">
+                  <li class="template-text template-bullet">
                     <span>${escapeHtml(line.replace(/^\s*[-]\s*/, ""))}</span>
-                  </div>
+                  </li>
                 `).join("")}
-              </div>
-            </div>
+              </ul>
+            </section>
           `).join("")}
         </div>
       `;
@@ -556,8 +556,10 @@ export function initApp(config = {}) {
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
             `).join("")}
 
-            ${renderFlowBulletColumn([data.bullets.whatTaught, data.bullets.beforeCoaching], { left: 11.8, top: 44.9, width: 35.2 })}
-            ${renderFlowBulletColumn([data.bullets.afterTraining, data.bullets.nextLesson], { left: 55.4, top: 44.9, width: 38.5 })}
+            <div class="template-report-bullet-grid">
+              ${renderFlowBulletColumn([data.bullets.whatTaught, data.bullets.beforeCoaching], { left: 0, top: 0, width: 100 })}
+              ${renderFlowBulletColumn([data.bullets.afterTraining, data.bullets.nextLesson], { left: 0, top: 0, width: 100 })}
+            </div>
 
               ${REPORT_TEMPLATE_REMARK_TOPS.map((top, index) => data.remarksLines[index] ? `
                 <div class="template-text template-bullet template-remarks-bullet" style="left:10.1%;top:${top}%;width:86%;">

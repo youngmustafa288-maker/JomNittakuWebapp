@@ -1475,23 +1475,50 @@
       display: none;
     }
 
-    .template-report-bullet-column {
+    .template-report-bullet-grid {
       position: absolute;
+      left: 11.8%;
+      top: 44.9%;
+      width: 82.1%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 2em;
+      align-items: start;
+      box-sizing: border-box;
+      height: auto;
+      max-height: none;
+      min-width: 0;
+    }
+
+    .template-report-bullet-column {
+      position: relative;
       display: grid;
       grid-auto-rows: max-content;
       align-content: start;
       gap: 0;
       box-sizing: border-box;
+      width: 100%;
+      height: auto;
+      max-height: none;
+      min-width: 0;
       max-width: 100%;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
     }
 
     .template-report-bullet-section {
       position: relative;
+      display: block;
+      margin: 0;
+      padding: 0;
       height: auto;
       max-height: none;
       min-height: 0;
+      min-width: 0;
       box-sizing: border-box;
       max-width: 100%;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
     }
 
     .template-report-bullet-section-spaced {
@@ -1502,11 +1529,29 @@
       display: grid;
       grid-auto-rows: max-content;
       gap: var(--report-bullet-line-gap);
+      margin: 0;
+      padding: 0;
+      list-style: none;
       height: auto;
       max-height: none;
       min-height: 0;
+      min-width: 0;
       box-sizing: border-box;
       max-width: 100%;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+    }
+
+    .template-report-bullet-list .template-bullet {
+      position: static;
+      inset: auto;
+    }
+
+    .template-report-bullet-list .template-bullet span {
+      white-space: normal;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+      min-width: 0;
     }
 
     .template-report-overlay .template-remarks {

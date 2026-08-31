@@ -1587,20 +1587,20 @@
 
     .template-report-photo-group {
       position: absolute;
-      top: 24.92%;
-      left: 63.62%;
+      top: 26.1%;
+      left: 66.1%;
       z-index: 3;
       display: flex;
-      gap: 1.45cqw;
+      gap: 1.1cqw;
       overflow: hidden;
       box-sizing: border-box;
     }
 
     .template-photo-card {
-      width: 12.39cqw;
+      width: 9.6cqw;
       overflow: hidden;
       text-align: center;
-      flex: 0 0 12.39cqw;
+      flex: 0 0 9.6cqw;
     }
 
     .template-photo {

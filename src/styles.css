@@ -1350,8 +1350,6 @@
       pointer-events: none;
       font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
       color: #111111;
-      --report-bullet-line-gap: 0.4em;
-      --report-bullet-section-gap: 2.7em;
     }
 
     .template-text {
@@ -1401,11 +1399,9 @@
       box-sizing: border-box;
       padding-left: 0.52em;
       white-space: normal;
-      overflow-wrap: break-word;
-      word-wrap: break-word;
+      overflow-wrap: anywhere;
       word-break: normal;
-      height: auto;
-      max-width: 100%;
+      max-height: 2.5em;
       background: transparent;
       background-color: transparent;
       backdrop-filter: none;
@@ -1442,8 +1438,9 @@
       padding-left: 0;
       font-size: clamp(0.95rem, 1.8cqw, 1.15rem);
       line-height: 1.12;
-      height: auto;
-      min-height: 0;
+      max-height: 2.5em;
+      height: auto !important;
+      min-height: 1.12em;
       overflow: visible;
       background: transparent;
       background-color: transparent;
@@ -1451,9 +1448,6 @@
       border: none;
       text-decoration: none;
       box-shadow: none;
-      box-sizing: border-box;
-      width: 100%;
-      max-width: 100%;
     }
 
     .template-report-overlay .template-bullet::before {
@@ -1464,94 +1458,16 @@
       display: block;
       max-width: 100%;
       white-space: normal;
-      overflow-wrap: break-word;
-      word-wrap: break-word;
+      overflow-wrap: anywhere;
       word-break: normal;
-      box-sizing: border-box;
-      width: 100%;
     }
 
     .template-report-overlay .template-bullet.empty {
       display: none;
     }
 
-    .template-report-bullet-grid {
-      position: absolute;
-      left: 11.8%;
-      top: 44.9%;
-      width: 82.1%;
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 2em;
-      align-items: start;
-      box-sizing: border-box;
-      height: auto;
-      max-height: none;
-      min-width: 0;
-    }
-
-    .template-report-bullet-column {
-      position: relative;
-      display: grid;
-      grid-auto-rows: max-content;
-      align-content: start;
-      gap: 0;
-      box-sizing: border-box;
-      width: 100%;
-      height: auto;
-      max-height: none;
-      min-width: 0;
-      max-width: 100%;
-      overflow-wrap: break-word;
-      word-wrap: break-word;
-    }
-
-    .template-report-bullet-section {
-      position: relative;
-      display: block;
-      margin: 0;
-      padding: 0;
-      height: auto;
-      max-height: none;
-      min-height: 0;
-      min-width: 0;
-      box-sizing: border-box;
-      max-width: 100%;
-      overflow-wrap: break-word;
-      word-wrap: break-word;
-    }
-
-    .template-report-bullet-section-spaced {
-      margin-top: var(--report-bullet-section-gap);
-    }
-
-    .template-report-bullet-list {
-      display: grid;
-      grid-auto-rows: max-content;
-      gap: var(--report-bullet-line-gap);
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      height: auto;
-      max-height: none;
-      min-height: 0;
-      min-width: 0;
-      box-sizing: border-box;
-      max-width: 100%;
-      overflow-wrap: break-word;
-      word-wrap: break-word;
-    }
-
-    .template-report-bullet-list .template-bullet {
-      position: static;
-      inset: auto;
-    }
-
-    .template-report-bullet-list .template-bullet span {
-      white-space: normal;
-      overflow-wrap: break-word;
-      word-wrap: break-word;
-      min-width: 0;
+    .template-report-overlay .template-bullet.is-compact {
+      font-size: 0.85em;
     }
 
     .template-report-overlay .template-remarks {

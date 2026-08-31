@@ -498,28 +498,10 @@ export function initApp(config = {}) {
 
     function renderPlainBulletOverlays(lines, positions) {
       return positions.map((position, index) => `
-        <div class="template-text template-bullet ${lines[index] ? "" : "empty"}" style="left:${position.left}%;top:${position.top}%;width:${position.width}%;height:${position.height}%;">
+        <div class="template-text template-bullet ${lines[index] ? (lines[index].length > 48 ? "is-compact" : "") : "empty"}" style="left:${position.left}%;top:${position.top}%;width:${position.width}%;height:${position.height}%;">
           <span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span>
         </div>
       `).join("");
-    }
-
-    function renderFlowBulletColumn(sections, position) {
-      return `
-        <div class="template-report-bullet-column" style="left:${position.left}%;top:${position.top}%;width:${position.width}%;">
-          ${sections.map((lines, index) => `
-            <section class="template-report-bullet-section ${index > 0 ? "template-report-bullet-section-spaced" : ""}">
-              <ul class="template-report-bullet-list">
-                ${lines.filter(Boolean).map(line => `
-                  <li class="template-text template-bullet">
-                    <span>${escapeHtml(line.replace(/^\s*[-]\s*/, ""))}</span>
-                  </li>
-                `).join("")}
-              </ul>
-            </section>
-          `).join("")}
-        </div>
-      `;
     }
 
     function splitReportRemarks(value, limit = 5) {
@@ -556,10 +538,22 @@ export function initApp(config = {}) {
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
             `).join("")}
 
-            <div class="template-report-bullet-grid">
-              ${renderFlowBulletColumn([data.bullets.whatTaught, data.bullets.beforeCoaching], { left: 0, top: 0, width: 100 })}
-              ${renderFlowBulletColumn([data.bullets.afterTraining, data.bullets.nextLesson], { left: 0, top: 0, width: 100 })}
-            </div>
+            ${renderPlainBulletOverlays(data.bullets.whatTaught, [
+              { left: 11.8, top: 44.9, width: 35.2, height: 4.4 },
+              { left: 11.8, top: 47.48, width: 35.2, height: 4.4 }
+            ])}
+            ${renderPlainBulletOverlays(data.bullets.beforeCoaching, [
+              { left: 11.8, top: 52.8, width: 35.2, height: 4.4 },
+              { left: 11.8, top: 55.35, width: 35.2, height: 4.4 }
+            ])}
+            ${renderPlainBulletOverlays(data.bullets.afterTraining, [
+              { left: 55.4, top: 44.9, width: 38.5, height: 4.4 },
+              { left: 55.4, top: 47.48, width: 38.5, height: 4.4 }
+            ])}
+            ${renderPlainBulletOverlays(data.bullets.nextLesson, [
+              { left: 55.4, top: 52.8, width: 38.5, height: 4.4 },
+              { left: 55.4, top: 55.35, width: 38.5, height: 4.4 }
+            ])}
 
               ${REPORT_TEMPLATE_REMARK_TOPS.map((top, index) => data.remarksLines[index] ? `
                 <div class="template-text template-bullet template-remarks-bullet" style="left:10.1%;top:${top}%;width:86%;">

@@ -1558,21 +1558,37 @@
       height: 9.5cqw;
       padding: 0.55cqw;
       box-sizing: border-box;
-      background: #ffffff;
-      border: 1px solid rgba(17, 24, 39, 0.14);
-      border-radius: 1.25cqw;
-      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+      background: linear-gradient(135deg, rgba(255, 249, 231, 0.82), rgba(220, 239, 238, 0.68));
+      border: 1px solid rgba(23, 42, 49, 0.18);
+      border-radius: 1.15cqw 1.35cqw 1.2cqw 1.05cqw;
+      box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.28) inset;
+      transform: perspective(800px) rotateY(-3deg) rotateX(2deg);
+      transform-origin: center center;
       overflow: hidden;
+    }
+
+    .template-report-qr-pocket::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: linear-gradient(116deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.035) 38%, rgba(255, 255, 255, 0) 68%);
+      box-shadow: -0.2cqw 0.2cqw 0.45cqw rgba(0, 0, 0, 0.08);
     }
 
     .template-report-qr {
       display: block;
+      position: relative;
+      z-index: 0;
       width: 100%;
       height: 100%;
       padding: 0;
       background: transparent;
       border-radius: 0;
       object-fit: contain;
+      opacity: 0.94;
+      mix-blend-mode: multiply;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }

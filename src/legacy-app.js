@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import html2canvas from "html2canvas";
 import QRCode from "qrcode";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
@@ -8,6 +9,7 @@ export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
     const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Image 1.jpg?v=2";
+    const REPORT_EXPORT_WIDTH = 794;
     const MONTH_LABEL = "July 2026";
     const CURRENT_MONTH_PREFIX = "2026-07";
     const REPORT_TEMPLATE_SIZE = { width: 896, height: 1200 };
@@ -1914,23 +1916,13 @@ export function initApp(config = {}) {
       URL.revokeObjectURL(link.href);
     }
 
-    function loadImage(src) {
-      return new Promise((resolve, reject) => {
-        const image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = reject;
-        image.src = src;
-      });
-    }
-
-    async function waitForReportReady() {
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    async function waitForReportReady(element) {
       await document.fonts.ready;
-      const reportPaper = document.querySelector(".report-paper");
-      if (!reportPaper || reportPaper.getBoundingClientRect().width === 0) {
+      const target = element || document.querySelector("#reportTemplatePreview");
+      if (!target || target.getBoundingClientRect().width === 0) {
         throw new Error("Report is not visible and ready for export");
       }
-      await Promise.all([...reportPaper.querySelectorAll("img")].map(image => {
+      await Promise.all([...target.querySelectorAll("img")].map(image => {
         if (image.complete && image.naturalWidth > 0) return Promise.resolve();
         return new Promise(resolve => {
           image.addEventListener("load", resolve, { once: true });
@@ -2012,143 +2004,30 @@ export function initApp(config = {}) {
       });
     }
 
-    async function renderReportCanvas(report) {
-      const SCALE = 3;
-      const baseWidth = REPORT_TEMPLATE_SIZE.width;
-      const baseHeight = REPORT_TEMPLATE_SIZE.height;
-      const data = getReportTemplateData(report);
-      const footerY = data.remarksLines.length
-        ? Math.min(
-            REPORT_CANVAS_FOOTER_Y_DEFAULT,
-            REPORT_CANVAS_REMARK_LINE_YS[data.remarksLines.length - 1] + 16
-          )
-        : REPORT_CANVAS_FOOTER_Y_DEFAULT;
-      await document.fonts.ready;
-      const canvas = document.createElement("canvas");
-      canvas.width = baseWidth * SCALE;
-      canvas.height = baseHeight * SCALE;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(SCALE, SCALE);
-      const template = await loadImage(REPORT_TEMPLATE_SRC);
-      ctx.drawImage(template, 0, 0, baseWidth, baseHeight);
-
-      ctx.fillStyle = "#000000";
-      ctx.textBaseline = "top";
-      ctx.font = '700 22px "Kalam", cursive';
-      ctx.fillText(data.session.date, 160, 325);
-      ctx.fillText(data.session.time, 160, 353);
-      drawFittedText(ctx, data.session.centre, 160, 381, 230, 22, 14, 700);
-      drawFittedText(ctx, data.session.coachName, 217, 410, 185, 22, 14, 700);
-
-      const drawPhoto = async (src, x, y, width, height) => {
-        roundedRectPath(ctx, x, y, width, height, 12);
-        ctx.save();
-        ctx.clip();
-        if (src) {
-          try {
-            const image = await loadImage(src);
-            ctx.drawImage(image, x, y, width, height);
-          } catch (error) {
-            src = "";
-          }
-        }
-        if (!src) {
-          ctx.fillStyle = "#E5E7EB";
-          ctx.fillRect(x, y, width, height);
-          ctx.fillStyle = "#C4CBD6";
-          ctx.beginPath();
-          ctx.arc(x + (width / 2), y + 40, 20, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(x + 24, y + height);
-          ctx.quadraticCurveTo(x + (width / 2), y + 66, x + width - 24, y + height);
-          ctx.closePath();
-          ctx.fill();
-        }
-        ctx.restore();
-      };
-
-      const photoWidth = 111;
-      const photoHeight = 123;
-      const photoGap = 13;
-      const photoGroupX = 570;
-      const photoGroupY = 299;
-      await drawPhoto(data.studentPhoto, photoGroupX, photoGroupY, photoWidth, photoHeight);
-      await drawPhoto(data.coachPhoto, photoGroupX + photoWidth + photoGap, photoGroupY, photoWidth, photoHeight);
-      ctx.fillStyle = "#333333";
-      ctx.font = '700 13px Arial, "Helvetica Neue", Helvetica, sans-serif';
-      ctx.textAlign = "center";
-      ctx.fillText("STUDENT", photoGroupX + (photoWidth / 2), photoGroupY + photoHeight + 16);
-      ctx.fillText("COACH", photoGroupX + photoWidth + photoGap + (photoWidth / 2), photoGroupY + photoHeight + 16);
-      ctx.textAlign = "left";
-
-      ctx.fillStyle = "#f6efe4";
-      REPORT_TEMPLATE_BULLET_MASKS.forEach(mask => {
-        const x = (mask.left / 100) * baseWidth;
-        const y = (mask.top / 100) * baseHeight;
-        const width = 0.0325 * baseWidth;
-        const height = 0.022 * baseHeight;
-        roundedRectPath(ctx, x, y, width, height, height / 2);
-        ctx.fill();
-      });
-
-      ctx.fillStyle = "#000000";
-      ctx.font = '400 16px Arial, "Helvetica Neue", Helvetica, sans-serif';
-      const bulletGroups = [
-        { lines: data.bullets.whatTaught, x: 109, ys: [546, 577], width: 302 },
-        { lines: data.bullets.beforeCoaching, x: 109, ys: [654, 685], width: 302 },
-        { lines: data.bullets.afterTraining, x: 499, ys: [546, 577], width: 302 },
-        { lines: data.bullets.nextLesson, x: 499, ys: [654, 685], width: 302 }
-      ];
-      bulletGroups.forEach(group => {
-        group.ys.forEach((y, index) => {
-          drawBulletLine(ctx, group.lines[index], group.x, y, group.width, 19, 2);
-        });
-      });
-
-        ctx.fillStyle = "#000000";
-        ctx.font = '400 15px Arial, "Helvetica Neue", Helvetica, sans-serif';
-        data.remarksLines.forEach((line, index) => {
-          ctx.fillText(line, 96, REPORT_CANVAS_REMARK_YS[index]);
-        });
-
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#111111";
-      ctx.font = 'italic 700 33px "Kalam", cursive';
-      drawFittedText(ctx, data.centreContact, 448, 947, 246, 33, 22, 700);
-      ctx.font = 'italic 700 31px "Kalam", cursive';
-      drawWrappedLines(ctx, data.address, 325, 1022, 246, 31, 3);
-      ctx.textAlign = "left";
-
+    async function renderReportCanvas() {
+      const reportTemplate = document.querySelector("#reportTemplatePreview");
+      if (!reportTemplate) {
+        throw new Error("Report template is not mounted");
+      }
+      const previousWidth = reportTemplate.style.width;
       try {
-        const qrDataUrl = await loadCentreQrDataUrl();
-        const qrImg = new Image();
-        qrImg.src = qrDataUrl;
-        await new Promise((resolve, reject) => {
-          qrImg.onload = resolve;
-          qrImg.onerror = reject;
+        reportTemplate.style.width = `${REPORT_EXPORT_WIDTH}px`;
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await waitForReportReady(reportTemplate);
+        const rect = reportTemplate.getBoundingClientRect();
+        return await html2canvas(reportTemplate, {
+          scale: 3,
+          useCORS: true,
+          allowTaint: false,
+          logging: false,
+          removeContainer: true,
+          width: Math.ceil(rect.width),
+          height: Math.ceil(rect.height),
+          backgroundColor: null
         });
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        const pocketSize = 86 * SCALE;
-        const qrPadding = 5 * SCALE;
-        const qrSize = pocketSize - qrPadding * 2;
-        const qrRight = 25 * SCALE;
-        const qrBottom = 38 * SCALE;
-        const pocketX = canvasWidth - pocketSize - qrRight;
-        const pocketY = canvasHeight - pocketSize - qrBottom;
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.imageSmoothingEnabled = false;
-        ctx.fillStyle = "#ffffff";
-        ctx.beginPath();
-        ctx.roundRect(pocketX, pocketY, pocketSize, pocketSize, 11 * SCALE);
-        ctx.fill();
-        ctx.drawImage(qrImg, pocketX + qrPadding, pocketY + qrPadding, qrSize, qrSize);
-        ctx.restore();
-      } catch (error) {}
-
-      return canvas;
+      } finally {
+        reportTemplate.style.width = previousWidth;
+      }
     }
 
     function saveCentreProfileFromInputs() {
@@ -2225,8 +2104,7 @@ export function initApp(config = {}) {
     async function downloadReportPdf() {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) return;
-      await waitForReportReady();
-      const canvas = await renderReportCanvas(report);
+      const canvas = await renderReportCanvas();
       const dataUrl = canvas.toDataURL("image/jpeg", 0.96);
       const blob = jpegDataUrlToPdfBlob(dataUrl, canvas.width, canvas.height);
       downloadBlob(blob, `${report.ref || report.id}-training-report.pdf`);

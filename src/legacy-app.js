@@ -1044,8 +1044,6 @@ export function initApp(config = {}) {
                   <p>${coach.name} · ${formatDate(report.date)} · ${formatTime(report.time)}</p>
                 </div>
                 <div class="report-actions">
-                  <button class="secondary-btn" data-action="download-report-image">Download Image</button>
-                  <button class="secondary-btn" data-action="download-report-qr">Download QR</button>
                   <button class="primary-btn" data-action="download-report-pdf">Download PDF</button>
                 </div>
               </div>
@@ -1642,8 +1640,6 @@ export function initApp(config = {}) {
       if (action === "pick-student") return pickStudent(event.currentTarget.dataset.studentId);
       if (action === "view-report") return openReportView(event.currentTarget.dataset.reportId);
       if (action === "close-report-view") return navigate("reports");
-      if (action === "download-report-image") return downloadReportImage();
-      if (action === "download-report-qr") return downloadReportQr();
       if (action === "download-report-pdf") return downloadReportPdf();
       if (action === "export-csv") return exportCsv();
       if (action === "upload-admin-photo") return triggerProfileUpload("admin");
@@ -1927,6 +1923,22 @@ export function initApp(config = {}) {
       });
     }
 
+    async function waitForReportReady() {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await document.fonts.ready;
+      const reportPaper = document.querySelector(".report-paper");
+      if (!reportPaper || reportPaper.getBoundingClientRect().width === 0) {
+        throw new Error("Report is not visible and ready for export");
+      }
+      await Promise.all([...reportPaper.querySelectorAll("img")].map(image => {
+        if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+        return new Promise(resolve => {
+          image.addEventListener("load", resolve, { once: true });
+          image.addEventListener("error", resolve, { once: true });
+        });
+      }));
+    }
+
     function roundedRectPath(ctx, x, y, width, height, radius) {
       ctx.beginPath();
       ctx.moveTo(x + radius, y);
@@ -2169,33 +2181,37 @@ export function initApp(config = {}) {
       const pdfParts = [];
       const offsets = [];
       let cursor = 0;
-      const push = value => {
-        const chunk = typeof value === "string" ? value : new TextDecoder().decode(value);
+      const pushText = value => {
+        const chunk = new TextEncoder().encode(value);
         pdfParts.push(chunk);
         cursor += chunk.length;
       };
+      const pushBytes = value => {
+        pdfParts.push(value);
+        cursor += value.length;
+      };
       const addObject = content => {
         offsets.push(cursor);
-        push(`${offsets.length} 0 obj\n${content}\nendobj\n`);
+        pushText(`${offsets.length} 0 obj\n${content}\nendobj\n`);
       };
 
-      push("%PDF-1.4\n");
+      pushText("%PDF-1.4\n");
       addObject("<< /Type /Catalog /Pages 2 0 R >>");
       addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
       addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
       offsets.push(cursor);
-      push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);
-      push(atob(dataUrl.split(",")[1]));
-      push("\nendstream\nendobj\n");
+      pushText(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);
+      pushBytes(imageBytes);
+      pushText("\nendstream\nendobj\n");
       const contentStream = `q\n${width} 0 0 ${height} 0 0 cm\n/Im0 Do\nQ`;
       addObject(`<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream`);
       const xrefStart = cursor;
-      push(`xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`);
+      pushText(`xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`);
       offsets.forEach(offset => {
-        push(`${String(offset).padStart(10, "0")} 00000 n \n`);
+        pushText(`${String(offset).padStart(10, "0")} 00000 n \n`);
       });
-      push(`trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
-      return new Blob([pdfParts.join("")], { type: "application/pdf" });
+      pushText(`trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
+      return new Blob(pdfParts, { type: "application/pdf" });
     }
 
     function downloadBlob(blob, filename) {
@@ -2206,25 +2222,10 @@ export function initApp(config = {}) {
       URL.revokeObjectURL(link.href);
     }
 
-    async function downloadReportImage() {
-      const report = state.reports.find(item => item.id === state.ui.reportViewId);
-      if (!report) return;
-      const canvas = await renderReportCanvas(report);
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-      downloadBlob(blob, `${report.ref || report.id}-training-report.png`);
-    }
-
-    async function downloadReportQr() {
-      const qrDataUrl = await loadCentreQrDataUrl();
-      const link = document.createElement("a");
-      link.download = "centre-qr.png";
-      link.href = qrDataUrl;
-      link.click();
-    }
-
     async function downloadReportPdf() {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) return;
+      await waitForReportReady();
       const canvas = await renderReportCanvas(report);
       const dataUrl = canvas.toDataURL("image/jpeg", 0.96);
       const blob = jpegDataUrlToPdfBlob(dataUrl, canvas.width, canvas.height);

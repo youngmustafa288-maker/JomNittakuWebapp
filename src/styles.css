@@ -1642,10 +1642,6 @@
       display: block;
     }
 
-    .pdf-export-mode .template-photo {
-      aspect-ratio: 111 / 100;
-    }
-
     .report-export-note {
       margin-top: 10px;
       text-align: center;

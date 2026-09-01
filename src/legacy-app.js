@@ -2112,6 +2112,8 @@ export function initApp(config = {}) {
         onclone: clonedDoc => {
           const clonedReportTemplate = clonedDoc.querySelector("#reportTemplatePreview");
           if (!clonedReportTemplate) return;
+          clonedReportTemplate.style.setProperty("container-type", "inline-size");
+          clonedReportTemplate.style.setProperty("container-name", "report");
           clonedReportTemplate.style.width = `${containerWidth}px`;
           clonedReportTemplate.style.minWidth = `${containerWidth}px`;
           clonedReportTemplate.style.maxWidth = `${containerWidth}px`;
@@ -2124,7 +2126,9 @@ export function initApp(config = {}) {
           clonedReportTemplate.querySelectorAll(".template-photo-card").forEach(card => {
             card.style.width = `${photoCardWidthPx}px`;
             card.style.minWidth = `${photoCardWidthPx}px`;
+            card.style.maxWidth = `${photoCardWidthPx}px`;
             card.style.flex = `0 0 ${photoCardWidthPx}px`;
+            card.style.flexShrink = "0";
           });
         }
       });

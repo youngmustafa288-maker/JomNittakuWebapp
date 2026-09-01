@@ -2204,17 +2204,16 @@ export function initApp(config = {}) {
     async function downloadReportPdf() {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) return;
-      const canvas = await getReportExportCanvas(report);
+      const canvas = await renderReportCanvas();
       const jsPDF = await getJsPdfLib();
       const imgData = canvas.toDataURL("image/png");
-      const pageWidth = canvas.width;
-      const pageHeight = canvas.height;
       const pdf = new jsPDF({
-        orientation: pageHeight > pageWidth ? "portrait" : "landscape",
-        unit: "pt",
-        format: [pageWidth * 0.75, pageHeight * 0.75]
+        orientation: "portrait",
+        unit: "px",
+        format: [canvas.width, canvas.height],
+        hotfixes: ["px_scaling"]
       });
-      pdf.addImage(imgData, "PNG", 0, 0, pageWidth * 0.75, pageHeight * 0.75);
+      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
       downloadBlob(pdf.output("blob"), `${report.ref || report.id}-training-report.pdf`);
     }
 

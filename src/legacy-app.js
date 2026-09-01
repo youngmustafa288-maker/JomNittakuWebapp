@@ -2096,17 +2096,57 @@ export function initApp(config = {}) {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await waitForReportReady(reportTemplate);
       const rect = reportTemplate.getBoundingClientRect();
-      return await html2canvas(reportTemplate, {
-        scale: 3,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 0,
-        logging: false,
-        removeContainer: true,
-        width: Math.ceil(rect.width),
-        height: Math.ceil(rect.height),
-        backgroundColor: null
+      const photoGroup = reportTemplate.querySelector(".template-report-photo-group");
+      const photoCards = [...reportTemplate.querySelectorAll(".template-photo-card")];
+      const originalStyles = [];
+
+      if (photoGroup) {
+        const computed = window.getComputedStyle(photoGroup);
+        originalStyles.push({
+          el: photoGroup,
+          gap: photoGroup.style.gap
+        });
+        photoGroup.style.gap = computed.gap;
+      }
+
+      photoCards.forEach(card => {
+        const computed = window.getComputedStyle(card);
+        originalStyles.push({
+          el: card,
+          width: card.style.width,
+          flex: card.style.flex
+        });
+        card.style.width = computed.width;
+        card.style.flex = `0 0 ${computed.width}`;
       });
+
+      let canvas;
+      try {
+        canvas = await html2canvas(reportTemplate, {
+          scale: 3,
+          useCORS: true,
+          allowTaint: true,
+          imageTimeout: 0,
+          logging: false,
+          removeContainer: true,
+          width: Math.ceil(rect.width),
+          height: Math.ceil(rect.height),
+          backgroundColor: null
+        });
+      } finally {
+        originalStyles.forEach(style => {
+          if ("gap" in style) {
+            style.el.style.gap = style.gap;
+          }
+          if ("width" in style) {
+            style.el.style.width = style.width;
+          }
+          if ("flex" in style) {
+            style.el.style.flex = style.flex;
+          }
+        });
+      }
+      return canvas;
     }
 
     function primeReportExport(report) {

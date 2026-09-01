@@ -2096,7 +2096,15 @@ export function initApp(config = {}) {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await waitForReportReady(reportTemplate);
       const rect = reportTemplate.getBoundingClientRect();
+      const computedStyle = window.getComputedStyle(reportTemplate);
+      console.log("Report template metrics:", {
+        rectWidth: rect.width,
+        rectHeight: rect.height,
+        cssWidth: computedStyle.width
+      });
       const containerWidth = rect.width;
+      const exportWidth = Math.max(containerWidth, 794);
+      const exportHeight = (rect.height / rect.width) * exportWidth;
       const photoCardWidthPx = containerWidth * 0.112;
       const photoGapPx = containerWidth * 0.0145;
       const photoImageHeightPx = photoCardWidthPx * (123 / 111);
@@ -2107,17 +2115,17 @@ export function initApp(config = {}) {
         imageTimeout: 0,
         logging: false,
         removeContainer: true,
-        width: Math.ceil(rect.width),
-        height: Math.ceil(rect.height),
+        width: Math.ceil(exportWidth),
+        height: Math.ceil(exportHeight),
         backgroundColor: null,
         onclone: clonedDoc => {
           const clonedReportTemplate = clonedDoc.querySelector("#reportTemplatePreview");
           if (!clonedReportTemplate) return;
           clonedReportTemplate.style.setProperty("container-type", "inline-size");
           clonedReportTemplate.style.setProperty("container-name", "report");
-          clonedReportTemplate.style.width = `${containerWidth}px`;
-          clonedReportTemplate.style.minWidth = `${containerWidth}px`;
-          clonedReportTemplate.style.maxWidth = `${containerWidth}px`;
+          clonedReportTemplate.style.width = `${exportWidth}px`;
+          clonedReportTemplate.style.minWidth = `${exportWidth}px`;
+          clonedReportTemplate.style.maxWidth = `${exportWidth}px`;
 
           const clonedPhotoGroup = clonedReportTemplate.querySelector(".template-report-photo-group");
           if (clonedPhotoGroup) {

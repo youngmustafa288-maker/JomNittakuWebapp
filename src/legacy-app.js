@@ -2099,6 +2099,7 @@ export function initApp(config = {}) {
       const containerWidth = rect.width;
       const photoCardWidthPx = containerWidth * 0.112;
       const photoGapPx = containerWidth * 0.0145;
+      const photoImageHeightPx = photoCardWidthPx * (123 / 111);
       return await html2canvas(reportTemplate, {
         scale: 3,
         useCORS: true,
@@ -2129,6 +2130,15 @@ export function initApp(config = {}) {
             card.style.maxWidth = `${photoCardWidthPx}px`;
             card.style.flex = `0 0 ${photoCardWidthPx}px`;
             card.style.flexShrink = "0";
+          });
+
+          clonedReportTemplate.querySelectorAll(".template-photo").forEach(photo => {
+            photo.style.width = "100%";
+            photo.style.height = `${photoImageHeightPx}px`;
+            photo.style.maxHeight = `${photoImageHeightPx}px`;
+            photo.style.objectFit = "cover";
+            photo.style.objectPosition = "center top";
+            photo.style.display = "block";
           });
         }
       });

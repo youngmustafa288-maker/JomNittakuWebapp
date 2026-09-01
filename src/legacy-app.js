@@ -2095,7 +2095,7 @@ export function initApp(config = {}) {
       await waitForReportReady(reportTemplate);
       const rect = reportTemplate.getBoundingClientRect();
       return await html2canvas(reportTemplate, {
-        scale: 2,
+        scale: window.devicePixelRatio || 2,
         useCORS: true,
         allowTaint: false,
         logging: false,
@@ -2160,14 +2160,11 @@ export function initApp(config = {}) {
       if (!report) return;
       const canvas = await getReportExportCanvas(report);
       const jsPDF = await getJsPdfLib();
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "px",
-        format: [canvas.width, canvas.height],
-        hotfixes: ["px_scaling"]
-      });
+      const pageWidth = 210;
+      const pageHeight = (canvas.height * pageWidth) / canvas.width;
+      const pdf = new jsPDF({ orientation: "p", unit: "mm", format: [pageWidth, pageHeight] });
       const imgData = canvas.toDataURL("image/png");
-      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height, undefined, "NONE");
+      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "NONE");
       downloadBlob(pdf.output("blob"), `${report.ref || report.id}-training-report.pdf`);
     }
 

@@ -2000,7 +2000,9 @@ export function initApp(config = {}) {
         throw new Error("Report is not visible and ready for export");
       }
       await Promise.all([...target.querySelectorAll("img")].map(image => {
-        if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+        if (image.complete && image.naturalWidth > 0) {
+          return image.decode ? image.decode().catch(() => {}) : Promise.resolve();
+        }
         return new Promise(resolve => {
           image.addEventListener("load", resolve, { once: true });
           image.addEventListener("error", resolve, { once: true });
@@ -2095,9 +2097,10 @@ export function initApp(config = {}) {
       await waitForReportReady(reportTemplate);
       const rect = reportTemplate.getBoundingClientRect();
       return await html2canvas(reportTemplate, {
-        scale: window.devicePixelRatio || 2,
+        scale: 3,
         useCORS: true,
-        allowTaint: false,
+        allowTaint: true,
+        imageTimeout: 0,
         logging: false,
         removeContainer: true,
         width: Math.ceil(rect.width),
@@ -2161,10 +2164,14 @@ export function initApp(config = {}) {
       const canvas = await getReportExportCanvas(report);
       const jsPDF = await getJsPdfLib();
       const pageWidth = 210;
-      const pageHeight = (canvas.height * pageWidth) / canvas.width;
-      const pdf = new jsPDF({ orientation: "p", unit: "mm", format: [pageWidth, pageHeight] });
+      const pageHeight = (canvas.height / canvas.width) * pageWidth;
+      const pdf = new jsPDF({
+        orientation: pageHeight > pageWidth ? "portrait" : "landscape",
+        unit: "mm",
+        format: [pageWidth, pageHeight]
+      });
       const imgData = canvas.toDataURL("image/png");
-      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "NONE");
+      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight, "", "FAST");
       downloadBlob(pdf.output("blob"), `${report.ref || report.id}-training-report.pdf`);
     }
 

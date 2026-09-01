@@ -2103,6 +2103,16 @@ export function initApp(config = {}) {
       const photoCards = [...reportTemplate.querySelectorAll(".template-photo-card")];
       const originalStyles = [];
 
+      originalStyles.push({
+        el: reportTemplate,
+        width: reportTemplate.style.width,
+        minWidth: reportTemplate.style.minWidth,
+        maxWidth: reportTemplate.style.maxWidth
+      });
+      reportTemplate.style.width = `${containerWidth}px`;
+      reportTemplate.style.minWidth = `${containerWidth}px`;
+      reportTemplate.style.maxWidth = `${containerWidth}px`;
+
       if (photoGroup) {
         originalStyles.push({
           el: photoGroup,
@@ -2123,6 +2133,12 @@ export function initApp(config = {}) {
         card.style.flex = `0 0 ${photoCardWidthPx}px`;
       });
 
+      console.log("Container width:", containerWidth);
+      photoCards.forEach(card => {
+        console.log("Card computed width:", card.getBoundingClientRect().width);
+        console.log("Card inline style after fix:", card.style.width);
+      });
+
       let canvas;
       try {
         canvas = await html2canvas(reportTemplate, {
@@ -2138,6 +2154,15 @@ export function initApp(config = {}) {
         });
       } finally {
         originalStyles.forEach(style => {
+          if ("width" in style && style.el === reportTemplate) {
+            style.el.style.width = style.width;
+          }
+          if ("minWidth" in style && style.el === reportTemplate) {
+            style.el.style.minWidth = style.minWidth;
+          }
+          if ("maxWidth" in style && style.el === reportTemplate) {
+            style.el.style.maxWidth = style.maxWidth;
+          }
           if ("gap" in style) {
             style.el.style.gap = style.gap;
           }

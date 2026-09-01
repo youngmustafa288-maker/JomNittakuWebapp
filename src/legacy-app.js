@@ -2099,85 +2099,35 @@ export function initApp(config = {}) {
       const containerWidth = rect.width;
       const photoCardWidthPx = containerWidth * 0.112;
       const photoGapPx = containerWidth * 0.0145;
-      const photoGroup = reportTemplate.querySelector(".template-report-photo-group");
-      const photoCards = [...reportTemplate.querySelectorAll(".template-photo-card")];
-      const originalStyles = [];
+      return await html2canvas(reportTemplate, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 0,
+        logging: false,
+        removeContainer: true,
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height),
+        backgroundColor: null,
+        onclone: clonedDoc => {
+          const clonedReportTemplate = clonedDoc.querySelector("#reportTemplatePreview");
+          if (!clonedReportTemplate) return;
+          clonedReportTemplate.style.width = `${containerWidth}px`;
+          clonedReportTemplate.style.minWidth = `${containerWidth}px`;
+          clonedReportTemplate.style.maxWidth = `${containerWidth}px`;
 
-      originalStyles.push({
-        el: reportTemplate,
-        width: reportTemplate.style.width,
-        minWidth: reportTemplate.style.minWidth,
-        maxWidth: reportTemplate.style.maxWidth
+          const clonedPhotoGroup = clonedReportTemplate.querySelector(".template-report-photo-group");
+          if (clonedPhotoGroup) {
+            clonedPhotoGroup.style.gap = `${photoGapPx}px`;
+          }
+
+          clonedReportTemplate.querySelectorAll(".template-photo-card").forEach(card => {
+            card.style.width = `${photoCardWidthPx}px`;
+            card.style.minWidth = `${photoCardWidthPx}px`;
+            card.style.flex = `0 0 ${photoCardWidthPx}px`;
+          });
+        }
       });
-      reportTemplate.style.width = `${containerWidth}px`;
-      reportTemplate.style.minWidth = `${containerWidth}px`;
-      reportTemplate.style.maxWidth = `${containerWidth}px`;
-
-      if (photoGroup) {
-        originalStyles.push({
-          el: photoGroup,
-          gap: photoGroup.style.gap
-        });
-        photoGroup.style.gap = `${photoGapPx}px`;
-      }
-
-      photoCards.forEach(card => {
-        originalStyles.push({
-          el: card,
-          width: card.style.width,
-          minWidth: card.style.minWidth,
-          flex: card.style.flex
-        });
-        card.style.width = `${photoCardWidthPx}px`;
-        card.style.minWidth = `${photoCardWidthPx}px`;
-        card.style.flex = `0 0 ${photoCardWidthPx}px`;
-      });
-
-      console.log("Container width:", containerWidth);
-      photoCards.forEach(card => {
-        console.log("Card computed width:", card.getBoundingClientRect().width);
-        console.log("Card inline style after fix:", card.style.width);
-      });
-
-      let canvas;
-      try {
-        canvas = await html2canvas(reportTemplate, {
-          scale: 3,
-          useCORS: true,
-          allowTaint: true,
-          imageTimeout: 0,
-          logging: false,
-          removeContainer: true,
-          width: Math.ceil(rect.width),
-          height: Math.ceil(rect.height),
-          backgroundColor: null
-        });
-      } finally {
-        originalStyles.forEach(style => {
-          if ("width" in style && style.el === reportTemplate) {
-            style.el.style.width = style.width;
-          }
-          if ("minWidth" in style && style.el === reportTemplate) {
-            style.el.style.minWidth = style.minWidth;
-          }
-          if ("maxWidth" in style && style.el === reportTemplate) {
-            style.el.style.maxWidth = style.maxWidth;
-          }
-          if ("gap" in style) {
-            style.el.style.gap = style.gap;
-          }
-          if ("width" in style) {
-            style.el.style.width = style.width;
-          }
-          if ("minWidth" in style) {
-            style.el.style.minWidth = style.minWidth;
-          }
-          if ("flex" in style) {
-            style.el.style.flex = style.flex;
-          }
-        });
-      }
-      return canvas;
     }
 
     function primeReportExport(report) {

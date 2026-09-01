@@ -2096,28 +2096,31 @@ export function initApp(config = {}) {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await waitForReportReady(reportTemplate);
       const rect = reportTemplate.getBoundingClientRect();
+      const containerWidth = rect.width;
+      const photoCardWidthPx = containerWidth * 0.112;
+      const photoGapPx = containerWidth * 0.0145;
       const photoGroup = reportTemplate.querySelector(".template-report-photo-group");
       const photoCards = [...reportTemplate.querySelectorAll(".template-photo-card")];
       const originalStyles = [];
 
       if (photoGroup) {
-        const computed = window.getComputedStyle(photoGroup);
         originalStyles.push({
           el: photoGroup,
           gap: photoGroup.style.gap
         });
-        photoGroup.style.gap = computed.gap;
+        photoGroup.style.gap = `${photoGapPx}px`;
       }
 
       photoCards.forEach(card => {
-        const computed = window.getComputedStyle(card);
         originalStyles.push({
           el: card,
           width: card.style.width,
+          minWidth: card.style.minWidth,
           flex: card.style.flex
         });
-        card.style.width = computed.width;
-        card.style.flex = `0 0 ${computed.width}`;
+        card.style.width = `${photoCardWidthPx}px`;
+        card.style.minWidth = `${photoCardWidthPx}px`;
+        card.style.flex = `0 0 ${photoCardWidthPx}px`;
       });
 
       let canvas;
@@ -2140,6 +2143,9 @@ export function initApp(config = {}) {
           }
           if ("width" in style) {
             style.el.style.width = style.width;
+          }
+          if ("minWidth" in style) {
+            style.el.style.minWidth = style.minWidth;
           }
           if ("flex" in style) {
             style.el.style.flex = style.flex;

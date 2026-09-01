@@ -523,7 +523,9 @@ export function initApp(config = {}) {
     function renderTemplatePhoto(photo, label) {
       return `
         <div class="template-photo-card">
-          <img class="template-photo" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
+          <div class="template-photo-frame">
+            <img class="template-photo" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
+          </div>
           <div class="template-photo-label">${label}</div>
         </div>
       `;
@@ -2129,13 +2131,17 @@ export function initApp(config = {}) {
 
           clonedReportTemplate.querySelectorAll(".template-photo-card").forEach(card => {
             card.style.width = `${photoCardWidthPx}px`;
-            card.style.height = `${photoCardHeightPx}px`;
             card.style.minWidth = `${photoCardWidthPx}px`;
             card.style.maxWidth = `${photoCardWidthPx}px`;
-            card.style.minHeight = `${photoCardHeightPx}px`;
-            card.style.maxHeight = `${photoCardHeightPx}px`;
             card.style.flex = `0 0 ${photoCardWidthPx}px`;
             card.style.flexShrink = "0";
+          });
+
+          clonedReportTemplate.querySelectorAll(".template-photo-frame").forEach(frame => {
+            frame.style.width = "100%";
+            frame.style.height = `${photoCardHeightPx}px`;
+            frame.style.minHeight = `${photoCardHeightPx}px`;
+            frame.style.maxHeight = `${photoCardHeightPx}px`;
           });
 
           clonedReportTemplate.querySelectorAll(".template-photo").forEach(photo => {

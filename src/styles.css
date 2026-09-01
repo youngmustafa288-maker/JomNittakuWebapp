@@ -1653,6 +1653,59 @@
       font-size: 0.93rem;
     }
 
+    .report-info-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .report-photo-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .report-photo-card {
+      width: 96px;
+      text-align: center;
+    }
+
+    .report-photo-card .photo {
+      width: 100%;
+      aspect-ratio: 4 / 5;
+      border-radius: 16px;
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      border: 1px solid rgba(215, 222, 235, 0.95);
+      box-shadow: 0 10px 22px rgba(20, 34, 64, 0.08);
+    }
+
+    .report-photo-card strong {
+      display: block;
+      margin-top: 6px;
+      color: var(--navy-900);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .report-summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .report-footer {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 16px;
+    }
+
     .notice {
       padding: 14px 16px;
       border-radius: 14px;
@@ -1687,7 +1740,14 @@
       }
 
       .sidebar {
-        padding: 20px 18px;
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        height: auto;
+        padding: 14px 14px 12px;
+        gap: 14px;
+        border-right: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       }
 
       .main,
@@ -1695,16 +1755,66 @@
       .table-card,
       .section-card,
       .profile-card {
-        padding: 18px;
+        padding: 16px;
+      }
+
+      .sidebar-nav {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        margin-top: 0;
+        scrollbar-width: none;
+      }
+
+      .sidebar-nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      .sidebar-nav-item {
+        flex: 0 0 auto;
+        padding: 10px 14px;
+        border-radius: 999px;
+        transform: none !important;
+      }
+
+      .sidebar-nav-item:hover,
+      .sidebar-nav-item.active {
+        transform: none;
+      }
+
+      .topbar {
+        justify-content: flex-start;
+        margin-bottom: 16px;
+      }
+
+      .topbar-actions {
+        width: 100%;
+        flex-wrap: wrap;
+      }
+
+      .topbar-actions > * {
+        flex: 1 1 calc(50% - 6px);
       }
 
       .page-header {
         flex-direction: column;
         align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 18px;
       }
 
       .header-copy {
         width: auto;
+      }
+
+      .header-copy h1 {
+        white-space: normal;
+        font-size: clamp(1.8rem, 7vw, 2.4rem);
+      }
+
+      .header-copy p {
+        font-size: 0.94rem;
       }
 
       .section-header,
@@ -1719,11 +1829,76 @@
         grid-template-columns: 1fr 1fr;
       }
 
+      .students-filter-bar,
+      .reports-filter-bar {
+        flex-direction: column;
+      }
+
+      .students-filter-bar .search-input,
+      .reports-filter-bar .search-input,
+      .students-filter-bar .filter-select,
+      .reports-filter-bar .filter-select {
+        flex: 1 1 auto;
+      }
+
+      .report-view-wrap {
+        gap: 12px;
+      }
+
+      .report-paper {
+        padding: 12px;
+      }
+
+      .report-info-grid,
+      .report-summary,
+      .report-footer {
+        grid-template-columns: 1fr;
+      }
+
+      .report-photo-row {
+        justify-content: flex-start;
+      }
+
+      .report-photo-card {
+        width: 88px;
+      }
+
+      .report-actions {
+        width: 100%;
+      }
+
+      .report-actions > * {
+        flex: 1 1 100%;
+      }
+
+      .template-report-shell {
+        border-radius: 18px;
+      }
+
+      .public-coach-page,
+      .public-centre-page,
+      .login-screen {
+        padding: 18px 12px;
+      }
+
+      .public-coach-card,
+      .public-centre-card {
+        padding: 24px 18px 20px;
+      }
+
+      .public-coach-stats {
+        grid-template-columns: 1fr;
+      }
+
       .login-panel {
-        padding: 26px;
+        padding: 22px;
       }
 
       .login-accounts {
+        grid-template-columns: 1fr;
+      }
+
+      .wizard-steps {
         grid-template-columns: 1fr;
       }
     }

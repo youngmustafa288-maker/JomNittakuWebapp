@@ -2095,18 +2095,10 @@ export function initApp(config = {}) {
       const html2canvas = await getHtml2CanvasLib();
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await waitForReportReady(reportTemplate);
-      const rect = reportTemplate.getBoundingClientRect();
-      const computedStyle = window.getComputedStyle(reportTemplate);
-      console.log("Report template metrics:", {
-        rectWidth: rect.width,
-        rectHeight: rect.height,
-        cssWidth: computedStyle.width
-      });
-      const containerWidth = rect.width;
-      const exportWidth = Math.max(containerWidth, 794);
-      const exportHeight = (rect.height / rect.width) * exportWidth;
-      const photoCardWidthPx = containerWidth * 0.112;
-      const photoGapPx = containerWidth * 0.0145;
+      const exportWidth = REPORT_TEMPLATE_SIZE.width;
+      const exportHeight = REPORT_TEMPLATE_SIZE.height;
+      const photoCardWidthPx = exportWidth * 0.112;
+      const photoGapPx = exportWidth * 0.0145;
       const photoImageHeightPx = photoCardWidthPx * (123 / 111);
       return await html2canvas(reportTemplate, {
         scale: 3,
@@ -2124,8 +2116,11 @@ export function initApp(config = {}) {
           clonedReportTemplate.style.setProperty("container-type", "inline-size");
           clonedReportTemplate.style.setProperty("container-name", "report");
           clonedReportTemplate.style.width = `${exportWidth}px`;
+          clonedReportTemplate.style.height = `${exportHeight}px`;
           clonedReportTemplate.style.minWidth = `${exportWidth}px`;
           clonedReportTemplate.style.maxWidth = `${exportWidth}px`;
+          clonedReportTemplate.style.minHeight = `${exportHeight}px`;
+          clonedReportTemplate.style.maxHeight = `${exportHeight}px`;
 
           const clonedPhotoGroup = clonedReportTemplate.querySelector(".template-report-photo-group");
           if (clonedPhotoGroup) {

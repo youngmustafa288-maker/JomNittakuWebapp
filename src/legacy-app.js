@@ -2098,8 +2098,8 @@ export function initApp(config = {}) {
       const exportWidth = REPORT_TEMPLATE_SIZE.width;
       const exportHeight = REPORT_TEMPLATE_SIZE.height;
       const photoCardWidthPx = exportWidth * 0.112;
+      const photoCardHeightPx = photoCardWidthPx * (111 / 123);
       const photoGapPx = exportWidth * 0.0145;
-      const photoImageHeightPx = photoCardWidthPx * (111 / 123);
       return await html2canvas(reportTemplate, {
         scale: 3,
         useCORS: true,
@@ -2129,18 +2129,21 @@ export function initApp(config = {}) {
 
           clonedReportTemplate.querySelectorAll(".template-photo-card").forEach(card => {
             card.style.width = `${photoCardWidthPx}px`;
+            card.style.height = `${photoCardHeightPx}px`;
             card.style.minWidth = `${photoCardWidthPx}px`;
             card.style.maxWidth = `${photoCardWidthPx}px`;
+            card.style.minHeight = `${photoCardHeightPx}px`;
+            card.style.maxHeight = `${photoCardHeightPx}px`;
             card.style.flex = `0 0 ${photoCardWidthPx}px`;
             card.style.flexShrink = "0";
           });
 
           clonedReportTemplate.querySelectorAll(".template-photo").forEach(photo => {
             photo.style.width = "100%";
-            photo.style.height = `${photoImageHeightPx}px`;
-            photo.style.maxHeight = `${photoImageHeightPx}px`;
+            photo.style.height = "100%";
+            photo.style.maxHeight = "100%";
             photo.style.objectFit = "cover";
-            photo.style.objectPosition = "center top";
+            photo.style.objectPosition = "center center";
             photo.style.display = "block";
           });
         }

@@ -1598,6 +1598,7 @@
 
     .template-photo-card {
       width: 11.2cqw;
+      aspect-ratio: 123 / 111;
       overflow: hidden;
       text-align: center;
       flex: 0 0 11.2cqw;
@@ -1606,8 +1607,7 @@
     .template-photo {
       display: block;
       width: 100%;
-      height: auto;
-      aspect-ratio: 123 / 111;
+      height: 100%;
       border-radius: 6px;
       overflow: hidden;
       border: 1px solid #d5d9e0;

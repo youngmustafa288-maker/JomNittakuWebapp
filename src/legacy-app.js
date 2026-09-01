@@ -2198,16 +2198,15 @@ export function initApp(config = {}) {
       if (!report) return;
       const canvas = await getReportExportCanvas(report);
       const jsPDF = await getJsPdfLib();
+      const imgData = canvas.toDataURL("image/png");
       const pageWidth = canvas.width;
       const pageHeight = canvas.height;
       const pdf = new jsPDF({
         orientation: pageHeight > pageWidth ? "portrait" : "landscape",
-        unit: "px",
-        format: [pageWidth, pageHeight],
-        hotfixes: ["px_scaling"]
+        unit: "pt",
+        format: [pageWidth * 0.75, pageHeight * 0.75]
       });
-      const imgData = canvas.toDataURL("image/png");
-      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight, "", "NONE");
+      pdf.addImage(imgData, "PNG", 0, 0, pageWidth * 0.75, pageHeight * 0.75);
       downloadBlob(pdf.output("blob"), `${report.ref || report.id}-training-report.pdf`);
     }
 

@@ -28,7 +28,6 @@ export function initApp(config = {}) {
     const REPORT_CANVAS_REMARK_LINE_YS = [794, 825, 856, 887, 918];
     const REPORT_TEMPLATE_FOOTER_TOP_DEFAULT = 75.95;
     const REPORT_CANVAS_FOOTER_Y_DEFAULT = 950;
-    const PDF_PAGE_SIZE = { width: 595.28, height: 841.89 };
     const PHOTO_PLACEHOLDER_SVG = `
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 132" preserveAspectRatio="none" aria-hidden="true">
         <rect width="120" height="132" rx="12" fill="#E5E7EB"></rect>
@@ -2156,57 +2155,20 @@ export function initApp(config = {}) {
       window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
     }
 
-    function dataUrlToUint8Array(dataUrl) {
-      const base64 = dataUrl.split(",")[1];
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return bytes;
-    }
-
-    function jpegDataUrlToPdfBlob(dataUrl, imageWidth, imageHeight, pageWidth, pageHeight) {
-      const imageBytes = dataUrlToUint8Array(dataUrl);
-      const pdfParts = [];
-      const offsets = [];
-      let cursor = 0;
-      const push = value => {
-        const chunk = typeof value === "string" ? value : new TextDecoder().decode(value);
-        pdfParts.push(chunk);
-        cursor += chunk.length;
-      };
-      const addObject = content => {
-        offsets.push(cursor);
-        push(`${offsets.length} 0 obj\n${content}\nendobj\n`);
-      };
-
-      push("%PDF-1.4\n");
-      addObject("<< /Type /Catalog /Pages 2 0 R >>");
-      addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
-      addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
-      offsets.push(cursor);
-      push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);
-      push(atob(dataUrl.split(",")[1]));
-      push("\nendstream\nendobj\n");
-      const contentStream = `q\n${pageWidth} 0 0 ${pageHeight} 0 0 cm\n/Im0 Do\nQ`;
-      addObject(`<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream`);
-      const xrefStart = cursor;
-      push(`xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`);
-      offsets.forEach(offset => {
-        push(`${String(offset).padStart(10, "0")} 00000 n \n`);
-      });
-      push(`trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
-      return new Blob([pdfParts.join("")], { type: "application/pdf" });
-    }
-
     async function downloadReportPdf() {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) return;
       const canvas = await getReportExportCanvas(report);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-      const blob = jpegDataUrlToPdfBlob(dataUrl, canvas.width, canvas.height, PDF_PAGE_SIZE.width, PDF_PAGE_SIZE.height);
-      downloadBlob(blob, `${report.ref || report.id}-training-report.pdf`);
+      const jsPDF = await getJsPdfLib();
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "px",
+        format: [canvas.width, canvas.height],
+        hotfixes: ["px_scaling"]
+      });
+      const imgData = canvas.toDataURL("image/png");
+      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height, undefined, "NONE");
+      downloadBlob(pdf.output("blob"), `${report.ref || report.id}-training-report.pdf`);
     }
 
     function triggerStudentUpload(studentId) {

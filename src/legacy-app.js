@@ -2099,7 +2099,7 @@ export function initApp(config = {}) {
       const exportHeight = REPORT_TEMPLATE_SIZE.height;
       const photoCardWidthPx = exportWidth * 0.112;
       const photoGapPx = exportWidth * 0.0145;
-      const photoImageHeightPx = photoCardWidthPx * (123 / 111);
+      const photoImageHeightPx = photoCardWidthPx * (111 / 123);
       return await html2canvas(reportTemplate, {
         scale: 3,
         useCORS: true,

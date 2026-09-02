@@ -1373,7 +1373,12 @@
 
     .template-session {
       font-family: "Kalam", cursive;
-      font-size: 1.5rem;
+      /* cqw, not rem: the certificate is a fixed-layout document with
+         absolutely positioned text, so it can only scale as a single unit.
+         A rem size stays 24px while the sheet shrinks from 794px to 332px on
+         mobile, so the text grows to ~2.4x its intended size and collides.
+         2.7cqw reproduces 24px at the 896px design width. */
+      font-size: 2.7cqw;
       line-height: 1.2;
       font-weight: 700;
       font-style: italic;
@@ -1435,7 +1440,8 @@
 
     .template-remarks {
       font-family: "Caveat", cursive;
-      font-size: 2.85rem;
+      /* 5.1cqw reproduces 45.6px (2.85rem) at the 896px design width */
+      font-size: 5.1cqw;
       line-height: 0.96;
       font-weight: 700;
       font-style: italic;
@@ -1448,7 +1454,11 @@
     .template-report-overlay .template-bullet {
       display: flex;
       padding-left: 0;
-      font-size: clamp(0.85rem, 1.55cqw, 1rem);
+      /* The old clamp() floor of 0.85rem (13.6px) overrode the cqw value below
+         ~877px container width, so on mobile the bullets rendered at 4.1% of
+         the sheet instead of 1.55% and overlapped each other. Pure cqw keeps
+         the ratio fixed at every size. */
+      font-size: 1.55cqw;
       line-height: 1.12;
       max-height: 2.5em;
       height: auto !important;
@@ -1483,7 +1493,7 @@
     }
 
     .template-report-overlay .template-remarks {
-      font-size: 2.85rem;
+      font-size: 5.1cqw;
       line-height: 0.96;
       font-weight: 700;
       font-style: italic;
@@ -1515,7 +1525,7 @@
     }
 
     .template-session-centre {
-      font-size: 1.5rem;
+      font-size: 2.7cqw;
       width: 32% !important;
     }
 

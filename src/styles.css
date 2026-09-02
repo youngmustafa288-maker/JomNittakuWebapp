@@ -679,6 +679,9 @@
 
     .page.active {
       display: grid;
+      /* minmax(0,1fr) not 1fr: bare `1fr` means minmax(auto,1fr), whose auto
+         minimum refuses to shrink below content width and leaks overflow. */
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .section-card,
@@ -747,6 +750,13 @@
       min-height: 20px;
       color: var(--slate-500);
       font-size: 0.92rem;
+    }
+
+    /* Stats without a footnote (Total Students, Total Coaches) were reserving
+       30px of blank space, which reads as a rendering bug when the cards are
+       stacked full-width on mobile. */
+    .stat-footnote:empty {
+      display: none;
     }
 
     .stat-footnote.positive {
@@ -836,6 +846,8 @@
 
     .table-wrap {
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      max-width: 100%;
     }
 
     table {
@@ -1715,7 +1727,7 @@
 
     @media (max-width: 1080px) {
       .dashboard {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
 
       .sidebar {
@@ -1730,7 +1742,7 @@
       .report-info-grid,
       .report-footer,
       .role-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
     }
 
@@ -1758,6 +1770,41 @@
         padding: 16px;
       }
 
+      /* Modal becomes a full-screen sheet: a centred fixed-width dialog has
+         nowhere to go at 390px. */
+      .modal-backdrop {
+        padding: 0;
+        align-items: flex-end;
+      }
+
+      .modal-card {
+        width: 100%;
+        max-width: 100%;
+        max-height: 92vh;
+        max-height: 92dvh;
+        border-radius: 20px 20px 0 0;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+      }
+
+      .sidebar {
+        max-height: none;
+        overflow: visible;
+      }
+
+      /* Grid/flex items default to min-width:auto, which floors them at
+         min-content and lets wide children (the nav strip, topbar buttons)
+         push past the viewport. Zero the floor so they shrink and the nav
+         scrolls inside itself instead. */
+      .sidebar,
+      .main,
+      .sidebar-nav,
+      .topbar,
+      .topbar-actions,
+      .page.active {
+        min-width: 0;
+      }
+
       .sidebar-nav {
         display: flex;
         gap: 8px;
@@ -1776,6 +1823,10 @@
         padding: 10px 14px;
         border-radius: 999px;
         transform: none !important;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
       }
 
       .sidebar-nav-item:hover,
@@ -1791,10 +1842,20 @@
       .topbar-actions {
         width: 100%;
         flex-wrap: wrap;
+        align-items: center;
       }
 
       .topbar-actions > * {
         flex: 1 1 calc(50% - 6px);
+        min-height: 44px;
+      }
+
+      /* Round avatars must keep their 1:1 ratio: the blanket 50% flex-basis
+         above was stretching them into ellipses. */
+      .topbar-actions > .avatar-btn,
+      .topbar-actions > .avatar,
+      .topbar-actions > .mini-avatar {
+        flex: 0 0 auto;
       }
 
       .page-header {
@@ -1900,5 +1961,97 @@
 
       .wizard-steps {
         grid-template-columns: 1fr;
+      }
+
+      /* Tables -> stacked cards. A 6-7 column table cannot work at 390px, and
+         sideways scrolling hides the action buttons. Each row becomes a card
+         with "LABEL   value" lines, driven by data-label from
+         stampTableLabels(). */
+      .table-wrap {
+        overflow-x: visible;
+      }
+
+      .table-wrap table {
+        min-width: 0;
+        border-collapse: separate;
+        border-spacing: 0 12px;
+      }
+
+      .table-wrap thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      .table-wrap tbody tr {
+        display: block;
+        background: var(--white);
+        border: 1px solid var(--slate-200);
+        border-radius: var(--radius-md);
+        padding: 6px 14px;
+        box-shadow: var(--shadow-md);
+      }
+
+      .table-wrap tbody td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--slate-100);
+        text-align: right;
+      }
+
+      .table-wrap tbody td:last-child {
+        border-bottom: 0;
+      }
+
+      .table-wrap tbody td[data-label]::before {
+        content: attr(data-label);
+        flex: 0 0 auto;
+        text-align: left;
+        color: var(--slate-500);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      /* Cells with no header (action columns) go full width */
+      .table-wrap tbody td:not([data-label]) {
+        justify-content: stretch;
+        flex-wrap: wrap;
+      }
+
+      .table-wrap tbody td:not([data-label]) > * {
+        flex: 1 1 auto;
+        min-height: 44px;
+      }
+
+      .table-wrap tbody td .person-cell {
+        justify-content: flex-end;
+      }
+
+      .table-wrap tbody td .photo-cell {
+        justify-content: flex-end;
+        display: flex;
+      }
+
+      /* Multi-button cells (View Profile / Download QR) stack evenly */
+      .table-wrap tbody td .secondary-btn {
+        flex: 1 1 auto;
+        text-align: center;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .icon-btn,
+      .upload-chip {
+        min-height: 44px;
       }
     }

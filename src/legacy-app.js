@@ -1544,6 +1544,9 @@ export function initApp(config = {}) {
         hydrateCoachesTable();
         hydrateStudentsTable();
         hydrateQrImages();
+        // Covers server-rendered tables (e.g. overview "Recent Reports")
+        // that have no hydrate step of their own.
+        stampTableLabels();
       }
     }
 
@@ -1771,6 +1774,27 @@ export function initApp(config = {}) {
           </tr>
         `;
       }).join("");
+      stampTableLabels(tbody.closest("table") || document);
+    }
+
+    /**
+     * Copies each table's <th> text onto its matching <td> as data-label.
+     * The mobile card layout renders these labels via CSS ::before, so a
+     * stacked row still says which column each value came from. Runs after
+     * every hydrate so re-rendered tbodies stay labelled.
+     */
+    function stampTableLabels(root = document) {
+      root.querySelectorAll("table").forEach(table => {
+        const headings = [...table.querySelectorAll("thead th")].map(th => th.textContent.trim());
+        if (!headings.length) return;
+        table.querySelectorAll("tbody tr").forEach(row => {
+          [...row.children].forEach((cell, i) => {
+            const label = headings[i];
+            if (label) cell.setAttribute("data-label", label);
+            else cell.removeAttribute("data-label");
+          });
+        });
+      });
     }
 
     function withinDateBucket(date, bucket) {
@@ -1812,6 +1836,7 @@ export function initApp(config = {}) {
           </td>
         </tr>
       `).join("");
+      stampTableLabels(tbody.closest("table") || document);
     }
 
     function hydrateStudentsTable() {
@@ -1851,6 +1876,7 @@ export function initApp(config = {}) {
           </tr>
         `;
       }).join("");
+      stampTableLabels(tbody.closest("table") || document);
     }
 
     function startReportFlow() {

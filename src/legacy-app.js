@@ -29,10 +29,10 @@ export function initApp(config = {}) {
     const REPORT_TEMPLATE_FOOTER_TOP_DEFAULT = 75.95;
     const REPORT_CANVAS_FOOTER_Y_DEFAULT = 950;
     const PHOTO_PLACEHOLDER_SVG = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 132" preserveAspectRatio="none" aria-hidden="true">
-        <rect width="120" height="132" rx="12" fill="#E5E7EB"></rect>
-        <circle cx="60" cy="42" r="19" fill="#C4CBD6"></circle>
-        <path d="M30 116c4-24 18-36 30-36s26 12 30 36" fill="#C4CBD6"></path>
+      <svg xmlns="http://www.w3.org/2000/svg" width="123" height="111" viewBox="0 0 123 111" aria-hidden="true">
+        <rect width="123" height="111" rx="12" fill="#E5E7EB"></rect>
+        <circle cx="61.5" cy="38" r="17" fill="#C4CBD6"></circle>
+        <path d="M28 100c3.5-21 16-31.5 33.5-31.5S91.5 79 95 100" fill="#C4CBD6"></path>
       </svg>
     `;
     const DEMO_ACCOUNTS = {
@@ -2038,6 +2038,58 @@ export function initApp(config = {}) {
       }));
     }
 
+    /**
+     * html2canvas 1.4.1 does not implement object-fit: renderReplacedElement()
+     * draws the whole source bitmap into the content box, so a portrait photo
+     * gets squashed into the frame's landscape box instead of being cropped.
+     * Pre-cropping the bitmap to the frame's aspect makes that stretch a no-op,
+     * so the export matches what object-fit: cover renders on screen.
+     * Resolves to null when the source can't be used, in which case the caller
+     * keeps the original src rather than losing the photo entirely.
+     */
+    function coverCropDataUrl(src, targetAspect, targetWidth) {
+      return new Promise(resolve => {
+        const image = new Image();
+        // Vector sources rasterise at whatever size we draw them, so they are
+        // not capped by an intrinsic pixel budget the way photos are.
+        const isVector = /^data:image\/svg\+xml/i.test(src);
+        if (!/^data:/i.test(src)) image.crossOrigin = "anonymous";
+        image.onload = () => {
+          const sourceWidth = image.naturalWidth;
+          const sourceHeight = image.naturalHeight;
+          if (!sourceWidth || !sourceHeight) return resolve(null);
+          // Largest centred region of the source matching the frame aspect.
+          let cropWidth = sourceWidth;
+          let cropHeight = Math.round(sourceWidth / targetAspect);
+          if (cropHeight > sourceHeight) {
+            cropHeight = sourceHeight;
+            cropWidth = Math.round(sourceHeight * targetAspect);
+          }
+          const cropX = Math.max(0, Math.round((sourceWidth - cropWidth) / 2));
+          const cropY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2));
+          const requested = Math.max(1, Math.round(targetWidth));
+          const outWidth = isVector ? requested : Math.min(requested, cropWidth);
+          const outHeight = Math.max(1, Math.round(outWidth / targetAspect));
+          const canvas = document.createElement("canvas");
+          canvas.width = outWidth;
+          canvas.height = outHeight;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return resolve(null);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, outWidth, outHeight);
+          try {
+            resolve(canvas.toDataURL("image/png"));
+          } catch (error) {
+            // Cross-origin photo tainted the canvas; leave the original src.
+            resolve(null);
+          }
+        };
+        image.onerror = () => resolve(null);
+        image.src = src;
+      });
+    }
+
     function roundedRectPath(ctx, x, y, width, height, radius) {
       ctx.beginPath();
       ctx.moveTo(x + radius, y);
@@ -2128,8 +2180,27 @@ export function initApp(config = {}) {
       const photoCardWidthPx = exportWidth * 0.112;
       const photoCardHeightPx = photoCardWidthPx * (111 / 123);
       const photoGapPx = exportWidth * 0.0145;
+
+      // Pre-crop each photo to the frame aspect so the export matches the
+      // on-screen object-fit: cover. Done before html2canvas (rather than
+      // inside onclone) so the async decode can't race the render pass.
+      const exportScale = 3;
+      const photoCrops = await Promise.all(
+        [...reportTemplate.querySelectorAll(".template-photo")].map(photo => {
+          const box = photo.getBoundingClientRect();
+          // The live content box already has the aspect object-fit is using,
+          // so matching it reproduces the on-screen crop exactly.
+          const aspect = box.width > 0 && box.height > 0
+            ? box.width / box.height
+            : 123 / 111;
+          const src = photo.currentSrc || photo.getAttribute("src") || "";
+          if (!src) return Promise.resolve(null);
+          return coverCropDataUrl(src, aspect, photoCardWidthPx * exportScale);
+        })
+      );
+
       return await html2canvas(reportTemplate, {
-        scale: 3,
+        scale: exportScale,
         useCORS: true,
         allowTaint: true,
         imageTimeout: 0,
@@ -2170,13 +2241,21 @@ export function initApp(config = {}) {
             frame.style.maxHeight = `${photoCardHeightPx}px`;
           });
 
-          clonedReportTemplate.querySelectorAll(".template-photo").forEach(photo => {
+          clonedReportTemplate.querySelectorAll(".template-photo").forEach((photo, index) => {
             photo.style.width = "100%";
             photo.style.height = "100%";
             photo.style.maxHeight = "100%";
             photo.style.objectFit = "cover";
             photo.style.objectPosition = "center center";
             photo.style.display = "block";
+            // html2canvas ignores object-fit and stretches the full bitmap into
+            // the box, so hand it a bitmap already cropped to that box's aspect.
+            const cropped = photoCrops[index];
+            if (cropped) {
+              photo.setAttribute("src", cropped);
+              photo.removeAttribute("srcset");
+              photo.removeAttribute("sizes");
+            }
           });
         }
       });

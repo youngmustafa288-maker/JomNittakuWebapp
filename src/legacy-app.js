@@ -37,35 +37,12 @@ export function initApp(config = {}) {
     `;
     const PROFILE_IMAGE_BUCKET = "profile-images";
 
-    const COACH_SEEDS = [
-      { id: "coach-1", name: "Coach Ahmad", branch: "Dao Sports Method HQ", centreContact: "+60 12-300 9101", email: "ahmad@daosportsmethod.com", phone: "+60 12-300 9101" },
-      { id: "coach-2", name: "Coach Mei", branch: "Cheras Centre", centreContact: "+60 12-300 9102", email: "mei@daosportsmethod.com", phone: "+60 12-300 9102" },
-      { id: "coach-3", name: "Coach Raj", branch: "Puchong Branch", centreContact: "+60 12-300 9103", email: "raj@daosportsmethod.com", phone: "+60 12-300 9103" },
-      { id: "coach-4", name: "Coach Daniel", branch: "Kepong Branch", centreContact: "+60 12-300 9104", email: "daniel@daosportsmethod.com", phone: "+60 12-300 9104" },
-      { id: "coach-5", name: "Coach Alicia", branch: "Setapak Branch", centreContact: "+60 12-300 9105", email: "alicia@daosportsmethod.com", phone: "+60 12-300 9105" },
-      { id: "coach-6", name: "Coach Marcus", branch: "Damansara Branch", centreContact: "+60 12-300 9106", email: "marcus@daosportsmethod.com", phone: "+60 12-300 9106" },
-      { id: "coach-7", name: "Coach Jasmine", branch: "Serdang Branch", centreContact: "+60 12-300 9107", email: "jasmine@daosportsmethod.com", phone: "+60 12-300 9107" },
-      { id: "coach-8", name: "Coach Kevin", branch: "Subang Centre", centreContact: "+60 12-300 9108", email: "kevin@daosportsmethod.com", phone: "+60 12-300 9108" },
-      { id: "coach-9", name: "Coach Nadia", branch: "Shah Alam Branch", centreContact: "+60 12-300 9109", email: "nadia@daosportsmethod.com", phone: "+60 12-300 9109" }
-    ];
-
-    const STUDENT_FIRST_NAMES = ["Adam", "Aiden", "Aisha", "Brandon", "Caleb", "Chloe", "Darren", "Dylan", "Ethan", "Evelyn", "Faris", "Grace", "Hana", "Haziq", "Ian", "Iris", "Jason", "Jia", "Kai", "Kendra", "Lucas", "Megan", "Nathan", "Nina", "Owen", "Peyton", "Qisya", "Ray", "Sean", "Sofia", "Talia", "Uma", "Victor", "Wendy", "Yusuf", "Zara"];
-    const STUDENT_LAST_NAMES = ["Tan", "Lim", "Goh", "Lee", "Wong", "Ng", "Chew", "Chan", "Low", "Teh", "Ong", "Lai", "Yap", "Khoo"];
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
     const REPORT_STATUSES = ["Generated", "Pending"];
     const DEFAULT_COACH_LINKS = [
       { id: "reports", title: "View Reports", url: "/reports", icon: "▦", visible: true, order: 1 },
       { id: "contact", title: "Contact Coach", url: "mailto:", icon: "✉", visible: true, order: 2 }
     ];
-    const REPORT_SAMPLE_DATA = [
-      { ref: "0001AMIR7", studentName: "Amir Hakim", coachName: "Coach Ahmad", lessonNumber: 7, date: "2026-07-05", time: "09:14", status: "Generated" },
-      { ref: "0002SARA4", studentName: "Sarah Aisyah", coachName: "Coach Mei", lessonNumber: 4, date: "2026-07-05", time: "09:08", status: "Generated" },
-      { ref: "0003DANI12", studentName: "Daniel Lim", coachName: "Coach Ahmad", lessonNumber: 12, date: "2026-07-05", time: "10:30", status: "Generated" },
-      { ref: "0004NURF2", studentName: "Nur Farhana", coachName: "Coach Mei", lessonNumber: 2, date: "2026-07-04", time: "17:33", status: "Pending" },
-      { ref: "0005IZZA9", studentName: "Izzat Mazlan", coachName: "Coach Raj", lessonNumber: 9, date: "2026-07-04", time: "16:15", status: "Generated" },
-      { ref: "0006RAZI5", studentName: "Razif Zain", coachName: "Coach Raj", lessonNumber: 5, date: "2026-07-03", time: "14:00", status: "Generated" }
-    ];
-
     const supabase = hasSupabaseConfig()
       ? createClient(SUPABASE_URL, SUPABASE_KEY, {
           auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
@@ -255,7 +232,7 @@ export function initApp(config = {}) {
     function normalizeState(rawState) {
       const defaults = createInitialState();
       const mergeList = (rawList, defaultList, normalizer) => {
-        const sourceList = Array.isArray(rawList) && rawList.length ? rawList : defaultList;
+        const sourceList = Array.isArray(rawList) ? rawList : defaultList;
         return sourceList.map(normalizer);
       };
       return {
@@ -342,99 +319,41 @@ export function initApp(config = {}) {
     }
 
     function createInitialState() {
-      const coaches = COACH_SEEDS.map((coach, index) => ({
-        ...coach,
-        slug: slugify(coach.name),
-        role: "Table Tennis Coach",
-        bio: "Helping players build confident, consistent table tennis fundamentals.",
-        photo_url: "",
-        links: DEFAULT_COACH_LINKS.map(link => ({ ...link })),
-        status: "Active",
-        photo: "",
-        reportsGeneratedThisMonth: 0,
-        reportsTotal: 0,
-        studentIds: [],
-        branchAddress: coach.branch
-      }));
-
-      const featuredStudents = [
-        { name: "Amir Hakim", coachId: "coach-1", lessons: 7 },
-        { name: "Sarah Aisyah", coachId: "coach-2", lessons: 4 },
-        { name: "Daniel Lim", coachId: "coach-1", lessons: 12 },
-        { name: "Nur Farhana", coachId: "coach-2", lessons: 2 },
-        { name: "Izzat Mazlan", coachId: "coach-3", lessons: 9 },
-        { name: "Razif Zain", coachId: "coach-3", lessons: 5 }
-      ];
-
-      const students = [];
-      for (let i = 0; i < 84; i += 1) {
-        const coach = coaches[i % coaches.length];
-        const featured = featuredStudents[i];
-        const name = featured
-          ? featured.name
-          : `${STUDENT_FIRST_NAMES[i % STUDENT_FIRST_NAMES.length]} ${STUDENT_LAST_NAMES[(i * 3) % STUDENT_LAST_NAMES.length]}`;
-        const coachId = featured ? featured.coachId : coach.id;
-        const assignedCoach = coaches.find(item => item.id === coachId) || coach;
-        const id = `student-${i + 1}`;
-        const student = {
-          id,
-          name,
-          coachId,
-          lessons: featured ? featured.lessons : 6 + (i % 12),
-          parentHp: `+60 17-${String(3000000 + i * 173).slice(-7)}`,
-          photo: "",
-          status: "Active"
-        };
-        students.push(student);
-        assignedCoach.studentIds.push(id);
-      }
-
-      const reports = REPORT_SAMPLE_DATA.map((sample, index) => {
-        const student = students.find(item => item.name === sample.studentName);
-        const coach = coaches.find(item => item.name === sample.coachName);
-        return {
-          id: `report-${index + 1}`,
-          ref: sample.ref,
-          studentId: student.id,
-          coachId: coach.id,
-          lessonLabel: LESSON_LABELS[index % LESSON_LABELS.length],
-          lessonNumber: sample.lessonNumber,
-          date: sample.date,
-          time: sample.time,
-          status: sample.status,
-          generatedAt: `${sample.date}T${sample.time}:00`,
-          summary: {
-            whatTaught: "Warm-up rhythm drill\nFoot placement correction",
-            beforeCoaching: "Timing slipped when recovering wide\nContact point drifted behind the body",
-            afterTraining: "Recovered balance faster after side-step drills\nProduced cleaner forehand contact under pressure",
-            nextLesson: "Add serve variation to open rallies\nReinforce compact backswing in transitions",
-            remarks: "Solid overall session. Continue reinforcing stable body position during transition drills."
-          }
-        };
-      });
-
-      reports.forEach(report => {
-        const coach = coaches.find(item => item.id === report.coachId);
-        coach.reportsTotal += 1;
-        if (report.status === "Generated" && report.date.startsWith(CURRENT_MONTH_PREFIX)) {
-          coach.reportsGeneratedThisMonth += 1;
-        }
-      });
-
       return {
         dataVersion: 3,
-        auth: { role: null, coachId: "coach-1" },
+        auth: { role: null, coachId: null, userId: null },
         ui: { page: "overview", avatarMenuOpen: false, reportViewId: null, adminToast: "" },
         adminProfile: { fullName: "JomNittaku Admin", photo: "" },
         centreProfile: { links: [] },
-        coaches,
-        students,
-        reports,
+        coaches: [],
+        students: [],
+        reports: [],
         reportDrafts: {}
       };
     }
 
     function getCurrentCoach() {
+      if (!state.coaches.length) {
+        return {
+          id: "coach-placeholder",
+          name: "Coach",
+          branch: "",
+          centreContact: "",
+          email: "",
+          phone: "",
+          slug: "coach",
+          role: "Table Tennis Coach",
+          bio: "",
+          photo: "",
+          photo_url: "",
+          links: [],
+          status: "Active",
+          reportsGeneratedThisMonth: 0,
+          reportsTotal: 0,
+          studentIds: [],
+          branchAddress: ""
+        };
+      }
       return state.coaches.find(coach => coach.id === state.auth.coachId) || state.coaches[0];
     }
 
@@ -748,7 +667,6 @@ export function initApp(config = {}) {
               </div>
             </div>
             <h2 class="login-title">Sign in</h2>
-            <p class="login-subtitle">Use the email and password for your Supabase account. Your assigned role controls the dashboard access.</p>
             <form class="login-form" data-action="sign-in">
               <div class="field">
                 <label for="loginEmail">Email</label>

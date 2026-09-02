@@ -1521,6 +1521,14 @@ export function initApp(config = {}) {
 
     function render() {
       const app = document.getElementById("app");
+      const activeElement = document.activeElement;
+      const loginFocusState = activeElement && app.contains(activeElement) && activeElement.closest(".login-form")
+        ? {
+            id: activeElement.id || null,
+            selectionStart: typeof activeElement.selectionStart === "number" ? activeElement.selectionStart : null,
+            selectionEnd: typeof activeElement.selectionEnd === "number" ? activeElement.selectionEnd : null
+          }
+        : null;
       const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
       const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
       if (/^\/centre\/?$/i.test(window.location.pathname)) {
@@ -1538,6 +1546,15 @@ export function initApp(config = {}) {
         // Covers server-rendered tables (e.g. overview "Recent Reports")
         // that have no hydrate step of their own.
         stampTableLabels();
+      }
+      if (loginFocusState) {
+        const nextFocus = loginFocusState.id ? document.getElementById(loginFocusState.id) : null;
+        if (nextFocus && typeof nextFocus.focus === "function") {
+          nextFocus.focus({ preventScroll: true });
+          if (typeof nextFocus.setSelectionRange === "function" && loginFocusState.selectionStart !== null && loginFocusState.selectionEnd !== null) {
+            nextFocus.setSelectionRange(loginFocusState.selectionStart, loginFocusState.selectionEnd);
+          }
+        }
       }
     }
 
@@ -2593,7 +2610,6 @@ export function initApp(config = {}) {
             await applyAuthUser(data.session?.user || null);
             bindAuthStateListener();
           }
-          render();
           subscribeToRealtime();
         })
         .catch(() => {

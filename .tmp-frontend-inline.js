@@ -1,14 +1,11 @@
-import { createClient } from "@supabase/supabase-js";
 
-const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
-const CENTRE_PROFILE_KEY = "centre_profile";
-
-export function initApp(config = {}) {
-    const SUPABASE_URL = config.supabaseUrl || "";
-    const SUPABASE_KEY = config.supabaseKey || "";
-    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Image 1.jpg?v=2";
+    const runtimeConfig = window.__APP_CONFIG__ || {};
+    const SUPABASE_URL = runtimeConfig.supabaseUrl || "https://vjhjvcvmtfpkoyjxfmxu.supabase.co";
+    const SUPABASE_KEY = runtimeConfig.supabaseKey || "";
+    const API_STATE_URL = `${SUPABASE_URL}/rest/v1/dashboard_state?id=eq.dashboard&select=payload&limit=1`;
     const MONTH_LABEL = "July 2026";
     const CURRENT_MONTH_PREFIX = "2026-07";
+    const REPORT_TEMPLATE_SRC = "Updated Certificate Image.png";
     const REPORT_TEMPLATE_SIZE = { width: 896, height: 1200 };
     const REPORT_TEMPLATE_BULLET_MASKS = [
       { left: 8.9, top: 45.35 },
@@ -29,13 +26,12 @@ export function initApp(config = {}) {
     const REPORT_TEMPLATE_FOOTER_TOP_DEFAULT = 75.95;
     const REPORT_CANVAS_FOOTER_Y_DEFAULT = 950;
     const PHOTO_PLACEHOLDER_SVG = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="123" height="111" viewBox="0 0 123 111" aria-hidden="true">
-        <rect width="123" height="111" rx="12" fill="#E5E7EB"></rect>
-        <circle cx="61.5" cy="38" r="17" fill="#C4CBD6"></circle>
-        <path d="M28 100c3.5-21 16-31.5 33.5-31.5S91.5 79 95 100" fill="#C4CBD6"></path>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 132" preserveAspectRatio="none" aria-hidden="true">
+        <rect width="120" height="132" rx="12" fill="#E5E7EB"></rect>
+        <circle cx="60" cy="42" r="19" fill="#C4CBD6"></circle>
+        <path d="M30 116c4-24 18-36 30-36s26 12 30 36" fill="#C4CBD6"></path>
       </svg>
     `;
-    const PROFILE_IMAGE_BUCKET = "profile-images";
 
     const COACH_SEEDS = [
       { id: "coach-1", name: "Coach Ahmad", branch: "Dao Sports Method HQ", centreContact: "+60 12-300 9101", email: "ahmad@daosportsmethod.com", phone: "+60 12-300 9101" },
@@ -52,99 +48,20 @@ export function initApp(config = {}) {
     const STUDENT_FIRST_NAMES = ["Adam", "Aiden", "Aisha", "Brandon", "Caleb", "Chloe", "Darren", "Dylan", "Ethan", "Evelyn", "Faris", "Grace", "Hana", "Haziq", "Ian", "Iris", "Jason", "Jia", "Kai", "Kendra", "Lucas", "Megan", "Nathan", "Nina", "Owen", "Peyton", "Qisya", "Ray", "Sean", "Sofia", "Talia", "Uma", "Victor", "Wendy", "Yusuf", "Zara"];
     const STUDENT_LAST_NAMES = ["Tan", "Lim", "Goh", "Lee", "Wong", "Ng", "Chew", "Chan", "Low", "Teh", "Ong", "Lai", "Yap", "Khoo"];
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
-    const REPORT_STATUSES = ["Generated", "Pending"];
-    const DEFAULT_COACH_LINKS = [
-      { id: "reports", title: "View Reports", url: "/reports", icon: "▦", visible: true, order: 1 },
-      { id: "contact", title: "Contact Coach", url: "mailto:", icon: "✉", visible: true, order: 2 }
-    ];
     const REPORT_SAMPLE_DATA = [
-      { ref: "0001AMIR7", studentName: "Amir Hakim", coachName: "Coach Ahmad", lessonNumber: 7, date: "2026-07-05", time: "09:14", status: "Generated" },
-      { ref: "0002SARA4", studentName: "Sarah Aisyah", coachName: "Coach Mei", lessonNumber: 4, date: "2026-07-05", time: "09:08", status: "Generated" },
-      { ref: "0003DANI12", studentName: "Daniel Lim", coachName: "Coach Ahmad", lessonNumber: 12, date: "2026-07-05", time: "10:30", status: "Generated" },
+      { ref: "0001AMIR7", studentName: "Amir Hakim", coachName: "Coach Ahmad", lessonNumber: 7, date: "2026-07-05", time: "09:14", status: "Sent" },
+      { ref: "0002SARA4", studentName: "Sarah Aisyah", coachName: "Coach Mei", lessonNumber: 4, date: "2026-07-05", time: "09:08", status: "Sent" },
+      { ref: "0003DANI12", studentName: "Daniel Lim", coachName: "Coach Ahmad", lessonNumber: 12, date: "2026-07-05", time: "10:30", status: "Sent" },
       { ref: "0004NURF2", studentName: "Nur Farhana", coachName: "Coach Mei", lessonNumber: 2, date: "2026-07-04", time: "17:33", status: "Pending" },
-      { ref: "0005IZZA9", studentName: "Izzat Mazlan", coachName: "Coach Raj", lessonNumber: 9, date: "2026-07-04", time: "16:15", status: "Generated" },
-      { ref: "0006RAZI5", studentName: "Razif Zain", coachName: "Coach Raj", lessonNumber: 5, date: "2026-07-03", time: "14:00", status: "Generated" }
+      { ref: "0005IZZA9", studentName: "Izzat Mazlan", coachName: "Coach Raj", lessonNumber: 9, date: "2026-07-04", time: "16:15", status: "Sent" },
+      { ref: "0006RAZI5", studentName: "Razif Zain", coachName: "Coach Raj", lessonNumber: 5, date: "2026-07-03", time: "14:00", status: "Sent" }
     ];
 
-    const supabase = hasSupabaseConfig()
-      ? createClient(SUPABASE_URL, SUPABASE_KEY, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-        })
-      : null;
     let state = createInitialState();
-    state.centreProfile = getCentreProfile();
     let wizardDraftId = null;
     let onboardingModal = null;
-    let studentEditModal = null;
-    let loginError = "";
-    let isSigningIn = false;
     let draftProfileUploadContext = null;
     let persistTimer = null;
-    let isApplyingRemoteState = false;
-    let realtimeChannel = null;
-    let renderQueued = false;
-    let appEventsBound = false;
-    let reportFilterTimer = null;
-    let coachFilterTimer = null;
-    let studentFilterTimer = null;
-    let centreQrDataUrlPromise = null;
-    const coachQrDataUrlCache = new Map();
-    let qrCodeModulePromise = null;
-    let html2canvasModulePromise = null;
-    let jsPdfModulePromise = null;
-    let reportExportPromise = null;
-    let reportExportKey = "";
-
-    async function getQrCodeLib() {
-      if (!qrCodeModulePromise) {
-        qrCodeModulePromise = import("qrcode").then(module => module.default || module);
-      }
-      return qrCodeModulePromise;
-    }
-
-    async function getHtml2CanvasLib() {
-      if (!html2canvasModulePromise) {
-        html2canvasModulePromise = import("html2canvas").then(module => module.default || module);
-      }
-      return html2canvasModulePromise;
-    }
-
-    async function getJsPdfLib() {
-      if (!jsPdfModulePromise) {
-        jsPdfModulePromise = import("jspdf").then(module => module.jsPDF);
-      }
-      return jsPdfModulePromise;
-    }
-
-    function normalizeCentreProfile(profile = {}) {
-      return {
-        ...profile,
-        links: Array.isArray(profile.links)
-          ? profile.links.map((link, index) => ({
-              id: link.id || `centre-link-${index + 1}`,
-              label: link.label || link.title || link.name || "Centre link",
-              url: String(link.url || link.value || "").trim()
-            })).filter(link => link.url)
-          : []
-      };
-    }
-
-    function getCentreProfile() {
-      try {
-        const value = JSON.parse(localStorage.getItem(CENTRE_PROFILE_KEY) || "null");
-        return normalizeCentreProfile(value && typeof value === "object" ? value : {});
-      } catch (error) {
-        return normalizeCentreProfile();
-      }
-    }
-    function saveCentreProfile() {
-      state.centreProfile = normalizeCentreProfile(state.centreProfile);
-      localStorage.setItem(CENTRE_PROFILE_KEY, JSON.stringify(state.centreProfile));
-      persist();
-    }
-    function centreLinkUrl(link) {
-      return String(link.url || "").trim();
-    }
 
     function initials(name) {
       return name.split(" ").map(part => part[0] || "").join("").slice(0, 2).toUpperCase();
@@ -171,77 +88,16 @@ export function initApp(config = {}) {
     }
 
     function normalizeCoach(coach) {
-      const photo = coach.photo || coach.photo_url || coach.photoUrl || coach.image_url || "";
       return {
         ...coach,
-        slug: coach.slug || slugify(coach.name),
-        role: coach.role || "Table Tennis Coach",
-        bio: coach.bio || "",
-        photo,
-        photo_url: photo,
-        links: Array.isArray(coach.links) && coach.links.length
-          ? coach.links.map((link, index) => ({
-              ...link,
-              id: link.id || `link-${index + 1}`,
-              visible: link.visible !== false,
-              order: link.order || index + 1
-            }))
-          : DEFAULT_COACH_LINKS.map(link => ({ ...link })),
         branchAddress: coach.branchAddress || coach.branch || ""
       };
-    }
-
-    function slugify(value) {
-      return String(value || "")
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "coach";
-    }
-
-    function coachPublicUrl(coach) {
-      return `${window.location.origin}/coach/${coach.slug}`;
-    }
-
-    async function loadQrDataUrl(coach, width = 200) {
-      const cacheKey = `${coach.id}:${Math.max(200, width)}`;
-      if (coachQrDataUrlCache.has(cacheKey)) {
-        return coachQrDataUrlCache.get(cacheKey);
-      }
-
-      const qrPromise = getQrCodeLib().then(QRCode => QRCode.toDataURL(coachPublicUrl(coach), {
-        width: Math.max(200, width),
-        margin: 1,
-        errorCorrectionLevel: "M",
-        color: {
-          dark: "#000000",
-          light: "#ffffff"
-        }
-      })).catch(error => {
-        coachQrDataUrlCache.delete(cacheKey);
-        throw error;
-      });
-
-      coachQrDataUrlCache.set(cacheKey, qrPromise);
-      return qrPromise;
-    }
-
-    function getCoachBySlug(slug) {
-      return state.coaches.find(coach => coach.slug === String(slug || "").toLowerCase());
     }
 
     function normalizeReport(report) {
       return {
         ...report,
-        status: REPORT_STATUSES.includes(report.status) ? report.status : "Pending",
         summary: normalizeSummary(report.summary)
-      };
-    }
-
-    function normalizeStudent(student) {
-      return {
-        ...student,
-        photo: student.photo || student.photo_url || student.photoUrl || student.image_url || ""
       };
     }
 
@@ -253,23 +109,12 @@ export function initApp(config = {}) {
     }
 
     function normalizeState(rawState) {
-      const defaults = createInitialState();
-      const mergeList = (rawList, defaultList, normalizer) => {
-        const sourceList = Array.isArray(rawList) && rawList.length ? rawList : defaultList;
-        return sourceList.map(normalizer);
-      };
       return {
-        ...defaults,
         ...rawState,
         dataVersion: 3,
-        auth: defaults.auth,
-        ui: rawState.ui || defaults.ui,
-        adminProfile: rawState.adminProfile || defaults.adminProfile,
-        centreProfile: normalizeCentreProfile(rawState.centreProfile || defaults.centreProfile),
-        coaches: mergeList(rawState.coaches, defaults.coaches, normalizeCoach),
-        students: mergeList(rawState.students, defaults.students, normalizeStudent),
-        reports: mergeList(rawState.reports, defaults.reports, normalizeReport),
-        reportDrafts: Object.fromEntries(Object.entries(rawState.reportDrafts && Object.keys(rawState.reportDrafts).length ? rawState.reportDrafts : defaults.reportDrafts).map(([key, draft]) => [key, normalizeDraft(draft)]))
+        coaches: (rawState.coaches || []).map(normalizeCoach),
+        reports: (rawState.reports || []).map(normalizeReport),
+        reportDrafts: Object.fromEntries(Object.entries(rawState.reportDrafts || {}).map(([key, draft]) => [key, normalizeDraft(draft)]))
       };
     }
 
@@ -282,26 +127,21 @@ export function initApp(config = {}) {
         return normalizeState(createInitialState());
       }
       try {
-        const { data, error } = await supabase
-          .from("dashboard_state")
-          .select("payload")
-          .eq("id", "dashboard")
-          .single();
-        if (!error && data?.payload && data.payload.dataVersion >= 2) {
-          return normalizeState(data.payload);
+        const response = await fetch(API_STATE_URL, {
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            Accept: "application/json"
+          }
+        });
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload?.[0]?.payload && payload[0].payload.dataVersion >= 2) {
+            return normalizeState(payload[0].payload);
+          }
         }
       } catch (error) {}
       return normalizeState(createInitialState());
-    }
-
-    async function flushStateToSupabase() {
-      if (!hasSupabaseConfig() || isApplyingRemoteState) {
-        return;
-      }
-      const payload = { ...state, auth: { role: null, coachId: null, userId: null } };
-      await supabase
-        .from("dashboard_state")
-        .upsert({ id: "dashboard", payload }, { onConflict: "id" });
     }
 
     function persist() {
@@ -310,45 +150,22 @@ export function initApp(config = {}) {
       }
       clearTimeout(persistTimer);
       persistTimer = setTimeout(() => {
-        flushStateToSupabase().catch(() => {});
+        fetch(`${SUPABASE_URL}/rest/v1/dashboard_state?on_conflict=id`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates,return=representation"
+          },
+          body: JSON.stringify({ id: "dashboard", payload: state })
+        }).catch(() => {});
       }, 250);
-    }
-
-    function applyRemoteState(payload) {
-      if (!payload) return;
-      isApplyingRemoteState = true;
-      state = normalizeState(payload);
-      render();
-      window.setTimeout(() => {
-        isApplyingRemoteState = false;
-      }, 0);
-    }
-
-    function subscribeToRealtime() {
-      if (!supabase) return;
-      realtimeChannel = supabase
-        .channel("dashboard-state-live")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "dashboard_state" },
-          payload => {
-            const nextPayload = payload.new?.payload;
-            if (payload.new?.id === "dashboard" && nextPayload) {
-              applyRemoteState(nextPayload);
-            }
-          }
-        )
-        .subscribe();
     }
 
     function createInitialState() {
       const coaches = COACH_SEEDS.map((coach, index) => ({
         ...coach,
-        slug: slugify(coach.name),
-        role: "Table Tennis Coach",
-        bio: "Helping players build confident, consistent table tennis fundamentals.",
-        photo_url: "",
-        links: DEFAULT_COACH_LINKS.map(link => ({ ...link })),
         status: "Active",
         photo: "",
         reportsGeneratedThisMonth: 0,
@@ -416,17 +233,16 @@ export function initApp(config = {}) {
       reports.forEach(report => {
         const coach = coaches.find(item => item.id === report.coachId);
         coach.reportsTotal += 1;
-        if (report.status === "Generated" && report.date.startsWith(CURRENT_MONTH_PREFIX)) {
+        if (report.status === "Sent" && report.date.startsWith(CURRENT_MONTH_PREFIX)) {
           coach.reportsGeneratedThisMonth += 1;
         }
       });
 
       return {
         dataVersion: 3,
-        auth: { role: null, coachId: "coach-1" },
+        auth: { role: "admin", coachId: "coach-1" },
         ui: { page: "overview", avatarMenuOpen: false, reportViewId: null, adminToast: "" },
-        adminProfile: { fullName: "JomNittaku Admin", photo: "" },
-        centreProfile: { links: [] },
+        adminProfile: { fullName: "Dao Sports Method Admin", photo: "" },
         coaches,
         students,
         reports,
@@ -508,19 +324,14 @@ export function initApp(config = {}) {
         remarksLines: splitRemarkLines(summary.remarks),
         centreContact: coach.centreContact || "",
           address: coach.branchAddress || coach.branch || "",
-        studentPhoto: student?.photo || student?.photo_url || student?.photoUrl || student?.image_url || "",
-        coachPhoto: coach?.photo || coach?.photo_url || coach?.photoUrl || coach?.image_url || ""
+        studentPhoto: student?.photo || "",
+        coachPhoto: coach?.photo || ""
       };
     }
 
-    function renderTemplatePhoto(photo, label) {
+    function renderTemplatePhoto(photo, left, top) {
       return `
-        <div class="template-photo-card">
-          <div class="template-photo-frame">
-            <img class="template-photo" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
-          </div>
-          <div class="template-photo-label">${label}</div>
-        </div>
+        <img class="template-photo" style="left:${left}%;top:${top}%;" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
       `;
     }
 
@@ -534,7 +345,7 @@ export function initApp(config = {}) {
 
     function renderPlainBulletOverlays(lines, positions) {
       return positions.map((position, index) => `
-        <div class="template-text template-bullet ${lines[index] ? (lines[index].length > 48 ? "is-compact" : "") : "empty"}" style="left:${position.left}%;top:${position.top}%;width:${position.width}%;height:${position.height}%;">
+        <div class="template-text template-bullet ${lines[index] ? "" : "empty"}" style="left:${position.left}%;top:${position.top}%;width:${position.width}%;height:${position.height}%;">
           <span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span>
         </div>
       `).join("");
@@ -564,11 +375,6 @@ export function initApp(config = {}) {
             <div class="template-text template-session" style="left:17.9%;top:29.58%;width:23%;">${escapeHtml(data.session.time)}</div>
             <div class="template-text template-session template-session-centre" style="left:17.9%;top:31.94%;width:25%;">${escapeHtml(data.session.centre)}</div>
             <div class="template-text template-session" style="left:24.25%;top:34.34%;width:19%;">${escapeHtml(data.session.coachName)}</div>
-
-            <div class="template-report-photo-group">
-              ${renderTemplatePhoto(data.studentPhoto, "STUDENT")}
-              ${renderTemplatePhoto(data.coachPhoto, "COACH")}
-            </div>
 
             ${REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
@@ -600,9 +406,6 @@ export function initApp(config = {}) {
             <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
             <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
           </div>
-          <div class="template-report-qr-pocket">
-            <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
-          </div>
         </div>
       `;
     }
@@ -616,9 +419,8 @@ export function initApp(config = {}) {
     }
 
     function statusBadge(status) {
-      const normalizedStatus = REPORT_STATUSES.includes(status) ? status : "Pending";
-      const key = normalizedStatus === "Generated" ? "green" : "amber";
-      return `<span class="badge ${key}"><span class="dot"></span>${normalizedStatus}</span>`;
+      const key = status === "Sent" ? "green" : status === "Pending" ? "amber" : "grey";
+      return `<span class="badge ${key}"><span class="dot"></span>${status}</span>`;
     }
 
     function avatarMarkup(name, photo, size = "avatar") {
@@ -629,88 +431,30 @@ export function initApp(config = {}) {
       return `<span class="${size}" ${style}>${content}</span>`;
     }
 
-    async function signIn() {
-      if (!supabase) {
-        loginError = "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.";
-        return render();
-      }
-      const email = document.getElementById("loginEmail")?.value.trim().toLowerCase();
-      const password = document.getElementById("loginPassword")?.value || "";
-      if (!email || !password) {
-        loginError = "Enter your email and password.";
-        return render();
-      }
-      isSigningIn = true;
-      loginError = "";
-      render();
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      isSigningIn = false;
-      if (error) {
-        loginError = error.message || "Unable to sign in.";
-        return render();
-      }
-      state = await loadState();
-      await applyAuthUser(data.user);
-      state.ui.page = "overview";
-      state.ui.avatarMenuOpen = false;
-      state.ui.reportViewId = null;
-      render();
-    }
-
-    async function applyAuthUser(user) {
-      if (!user) {
-        state.auth = { role: null, coachId: null, userId: null };
-        return;
-      }
-      const appRole = user.app_metadata?.role;
-      const coachId = user.app_metadata?.coach_id;
-      const coach = state.coaches.find(item => item.id === coachId)
-        || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
-      state.auth = {
-        role: appRole === "admin" ? "admin" : coach ? "coach" : null,
-        coachId: coach?.id || null,
-        userId: user.id
-      };
-      if (!state.auth.role) {
-        await supabase.auth.signOut();
-        loginError = "This account is not assigned as an admin or coach.";
-      }
-    }
-
-    function bindAuthStateListener() {
-      if (!supabase) return;
-      supabase.auth.onAuthStateChange((_event, session) => {
-        window.setTimeout(async () => {
-          await applyAuthUser(session?.user || null);
-          render();
-        }, 0);
-      });
-    }
-
-    async function logout() {
-      if (supabase) await supabase.auth.signOut();
-      state.auth = { role: null, coachId: null, userId: null };
-      loginError = "";
+    function loginAs(role) {
+      state.auth.role = role;
       state.ui.page = "overview";
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
       persist();
+      render();
+    }
+
+    function logout() {
+      state.auth.role = null;
+      state.ui.page = "overview";
+      state.ui.avatarMenuOpen = false;
+      state.ui.reportViewId = null;
       wizardDraftId = null;
-      scheduleRender();
+      persist();
+      render();
     }
 
     function navigate(page) {
-      if (page === "centre-settings" && !["admin", "coach"].includes(state.auth.role)) {
-        state.ui.page = "overview";
-        return scheduleRender();
-      }
-      if (state.auth.role === "coach" && page === "coaches") {
-        return;
-      }
       state.ui.page = page;
       state.ui.avatarMenuOpen = false;
       persist();
-      scheduleRender();
+      render();
     }
 
     function overviewStats() {
@@ -743,24 +487,30 @@ export function initApp(config = {}) {
             <div class="brand-lockup">
               <div class="brand-mark"></div>
               <div class="brand-copy">
-                <h1>JomNittaku</h1>
-                <p>Coach Reporting System</p>
+                <h1>Dao Sports Method</h1>
+                <p>Table tennis training academy dashboard</p>
               </div>
             </div>
-            <h2 class="login-title">Sign in</h2>
-            <p class="login-subtitle">Use the email and password for your Supabase account. Your assigned role controls the dashboard access.</p>
-            <form class="login-form" data-action="sign-in">
-              <div class="field">
-                <label for="loginEmail">Email</label>
-                <input id="loginEmail" class="text-input" type="email" autocomplete="email" required>
-              </div>
-              <div class="field">
-                <label for="loginPassword">Password</label>
-                <input id="loginPassword" class="text-input" type="password" autocomplete="current-password" required>
-              </div>
-              ${loginError ? `<p class="form-error" role="alert">${escapeHtml(loginError)}</p>` : ""}
-              <button class="primary-btn" type="submit" ${isSigningIn ? "disabled" : ""}>${isSigningIn ? "Signing in..." : "Sign in"}</button>
-            </form>
+            <h2 class="login-title">Welcome Back</h2>
+            <p class="login-subtitle">Choose the account type to enter the dashboard. Login state is saved locally so your session stays active after refresh.</p>
+            <div class="role-grid">
+              <button class="role-card admin" data-action="login-admin">
+                <div>
+                  <div class="role-icon">AD</div>
+                  <h2>Admin Account</h2>
+                  <p>Manage the full academy across overview, reports, coaches, students and settings.</p>
+                </div>
+                <span class="role-cta">Enter admin dashboard</span>
+              </button>
+              <button class="role-card coach" data-action="login-coach">
+                <div>
+                  <div class="role-icon">CH</div>
+                  <h2>Coach Account</h2>
+                  <p>Review your own students, create training reports and maintain your profile and centre details.</p>
+                </div>
+                <span class="role-cta">Enter coach dashboard</span>
+              </button>
+            </div>
           </div>
         </section>
       `;
@@ -788,7 +538,7 @@ export function initApp(config = {}) {
             <div class="sidebar-logo">
               <div class="logo-ball"></div>
               <div class="logo-copy">
-                <strong>JomNittaku</strong>
+                <strong>Dao Sports Method</strong>
                 <span>${MONTH_LABEL}</span>
               </div>
             </div>
@@ -857,7 +607,7 @@ export function initApp(config = {}) {
                     <th>STUDENT</th>
                     <th>LESSON</th>
                     <th>DATE & TIME</th>
-                    <th>REPORT STATUS</th>
+                    <th>REPORT SENT</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -884,10 +634,7 @@ export function initApp(config = {}) {
     }
 
     function renderReportsPage() {
-      const studentOptions = state.students
-        .filter(student => state.auth.role === "admin" || student.coachId === getCurrentCoach().id)
-        .map(student => `<option value="${student.id}">${escapeHtml(student.name)}</option>`).join("");
-      const reportMonths = [...new Set(state.reports.map(report => report.date.slice(0, 7)))].sort().reverse();
+      const coachOptions = state.coaches.map(coach => `<option value="${coach.id}">${coach.name}</option>`).join("");
       return `
         <section class="page ${state.ui.page === "reports" ? "active" : ""}">
           <div class="table-card">
@@ -899,31 +646,17 @@ export function initApp(config = {}) {
             </div>
             <div class="reports-filter-bar">
               <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">
-              <select id="reportsStudentFilter" class="filter-select">
-                <option value="">All students</option>
-                ${studentOptions}
+              <select id="reportsCoachFilter" class="filter-select">
+                <option value="">All coaches</option>
+                ${coachOptions}
               </select>
               <select id="reportsDateFilter" class="filter-select">
                 <option value="">All dates</option>
-                <option value="month">By month</option>
-                <option value="day">By day</option>
-                <option value="week1">1st - 7th</option>
-                <option value="week2">8th - 14th</option>
-                <option value="week3">15th - 21st</option>
-                <option value="week4">22nd - end of month</option>
-                <option value="custom">Custom range</option>
+                <option value="week1">1 Jul - 7 Jul</option>
               </select>
-              <select id="reportsMonthFilter" class="filter-select hidden">
-                ${reportMonths.map(month => `<option value="${month}">${escapeHtml(new Date(`${month}-01T00:00:00`).toLocaleDateString("en-MY", { month: "long", year: "numeric" }))}</option>`).join("")}
-              </select>
-              <input id="reportsDayFilter" class="text-input hidden" type="date" aria-label="Report day">
-              <div class="report-custom-dates hidden" id="reportsCustomDates">
-                <input id="reportsDateFrom" class="text-input" type="date" aria-label="From date">
-                <input id="reportsDateTo" class="text-input" type="date" aria-label="To date">
-              </div>
               <select id="reportsStatusFilter" class="filter-select">
                 <option value="">All statuses</option>
-                <option value="Generated">Generated</option>
+                <option value="Sent">Sent</option>
                 <option value="Pending">Pending</option>
               </select>
             </div>
@@ -936,7 +669,7 @@ export function initApp(config = {}) {
                     <th>COACH</th>
                     <th>LESSON</th>
                     <th>DATE & TIME</th>
-                    <th>REPORT STATUS</th>
+                    <th>REPORT SENT</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -970,7 +703,6 @@ export function initApp(config = {}) {
                     <th>STUDENTS</th>
                     <th>REPORTS</th>
                     <th>STATUS</th>
-                    <th>PUBLIC PROFILE</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -1131,6 +863,7 @@ export function initApp(config = {}) {
                   <p>${coach.name} · ${formatDate(report.date)} · ${formatTime(report.time)}</p>
                 </div>
                 <div class="report-actions">
+                  <button class="secondary-btn" data-action="download-report-image">Download Image</button>
                   <button class="primary-btn" data-action="download-report-pdf">Download PDF</button>
                 </div>
               </div>
@@ -1162,7 +895,7 @@ export function initApp(config = {}) {
                       <p>Character Transformation thru Sports</p>
                     </div>
                   </div>
-                  <div class="badge ${report.status === "Generated" ? "green" : report.status === "Pending" ? "amber" : "grey"}">${report.status}</div>
+                  <div class="badge ${report.status === "Sent" ? "green" : report.status === "Pending" ? "amber" : "grey"}">${report.status}</div>
                 </div>
                 <div class="decorative-title">This Is A Training Report</div>
                 <div class="report-info-grid">
@@ -1210,8 +943,8 @@ export function initApp(config = {}) {
                     <strong>${coach.centreContact}</strong><br>
                     Dao Sports Method
                   </div>
-                    <div>
-                    </div>
+                  <div>
+                    <div class="qr-box"></div>
                   </div>
                 </div>
                 <div class="report-bottom-bar">JOMNITTAKU - Passion · Focus · Excellent</div>
@@ -1253,7 +986,7 @@ export function initApp(config = {}) {
                 <h2>Generate Report</h2>
                 <p>${draft.ref} · ${coach.name}</p>
               </div>
-              <button class="ghost-btn" data-action="save-close-wizard">X</button>
+              <button class="ghost-btn" data-action="save-close-wizard">Save Draft & Close</button>
             </div>
             <div class="wizard-steps">
               ${[
@@ -1285,6 +1018,10 @@ export function initApp(config = {}) {
                 <div class="field">
                   <label for="wizardLessonNumber">Lesson Number</label>
                   <input id="wizardLessonNumber" class="text-input" type="number" min="1" value="${draft.lessonNumber || ""}">
+                </div>
+                <div class="field">
+                  <label>Auto pulled</label>
+                  <div class="notice">Centre: ${coach.branch}<br>Coach Name: ${coach.name}</div>
                 </div>
               </div>
             </div>
@@ -1441,39 +1178,14 @@ export function initApp(config = {}) {
     }
 
     function renderDashboard() {
-      const navItems = state.auth.role === "admin"
-        ? [
-            ["overview", "Overview"],
-            ["reports", "Reports"],
-            ["coaches", "Coaches"],
-            ["students", "Students"]
-          ]
-        : [
-            ["overview", "Overview"],
-            ["reports", "Reports"],
-            ["students", "Students"]
-          ];
-      navItems.push(["centre-settings", "Centre Links"]);
-      const pageContent = state.ui.page === "reports"
-        ? renderReportsPage()
-        : state.ui.page === "coaches"
-          ? (state.auth.role === "admin" ? renderCoachesPage() : renderOverviewPage())
-          : state.ui.page === "students"
-            ? renderStudentsPage()
-              : state.ui.page === "centre-settings"
-                ? renderCentreSettingsPage()
-              : state.ui.page === "settings"
-              ? renderAdminProfilePage()
-              : state.ui.page === "profile"
-                ? renderCoachProfilePage()
-                : state.ui.page === "report-view"
-                  ? renderReportViewPage()
-                  : renderOverviewPage();
       return `
         <div class="dashboard">
           <aside class="sidebar">
             <nav class="sidebar-nav" aria-label="Dashboard sections">
-              ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${label}</button>`).join("")}
+              <button class="sidebar-nav-item ${state.ui.page === "overview" ? "active" : ""}" data-nav="overview">Overview</button>
+              <button class="sidebar-nav-item ${state.ui.page === "reports" ? "active" : ""}" data-nav="reports">Reports</button>
+              <button class="sidebar-nav-item ${state.ui.page === "coaches" ? "active" : ""}" data-nav="coaches">Coaches</button>
+              <button class="sidebar-nav-item ${state.ui.page === "students" ? "active" : ""}" data-nav="students">Students</button>
             </nav>
           </aside>
           <main class="main">
@@ -1481,260 +1193,64 @@ export function initApp(config = {}) {
             <header class="page-header">
               <div class="header-copy">
                 <h1>Academy Overview 🏓</h1>
-                <p>JomNittaku Coach Reporting System · July 2026</p>
+                <p>Dao Sports Method Table Tennis · July 2026</p>
               </div>
             </header>
-            ${pageContent}
+            ${renderOverviewPage()}
+            ${renderReportsPage()}
+            ${renderCoachesPage()}
+            ${renderStudentsPage()}
+            ${renderAdminProfilePage()}
+            ${renderCoachProfilePage()}
+            ${renderReportViewPage()}
           </main>
         </div>
         ${renderReportWizard()}
         ${renderOnboardingModal()}
-        ${renderStudentEditModal()}
         <input id="hiddenStudentUpload" type="file" accept="image/*" class="hidden">
         <input id="hiddenProfileUpload" type="file" accept="image/*" class="hidden">
       `;
     }
 
-    function renderStudentEditModal() {
-      if (!studentEditModal) return "";
-      const student = getStudentById(studentEditModal.studentId);
-      if (!student) return "";
-      return `
-        <div class="onboarding-backdrop open">
-          <div class="onboarding-modal">
-            <div class="onboarding-head">
-              <div class="section-title"><h2>Edit Student</h2></div>
-              <button class="close-btn" data-action="close-student-edit" aria-label="Close modal">X</button>
-            </div>
-            <div class="profile-avatar-wrap">
-              <button class="profile-avatar-lg" type="button" data-action="student-edit-photo" data-student-id="${student.id}" ${student.photo ? `style="background-image:url('${escapeHtml(student.photo)}');"` : ""}>
-                ${student.photo ? "" : initials(student.name)}
-              </button>
-              <div><strong>Profile Picture</strong><p class="muted">Click the avatar to upload a new photo.</p></div>
-            </div>
-            <div class="onboarding-grid">
-              <div class="field"><label for="editStudentName">Name</label><input id="editStudentName" class="text-input" value="${escapeHtml(student.name)}"></div>
-              <div class="field"><label for="editStudentPhone">Phone Number</label><input id="editStudentPhone" class="text-input" value="${escapeHtml(student.parentHp)}"></div>
-              <div class="field"><label for="editStudentLessons">Lesson</label><input id="editStudentLessons" class="text-input" type="number" min="0" value="${student.lessons}"></div>
-            </div>
-            <div class="onboarding-actions"><button class="ghost-btn" data-action="close-student-edit">Cancel</button><button class="primary-btn" data-action="save-student-edit">Save Changes</button></div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderCentreSettingsPage() {
-      const profile = state.centreProfile;
-      return `
-        <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
-          <div class="profile-card centre-settings-card">
-            <div class="section-title"><h2>Centre Links</h2></div>
-            <div class="centre-links-editor">
-              ${profile.links.map(link => `
-                <div class="centre-link-row" data-link-id="${escapeHtml(link.id)}">
-                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label)}" placeholder="Label">
-                  <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://...">
-                  <button class="ghost-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}">Delete</button>
-                </div>
-              `).join("")}
-            </div>
-            <div class="profile-actions">
-              <button class="secondary-btn" data-action="add-centre-link">+ Add Link</button>
-              <button class="primary-btn" type="button" data-action="save-centre-profile">Save</button>
-            </div>
-          </div>
-        </section>
-      `;
-    }
-
-    function renderCentrePage() {
-      const profile = state.centreProfile;
-      return `<main class="public-centre-page"><section class="public-centre-card">
-        ${profile.links.length ? `<div class="public-centre-links">${profile.links.map(link => `<a class="public-centre-link" href="${escapeHtml(centreLinkUrl(link))}">${escapeHtml(link.label)}</a>`).join("")}</div>` : "<p class=\"muted\">No contact info available</p>"}
-      </section></main>`;
-    }
-
-    function renderPublicCoachPage(coach) {
-      const reports = state.reports.filter(report => report.coachId === coach.id);
-      const generated = reports.filter(report => report.status === "Generated").length;
-      const centreLinks = (state.centreProfile?.links || []).map(link => ({
-        ...link,
-        title: link.label || link.title || "Centre link",
-        icon: link.icon || ""
-      }));
-      const coachLinks = (coach.links || [])
-        .filter(link => link.visible !== false && String(link.url || "").trim())
-        .map(link => ({ ...link, title: link.title || link.label || "Coach link" }));
-      const links = [...centreLinks, ...coachLinks]
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
-      const avatar = coach.photo_url || coach.photo;
-      return `
-        <main class="public-coach-page">
-          <section class="public-coach-card">
-            <div class="public-coach-avatar" ${avatar ? `style="background-image:url('${avatar}')"` : ""}>
-              ${avatar ? "" : escapeHtml(initials(coach.name))}
-            </div>
-            <p class="public-coach-kicker">${escapeHtml(coach.role || "Coach")}</p>
-            <h1>${escapeHtml(coach.name)}</h1>
-            <p class="public-coach-bio">${escapeHtml(coach.bio || coach.branch || "")}</p>
-            <div class="public-coach-stats">
-              <span><strong>${reports.length}</strong> sessions</span>
-              <span><strong>${reports.length ? "100" : "0"}%</strong> attendance</span>
-              <span><strong>${generated}</strong> reports filed</span>
-            </div>
-            ${links.length ? "" : `<div class="public-coach-links-empty">No centre or coach links have been added yet.</div>`}
-            <div class="public-coach-links">
-              ${links.map(link => `<a href="${escapeHtml(link.url)}" class="public-coach-link" ${/^https?:|^mailto:|^tel:/.test(link.url) ? 'target="_blank" rel="noreferrer"' : ""}><span>${escapeHtml(link.icon || "↗")}</span>${escapeHtml(link.title)}</a>`).join("")}
-            </div>
-            <small>${escapeHtml(coach.branch || "")}</small>
-          </section>
-        </main>
-      `;
-    }
-
-    function scheduleRender() {
-      if (renderQueued) return;
-      renderQueued = true;
-      requestAnimationFrame(() => {
-        renderQueued = false;
-        render();
-      });
-    }
-
     function render() {
       const app = document.getElementById("app");
-      const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
-      const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
-      if (/^\/centre\/?$/i.test(window.location.pathname)) {
-        app.innerHTML = renderCentrePage();
-        return;
-      }
-      app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
-      if (publicCoach) return;
+      app.innerHTML = state.auth.role ? renderDashboard() : renderLogin();
       attachEvents();
       if (state.auth.role) {
         hydrateReportsTable();
         hydrateCoachesTable();
         hydrateStudentsTable();
-        hydrateQrImages();
-        // Covers server-rendered tables (e.g. overview "Recent Reports")
-        // that have no hydrate step of their own.
-        stampTableLabels();
       }
-    }
-
-    function hydrateQrImages() {
-      document.querySelectorAll("[data-qr-coach]").forEach(container => {
-        const coach = getCoachById(container.dataset.qrCoach);
-        if (!coach) return;
-        const image = container.tagName === "IMG" ? container : container.querySelector("img");
-        if (!image) return;
-        if (image.dataset.qrReady === "true") return;
-        const width = Number(container.dataset.qrWidth || image.dataset.qrWidth || image.width || 200);
-        loadQrDataUrl(coach, width).then(dataUrl => {
-          image.src = dataUrl;
-          image.dataset.qrReady = "true";
-        }).catch(() => {});
-      });
-      document.querySelectorAll("[data-qr-centre]").forEach(image => {
-        if (image.dataset.qrReady === "true") return;
-        loadCentreQrDataUrl().then(dataUrl => {
-          image.src = dataUrl;
-          image.dataset.qrReady = "true";
-        }).catch(() => {});
-      });
-    }
-
-    async function loadCentreQrDataUrl() {
-      if (centreQrDataUrlPromise) {
-        return centreQrDataUrlPromise;
-      }
-
-      centreQrDataUrlPromise = getQrCodeLib().then(QRCode => QRCode.toDataURL("https://jom-nittaku-webapp.vercel.app/centre", {
-        width: 200,
-        margin: 1,
-        errorCorrectionLevel: "M",
-        color: {
-          dark: "#000000",
-          light: "#ffffff"
-        }
-      })).catch(error => {
-        centreQrDataUrlPromise = null;
-        throw error;
-      });
-
-      return centreQrDataUrlPromise;
-    }
-
-    function scheduleReportsHydration() {
-      clearTimeout(reportFilterTimer);
-      reportFilterTimer = window.setTimeout(hydrateReportsTable, 120);
-    }
-
-    function scheduleCoachesHydration() {
-      clearTimeout(coachFilterTimer);
-      coachFilterTimer = window.setTimeout(hydrateCoachesTable, 120);
-    }
-
-    function scheduleStudentsHydration() {
-      clearTimeout(studentFilterTimer);
-      studentFilterTimer = window.setTimeout(hydrateStudentsTable, 120);
     }
 
     function attachEvents() {
-      if (!appEventsBound) {
-        const app = document.getElementById("app");
-        app.addEventListener("click", event => {
-          const actionButton = event.target.closest("[data-action]");
-          if (actionButton) {
-            event.preventDefault();
-            handleAction({ currentTarget: actionButton });
-            return;
-          }
-          const navButton = event.target.closest("[data-nav]");
-          if (navButton) {
-            event.preventDefault();
-            navigate(navButton.dataset.nav);
-          }
-        });
-        appEventsBound = true;
-      }
+      document.querySelectorAll("[data-action]").forEach(button => {
+        button.addEventListener("click", handleAction);
+      });
+
+      document.querySelectorAll("[data-nav]").forEach(button => {
+        button.addEventListener("click", () => navigate(button.dataset.nav));
+      });
 
       const reportsSearch = document.getElementById("reportsSearch");
       const reportsDate = document.getElementById("reportsDateFilter");
       const reportsStatus = document.getElementById("reportsStatusFilter");
-      const reportsStudent = document.getElementById("reportsStudentFilter");
-      const reportsMonth = document.getElementById("reportsMonthFilter");
-      const reportsDay = document.getElementById("reportsDayFilter");
-      const reportsDateFrom = document.getElementById("reportsDateFrom");
-      const reportsDateTo = document.getElementById("reportsDateTo");
+      const reportsCoach = document.getElementById("reportsCoachFilter");
 
-      [reportsSearch, reportsDate, reportsStatus, reportsStudent, reportsMonth, reportsDay, reportsDateFrom, reportsDateTo].filter(Boolean).forEach(input => {
-        input.addEventListener("input", scheduleReportsHydration);
-        input.addEventListener("change", () => {
-          const customDates = document.getElementById("reportsCustomDates");
-          reportsMonth?.classList.toggle("hidden", reportsDate?.value !== "month");
-          reportsDay?.classList.toggle("hidden", reportsDate?.value !== "day");
-          customDates?.classList.toggle("hidden", reportsDate?.value !== "custom");
-          hydrateReportsTable();
-        });
-      });
-
-      const loginForm = document.querySelector(".login-form");
-      loginForm?.addEventListener("submit", event => {
-        event.preventDefault();
-        signIn();
+      [reportsSearch, reportsDate, reportsStatus, reportsCoach].filter(Boolean).forEach(input => {
+        input.addEventListener("input", hydrateReportsTable);
+        input.addEventListener("change", hydrateReportsTable);
       });
 
       const coachSearch = document.getElementById("coachSearch");
       if (coachSearch) {
-        coachSearch.addEventListener("input", scheduleCoachesHydration);
+        coachSearch.addEventListener("input", hydrateCoachesTable);
       }
 
       const studentSearch = document.getElementById("studentSearch");
       const studentCoachFilter = document.getElementById("studentCoachFilter");
       [studentSearch, studentCoachFilter].filter(Boolean).forEach(input => {
-        input.addEventListener("input", scheduleStudentsHydration);
+        input.addEventListener("input", hydrateStudentsTable);
         input.addEventListener("change", hydrateStudentsTable);
       });
 
@@ -1743,13 +1259,12 @@ export function initApp(config = {}) {
         hiddenStudentUpload.addEventListener("change", event => {
           const [file] = event.target.files || [];
           if (!file || !event.target.dataset.studentId) return;
-          uploadProfileImage(file, "student", event.target.dataset.studentId).then(url => {
+          fileToDataUrl(file).then(dataUrl => {
             const student = getStudentById(event.target.dataset.studentId);
-            if (student) student.photo = url;
-            event.target.value = "";
+            student.photo = dataUrl;
             persist();
             render();
-          }).catch(error => alert(error.message || "Unable to upload photo."));
+          });
         });
       }
 
@@ -1758,24 +1273,20 @@ export function initApp(config = {}) {
         hiddenProfileUpload.addEventListener("change", event => {
           const [file] = event.target.files || [];
           if (!file || !draftProfileUploadContext) return;
-          const context = draftProfileUploadContext;
-          const targetId = context === "admin" ? "admin" : getCurrentCoach().id;
-          uploadProfileImage(file, context, targetId).then(url => {
-            if (context === "admin") {
-              state.adminProfile.photo = url;
+          fileToDataUrl(file).then(dataUrl => {
+            if (draftProfileUploadContext === "admin") {
+              state.adminProfile.photo = dataUrl;
             } else {
-              getCurrentCoach().photo = url;
-              getCurrentCoach().photo_url = url;
+              getCurrentCoach().photo = dataUrl;
             }
             draftProfileUploadContext = null;
-            event.target.value = "";
             persist();
             render();
-          }).catch(error => alert(error.message || "Unable to upload photo."));
+          });
         });
       }
 
-      ["wizardDate", "wizardTime", "wizardLessonNumber", "wizardWhatTaught", "wizardAfterTraining", "wizardBeforeCoaching", "wizardNextLesson", "wizardRemarks"].forEach(id => {
+      ["wizardDate", "wizardTime", "wizardLessonNumber", "wizardTechniques", "wizardFuture", "wizardProgress", "wizardAdditional", "wizardRemarks"].forEach(id => {
         const element = document.getElementById(id);
         if (element) {
           element.addEventListener("input", updateWizardDraftFromInputs);
@@ -1785,7 +1296,8 @@ export function initApp(config = {}) {
 
     function handleAction(event) {
       const action = event.currentTarget.dataset.action;
-      if (action === "sign-in") return signIn();
+      if (action === "login-admin") return loginAs("admin");
+      if (action === "login-coach") return loginAs("coach");
       if (action === "logout") return logout();
       if (action === "toggle-avatar-menu") {
         state.ui.avatarMenuOpen = !state.ui.avatarMenuOpen;
@@ -1807,28 +1319,14 @@ export function initApp(config = {}) {
       if (action === "pick-student") return pickStudent(event.currentTarget.dataset.studentId);
       if (action === "view-report") return openReportView(event.currentTarget.dataset.reportId);
       if (action === "close-report-view") return navigate("reports");
+      if (action === "download-report-image") return downloadReportImage();
       if (action === "download-report-pdf") return downloadReportPdf();
       if (action === "export-csv") return exportCsv();
       if (action === "upload-admin-photo") return triggerProfileUpload("admin");
       if (action === "upload-coach-photo") return triggerProfileUpload("coach");
       if (action === "save-admin-profile") return saveAdminProfile();
       if (action === "save-coach-profile") return saveCoachProfile();
-      if (action === "add-centre-link") {
-        state.centreProfile.links.push({ id: crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`, label: "", url: "" });
-        return render();
-      }
-      if (action === "delete-centre-link") { state.centreProfile.links = state.centreProfile.links.filter(link => link.id !== event.currentTarget.dataset.linkId); return render(); }
-      if (action === "save-centre-profile") return saveCentreProfileFromInputs();
-      if (action === "add-coach-link") return addCoachLink();
-      if (action === "download-coach-qr") {
-        const coach = state.coaches.find(item => item.id === event.currentTarget.dataset.coachId);
-        if (coach) return downloadCoachQr(coach);
-      }
       if (action === "student-upload") return triggerStudentUpload(event.currentTarget.dataset.studentId);
-      if (action === "student-edit") return openStudentEditModal(event.currentTarget.dataset.studentId);
-      if (action === "student-edit-photo") return triggerStudentUpload(event.currentTarget.dataset.studentId);
-      if (action === "close-student-edit") return closeStudentEditModal();
-      if (action === "save-student-edit") return saveStudentEdit();
       if (action === "add-student") return openAddStudentModal();
       if (action === "close-onboarding") return closeOnboardingModal();
       if (action === "onboarding-continue") return continueOnboarding();
@@ -1844,19 +1342,16 @@ export function initApp(config = {}) {
       const search = (document.getElementById("reportsSearch")?.value || "").trim().toLowerCase();
       const dateFilter = document.getElementById("reportsDateFilter")?.value || "";
       const statusFilter = document.getElementById("reportsStatusFilter")?.value || "";
-      const studentFilter = document.getElementById("reportsStudentFilter")?.value || "";
-      const monthFilter = document.getElementById("reportsMonthFilter")?.value || "";
-      const dateFrom = document.getElementById("reportsDateFrom")?.value || "";
-      const dateTo = document.getElementById("reportsDateTo")?.value || "";
+      const coachFilter = document.getElementById("reportsCoachFilter")?.value || "";
 
       let reports = getVisibleReports().filter(report => {
         const student = getStudentById(report.studentId);
         const coach = getCoachById(report.coachId);
         const searchOk = !search || [report.ref, student.name, coach.name, report.lessonLabel, `Lesson ${report.lessonNumber}`].join(" ").toLowerCase().includes(search);
         const statusOk = !statusFilter || report.status === statusFilter;
-        const studentOk = !studentFilter || report.studentId === studentFilter;
-        const dateOk = !dateFilter || withinDateBucket(report.date, dateFilter, dateFrom, dateTo, monthFilter);
-        return searchOk && statusOk && studentOk && dateOk;
+        const coachOk = !coachFilter || report.coachId === coachFilter;
+        const dateOk = !dateFilter || withinDateBucket(report.date, dateFilter);
+        return searchOk && statusOk && coachOk && dateOk;
       });
 
       tbody.innerHTML = reports.map(report => {
@@ -1874,34 +1369,11 @@ export function initApp(config = {}) {
           </tr>
         `;
       }).join("");
-      stampTableLabels(tbody.closest("table") || document);
+      document.querySelectorAll('#reportsTable [data-action="view-report"]').forEach(button => button.addEventListener("click", handleAction));
     }
 
-    /**
-     * Copies each table's <th> text onto its matching <td> as data-label.
-     * The mobile card layout renders these labels via CSS ::before, so a
-     * stacked row still says which column each value came from. Runs after
-     * every hydrate so re-rendered tbodies stay labelled.
-     */
-    function stampTableLabels(root = document) {
-      root.querySelectorAll("table").forEach(table => {
-        const headings = [...table.querySelectorAll("thead th")].map(th => th.textContent.trim());
-        if (!headings.length) return;
-        table.querySelectorAll("tbody tr").forEach(row => {
-          [...row.children].forEach((cell, i) => {
-            const label = headings[i];
-            if (label) cell.setAttribute("data-label", label);
-            else cell.removeAttribute("data-label");
-          });
-        });
-      });
-    }
-
-    function withinDateBucket(date, bucket, dateFrom = "", dateTo = "", monthFilter = "") {
+    function withinDateBucket(date, bucket) {
       const day = Number(date.split("-")[2]);
-      if (bucket === "month") return !monthFilter || date.startsWith(monthFilter);
-      if (bucket === "day") return !document.getElementById("reportsDayFilter")?.value || date === document.getElementById("reportsDayFilter")?.value;
-      if (bucket === "custom") return (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo);
       if (bucket === "week1") return day >= 1 && day <= 7;
       if (bucket === "week2") return day >= 8 && day <= 14;
       if (bucket === "week3") return day >= 15 && day <= 21;
@@ -1914,14 +1386,6 @@ export function initApp(config = {}) {
       if (!tbody) return;
       const search = (document.getElementById("coachSearch")?.value || "").trim().toLowerCase();
       const coaches = state.coaches.filter(coach => coach.name.toLowerCase().includes(search));
-      const studentTotalsByCoach = state.students.reduce((totals, student) => {
-        totals[student.coachId] = (totals[student.coachId] || 0) + 1;
-        return totals;
-      }, {});
-      const reportTotalsByCoach = state.reports.reduce((totals, report) => {
-        totals[report.coachId] = (totals[report.coachId] || 0) + 1;
-        return totals;
-      }, {});
       tbody.innerHTML = coaches.map(coach => `
         <tr>
           <td>
@@ -1930,16 +1394,11 @@ export function initApp(config = {}) {
               <strong>${coach.name}</strong>
             </div>
           </td>
-          <td>${studentTotalsByCoach[coach.id] || 0}</td>
-          <td>${reportTotalsByCoach[coach.id] || 0}</td>
+          <td>${state.students.filter(student => student.coachId === coach.id).length}</td>
+          <td>${state.reports.filter(report => report.coachId === coach.id).length}</td>
           <td><span class="badge green"><span class="dot"></span>Active</span></td>
-          <td>
-            <a class="secondary-btn" href="/coach/${encodeURIComponent(coach.slug)}" target="_blank" rel="noreferrer">View Profile</a>
-            <button class="secondary-btn" data-action="download-coach-qr" data-coach-id="${coach.id}">Download QR</button>
-          </td>
         </tr>
       `).join("");
-      stampTableLabels(tbody.closest("table") || document);
     }
 
     function hydrateStudentsTable() {
@@ -1975,40 +1434,11 @@ export function initApp(config = {}) {
               </div>
             </td>
             <td><span class="badge green"><span class="dot"></span>Active</span></td>
-            <td><button class="icon-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button></td>
+            <td><button class="icon-btn" data-action="student-upload" data-student-id="${student.id}">Edit</button></td>
           </tr>
         `;
       }).join("");
-      stampTableLabels(tbody.closest("table") || document);
-    }
-
-    function openStudentEditModal(studentId) {
-      const student = getStudentById(studentId);
-      if (!student) return;
-      studentEditModal = { studentId };
-      render();
-    }
-
-    function closeStudentEditModal() {
-      studentEditModal = null;
-      render();
-    }
-
-    function saveStudentEdit() {
-      const student = studentEditModal && getStudentById(studentEditModal.studentId);
-      if (!student) return;
-      const name = document.getElementById("editStudentName")?.value.trim();
-      const lessons = Number(document.getElementById("editStudentLessons")?.value);
-      if (!name || !Number.isFinite(lessons) || lessons < 0) {
-        alert("Enter a name and a valid lesson count.");
-        return;
-      }
-      student.name = name;
-      student.parentHp = document.getElementById("editStudentPhone")?.value.trim() || "";
-      student.lessons = lessons;
-      studentEditModal = null;
-      persist();
-      render();
+      document.querySelectorAll('#studentsTable [data-action="student-upload"]').forEach(button => button.addEventListener("click", handleAction));
     }
 
     function startReportFlow() {
@@ -2105,7 +1535,7 @@ export function initApp(config = {}) {
         lessonNumber: Number(draft.lessonNumber) || 1,
         date: draft.date,
         time: draft.time,
-        status: "Generated",
+        status: "Sent",
         generatedAt: `${draft.date}T${draft.time}:00`,
         summary: { ...draft.summary }
       };
@@ -2132,14 +1562,10 @@ export function initApp(config = {}) {
       state.ui.reportViewId = reportId;
       persist();
       render();
-      window.requestAnimationFrame(() => {
-        const report = state.reports.find(item => item.id === reportId);
-        if (report) primeReportExport(report);
-      });
     }
 
     function exportCsv() {
-      const rows = [["REF #", "Student", "Coach", "Lesson", "Date", "Time", "Report Status"]];
+      const rows = [["REF #", "Student", "Coach", "Lesson", "Date", "Time", "Report Sent"]];
       getVisibleReports().forEach(report => {
         const student = getStudentById(report.studentId);
         const coach = getCoachById(report.coachId);
@@ -2153,71 +1579,11 @@ export function initApp(config = {}) {
       URL.revokeObjectURL(link.href);
     }
 
-    async function waitForReportReady(element) {
-      await document.fonts.ready;
-      const target = element || document.querySelector("#reportTemplatePreview");
-      if (!target || target.getBoundingClientRect().width === 0) {
-        throw new Error("Report is not visible and ready for export");
-      }
-      await Promise.all([...target.querySelectorAll("img")].map(image => {
-        if (image.complete && image.naturalWidth > 0) {
-          return image.decode ? image.decode().catch(() => {}) : Promise.resolve();
-        }
-        return new Promise(resolve => {
-          image.addEventListener("load", resolve, { once: true });
-          image.addEventListener("error", resolve, { once: true });
-        });
-      }));
-    }
-
-    /**
-     * html2canvas 1.4.1 does not implement object-fit: renderReplacedElement()
-     * draws the whole source bitmap into the content box, so a portrait photo
-     * gets squashed into the frame's landscape box instead of being cropped.
-     * Pre-cropping the bitmap to the frame's aspect makes that stretch a no-op,
-     * so the export matches what object-fit: cover renders on screen.
-     * Resolves to null when the source can't be used, in which case the caller
-     * keeps the original src rather than losing the photo entirely.
-     */
-    function coverCropDataUrl(src, targetAspect, targetWidth) {
-      return new Promise(resolve => {
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
         const image = new Image();
-        // Vector sources rasterise at whatever size we draw them, so they are
-        // not capped by an intrinsic pixel budget the way photos are.
-        const isVector = /^data:image\/svg\+xml/i.test(src);
-        if (!/^data:/i.test(src)) image.crossOrigin = "anonymous";
-        image.onload = () => {
-          const sourceWidth = image.naturalWidth;
-          const sourceHeight = image.naturalHeight;
-          if (!sourceWidth || !sourceHeight) return resolve(null);
-          // Largest centred region of the source matching the frame aspect.
-          let cropWidth = sourceWidth;
-          let cropHeight = Math.round(sourceWidth / targetAspect);
-          if (cropHeight > sourceHeight) {
-            cropHeight = sourceHeight;
-            cropWidth = Math.round(sourceHeight * targetAspect);
-          }
-          const cropX = Math.max(0, Math.round((sourceWidth - cropWidth) / 2));
-          const cropY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2));
-          const requested = Math.max(1, Math.round(targetWidth));
-          const outWidth = isVector ? requested : Math.min(requested, cropWidth);
-          const outHeight = Math.max(1, Math.round(outWidth / targetAspect));
-          const canvas = document.createElement("canvas");
-          canvas.width = outWidth;
-          canvas.height = outHeight;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return resolve(null);
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, outWidth, outHeight);
-          try {
-            resolve(canvas.toDataURL("image/png"));
-          } catch (error) {
-            // Cross-origin photo tainted the canvas; leave the original src.
-            resolve(null);
-          }
-        };
-        image.onerror = () => resolve(null);
+        image.onload = () => resolve(image);
+        image.onerror = reject;
         image.src = src;
       });
     }
@@ -2236,7 +1602,7 @@ export function initApp(config = {}) {
       ctx.closePath();
     }
 
-    function getWrappedLines(ctx, text, maxWidth, maxLines = Infinity) {
+    function getWrappedLines(ctx, text, maxWidth, maxLines) {
       const words = String(text || "").trim().split(/\s+/).filter(Boolean);
       if (!words.length) return [];
       const lines = [];
@@ -2275,18 +1641,7 @@ export function initApp(config = {}) {
     function drawBulletLine(ctx, text, x, y, maxWidth, lineHeight, maxLines, inset = 0) {
       const value = String(text || "").trim();
       if (!value) return;
-      const originalFont = ctx.font;
-      const fontMatch = originalFont.match(/(\d+(?:\.\d+)?)px/);
-      const originalSize = fontMatch ? Number(fontMatch[1]) : 14;
-      let fontSize = originalSize;
-      let lines = [];
-      do {
-        ctx.font = `400 ${fontSize}px Arial, "Helvetica Neue", Helvetica, sans-serif`;
-        lines = getWrappedLines(ctx, value, maxWidth - inset);
-        if (lines.length <= maxLines || fontSize <= 10) break;
-        fontSize -= 0.5;
-      } while (fontSize > 10);
-      lines = lines.slice(0, maxLines);
+      const lines = getWrappedLines(ctx, value, maxWidth - inset, maxLines);
       if (!lines.length) return;
       const textX = x + inset;
       ctx.fillText(lines[0], textX, y);
@@ -2295,143 +1650,144 @@ export function initApp(config = {}) {
       });
     }
 
-    function getReportExportKey(report) {
-      return report ? JSON.stringify(getReportTemplateData(report)) : "";
-    }
+    async function renderReportCanvas(report) {
+      const data = getReportTemplateData(report);
+      const footerY = data.remarksLines.length
+        ? Math.min(
+            REPORT_CANVAS_FOOTER_Y_DEFAULT,
+            REPORT_CANVAS_REMARK_LINE_YS[data.remarksLines.length - 1] + 16
+          )
+        : REPORT_CANVAS_FOOTER_Y_DEFAULT;
+      await document.fonts.ready;
+      const canvas = document.createElement("canvas");
+      canvas.width = REPORT_TEMPLATE_SIZE.width;
+      canvas.height = REPORT_TEMPLATE_SIZE.height;
+      const ctx = canvas.getContext("2d");
+      const template = await loadImage(REPORT_TEMPLATE_SRC);
+      ctx.drawImage(template, 0, 0, canvas.width, canvas.height);
 
-    async function renderReportCanvas() {
-      const reportTemplate = document.querySelector("#reportTemplatePreview");
-      if (!reportTemplate) {
-        throw new Error("Report template is not mounted");
-      }
-      const html2canvas = await getHtml2CanvasLib();
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      await waitForReportReady(reportTemplate);
-      const exportWidth = REPORT_TEMPLATE_SIZE.width;
-      const exportHeight = REPORT_TEMPLATE_SIZE.height;
-      const photoCardWidthPx = exportWidth * 0.112;
-      const photoCardHeightPx = photoCardWidthPx * (111 / 123);
-      const photoGapPx = exportWidth * 0.0145;
+      ctx.fillStyle = "#000000";
+      ctx.textBaseline = "top";
+      ctx.font = '700 22px "Kalam", cursive';
+      ctx.fillText(data.session.date, 160, 325);
+      ctx.fillText(data.session.time, 160, 353);
+      drawFittedText(ctx, data.session.centre, 160, 381, 230, 22, 14, 700);
+      drawFittedText(ctx, data.session.coachName, 217, 410, 185, 22, 14, 700);
 
-      // Pre-crop each photo to the frame aspect so the export matches the
-      // on-screen object-fit: cover. Done before html2canvas (rather than
-      // inside onclone) so the async decode can't race the render pass.
-      const exportScale = 3;
-      const photoCrops = await Promise.all(
-        [...reportTemplate.querySelectorAll(".template-photo")].map(photo => {
-          const box = photo.getBoundingClientRect();
-          // The live content box already has the aspect object-fit is using,
-          // so matching it reproduces the on-screen crop exactly.
-          const aspect = box.width > 0 && box.height > 0
-            ? box.width / box.height
-            : 123 / 111;
-          const src = photo.currentSrc || photo.getAttribute("src") || "";
-          if (!src) return Promise.resolve(null);
-          return coverCropDataUrl(src, aspect, photoCardWidthPx * exportScale);
-        })
-      );
-
-      return await html2canvas(reportTemplate, {
-        scale: exportScale,
-        useCORS: true,
-        allowTaint: true,
-        imageTimeout: 0,
-        logging: false,
-        removeContainer: true,
-        width: Math.ceil(exportWidth),
-        height: Math.ceil(exportHeight),
-        backgroundColor: null,
-        onclone: clonedDoc => {
-          const clonedReportTemplate = clonedDoc.querySelector("#reportTemplatePreview");
-          if (!clonedReportTemplate) return;
-          clonedReportTemplate.style.setProperty("container-type", "inline-size");
-          clonedReportTemplate.style.setProperty("container-name", "report");
-          clonedReportTemplate.style.width = `${exportWidth}px`;
-          clonedReportTemplate.style.height = `${exportHeight}px`;
-          clonedReportTemplate.style.minWidth = `${exportWidth}px`;
-          clonedReportTemplate.style.maxWidth = `${exportWidth}px`;
-          clonedReportTemplate.style.minHeight = `${exportHeight}px`;
-          clonedReportTemplate.style.maxHeight = `${exportHeight}px`;
-
-          const clonedPhotoGroup = clonedReportTemplate.querySelector(".template-report-photo-group");
-          if (clonedPhotoGroup) {
-            clonedPhotoGroup.style.gap = `${photoGapPx}px`;
+      const drawPhoto = async (src, x, y, width, height) => {
+        roundedRectPath(ctx, x, y, width, height, 12);
+        ctx.save();
+        ctx.clip();
+        if (src) {
+          try {
+            const image = await loadImage(src);
+            ctx.drawImage(image, x, y, width, height);
+          } catch (error) {
+            src = "";
           }
-
-          clonedReportTemplate.querySelectorAll(".template-photo-card").forEach(card => {
-            card.style.width = `${photoCardWidthPx}px`;
-            card.style.minWidth = `${photoCardWidthPx}px`;
-            card.style.maxWidth = `${photoCardWidthPx}px`;
-            card.style.flex = `0 0 ${photoCardWidthPx}px`;
-            card.style.flexShrink = "0";
-          });
-
-          clonedReportTemplate.querySelectorAll(".template-photo-frame").forEach(frame => {
-            frame.style.width = "100%";
-            frame.style.height = `${photoCardHeightPx}px`;
-            frame.style.minHeight = `${photoCardHeightPx}px`;
-            frame.style.maxHeight = `${photoCardHeightPx}px`;
-          });
-
-          clonedReportTemplate.querySelectorAll(".template-photo").forEach((photo, index) => {
-            photo.style.width = "100%";
-            photo.style.height = "100%";
-            photo.style.maxHeight = "100%";
-            photo.style.objectFit = "cover";
-            photo.style.objectPosition = "center center";
-            photo.style.display = "block";
-            // html2canvas ignores object-fit and stretches the full bitmap into
-            // the box, so hand it a bitmap already cropped to that box's aspect.
-            const cropped = photoCrops[index];
-            if (cropped) {
-              photo.setAttribute("src", cropped);
-              photo.removeAttribute("srcset");
-              photo.removeAttribute("sizes");
-            }
-          });
         }
+        if (!src) {
+          ctx.fillStyle = "#E5E7EB";
+          ctx.fillRect(x, y, width, height);
+          ctx.fillStyle = "#C4CBD6";
+          ctx.beginPath();
+          ctx.arc(x + (width / 2), y + 40, 20, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(x + 24, y + height);
+          ctx.quadraticCurveTo(x + (width / 2), y + 66, x + width - 24, y + height);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      };
+
+      await drawPhoto(data.studentPhoto, 570, 299, 111, 123);
+      await drawPhoto(data.coachPhoto, 694, 299, 111, 123);
+
+      ctx.fillStyle = "#f6efe4";
+      REPORT_TEMPLATE_BULLET_MASKS.forEach(mask => {
+        const x = (mask.left / 100) * canvas.width;
+        const y = (mask.top / 100) * canvas.height;
+        const width = 0.0325 * canvas.width;
+        const height = 0.022 * canvas.height;
+        roundedRectPath(ctx, x, y, width, height, height / 2);
+        ctx.fill();
       });
+
+      ctx.fillStyle = "#000000";
+      ctx.font = '400 14px Arial, "Helvetica Neue", Helvetica, sans-serif';
+      const bulletGroups = [
+        { lines: data.bullets.whatTaught, x: 109, ys: [546, 577], width: 302 },
+        { lines: data.bullets.beforeCoaching, x: 109, ys: [654, 685], width: 302 },
+        { lines: data.bullets.afterTraining, x: 499, ys: [546, 577], width: 302 },
+        { lines: data.bullets.nextLesson, x: 499, ys: [654, 685], width: 302 }
+      ];
+      bulletGroups.forEach(group => {
+        group.ys.forEach((y, index) => {
+          drawBulletLine(ctx, group.lines[index], group.x, y, group.width, 19, 2);
+        });
+      });
+
+        ctx.fillStyle = "#000000";
+        ctx.font = '400 15px Arial, "Helvetica Neue", Helvetica, sans-serif';
+        data.remarksLines.forEach((line, index) => {
+          ctx.fillText(line, 96, REPORT_CANVAS_REMARK_YS[index]);
+        });
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#111111";
+      ctx.font = 'italic 700 33px "Kalam", cursive';
+      drawFittedText(ctx, data.centreContact, 448, 947, 246, 33, 22, 700);
+      ctx.font = 'italic 700 31px "Kalam", cursive';
+      drawWrappedLines(ctx, data.address, 325, 1022, 246, 31, 3);
+      ctx.textAlign = "left";
+
+      return canvas;
     }
 
-    function primeReportExport(report) {
-      const key = getReportExportKey(report);
-      if (!key || (reportExportPromise && reportExportKey === key)) return;
-      reportExportKey = key;
-      reportExportPromise = renderReportCanvas().catch(error => {
-        reportExportPromise = null;
-        reportExportKey = "";
-        throw error;
-      });
-    }
-
-    async function getReportExportCanvas(report) {
-      const key = getReportExportKey(report);
-      if (!key) throw new Error("Report is missing");
-      if (reportExportPromise && reportExportKey === key) {
-        return await reportExportPromise;
+    function dataUrlToUint8Array(dataUrl) {
+      const base64 = dataUrl.split(",")[1];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
       }
-      reportExportKey = key;
-      reportExportPromise = renderReportCanvas().catch(error => {
-        reportExportPromise = null;
-        reportExportKey = "";
-        throw error;
-      });
-      return await reportExportPromise;
+      return bytes;
     }
 
-    function saveCentreProfileFromInputs() {
-      const links = [...document.querySelectorAll(".centre-link-row")].map(row => ({
-        id: row.dataset.linkId || `link-${Date.now()}-${Math.random()}`,
-        label: row.querySelector('[data-link-field="label"]')?.value.trim() || "",
-        url: row.querySelector('[data-link-field="url"]')?.value.trim() || ""
-      }));
-      state.centreProfile = { links };
-      saveCentreProfile();
-      const button = document.querySelector('[data-action="save-centre-profile"]');
-      if (button) {
-        button.textContent = "Saved";
-        window.setTimeout(() => { if (button.isConnected) button.textContent = "Save"; }, 1500);
-      }
+    function jpegDataUrlToPdfBlob(dataUrl, width, height) {
+      const imageBytes = dataUrlToUint8Array(dataUrl);
+      const pdfParts = [];
+      const offsets = [];
+      let cursor = 0;
+      const push = value => {
+        const chunk = typeof value === "string" ? value : new TextDecoder().decode(value);
+        pdfParts.push(chunk);
+        cursor += chunk.length;
+      };
+      const addObject = content => {
+        offsets.push(cursor);
+        push(`${offsets.length} 0 obj\n${content}\nendobj\n`);
+      };
+
+      push("%PDF-1.4\n");
+      addObject("<< /Type /Catalog /Pages 2 0 R >>");
+      addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+      addObject(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+      offsets.push(cursor);
+      push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);
+      push(atob(dataUrl.split(",")[1]));
+      push("\nendstream\nendobj\n");
+      const contentStream = `q\n${width} 0 0 ${height} 0 0 cm\n/Im0 Do\nQ`;
+      addObject(`<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream`);
+      const xrefStart = cursor;
+      push(`xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`);
+      offsets.forEach(offset => {
+        push(`${String(offset).padStart(10, "0")} 00000 n \n`);
+      });
+      push(`trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
+      return new Blob([pdfParts.join("")], { type: "application/pdf" });
     }
 
     function downloadBlob(blob, filename) {
@@ -2439,23 +1795,24 @@ export function initApp(config = {}) {
       link.href = URL.createObjectURL(blob);
       link.download = filename;
       link.click();
-      window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
+      URL.revokeObjectURL(link.href);
+    }
+
+    async function downloadReportImage() {
+      const report = state.reports.find(item => item.id === state.ui.reportViewId);
+      if (!report) return;
+      const canvas = await renderReportCanvas(report);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      downloadBlob(blob, `${report.ref || report.id}-training-report.png`);
     }
 
     async function downloadReportPdf() {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) return;
-      const canvas = await renderReportCanvas();
-      const jsPDF = await getJsPdfLib();
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "px",
-        format: [canvas.width, canvas.height],
-        hotfixes: ["px_scaling"]
-      });
-      pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
-      downloadBlob(pdf.output("blob"), `${report.ref || report.id}-training-report.pdf`);
+      const canvas = await renderReportCanvas(report);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.96);
+      const blob = jpegDataUrlToPdfBlob(dataUrl, canvas.width, canvas.height);
+      downloadBlob(blob, `${report.ref || report.id}-training-report.pdf`);
     }
 
     function triggerStudentUpload(studentId) {
@@ -2468,21 +1825,6 @@ export function initApp(config = {}) {
     function triggerProfileUpload(context) {
       draftProfileUploadContext = context;
       document.getElementById("hiddenProfileUpload")?.click();
-    }
-
-    async function uploadProfileImage(file, kind, recordId) {
-      if (!supabase) throw new Error("Supabase is not configured.");
-      if (!file.type.startsWith("image/")) throw new Error("Choose an image file.");
-      if (file.size > 5 * 1024 * 1024) throw new Error("Images must be 5 MB or smaller.");
-      const extension = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-      const path = `${kind}/${recordId}-${Date.now()}.${extension}`;
-      const { error } = await supabase.storage.from(PROFILE_IMAGE_BUCKET).upload(path, file, {
-        cacheControl: "3600",
-        contentType: file.type,
-        upsert: false
-      });
-      if (error) throw error;
-      return supabase.storage.from(PROFILE_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
     }
 
     function saveAdminProfile() {
@@ -2504,47 +1846,8 @@ export function initApp(config = {}) {
       coach.branchAddress = document.getElementById("coachBranchAddress")?.value.trim() || coach.branchAddress || coach.branch;
       coach.email = document.getElementById("coachEmail")?.value.trim();
       coach.phone = document.getElementById("coachPhone")?.value.trim();
-      const requestedSlug = slugify(document.getElementById("coachSlug")?.value || coach.name);
-      const slugConflict = state.coaches.some(item => item.id !== coach.id && item.slug === requestedSlug);
-      if (slugConflict) {
-        alert(`That public URL is already used. Try ${requestedSlug}-${slugify(coach.id)}.`);
-        return;
-      }
-      coach.slug = requestedSlug;
-      coach.role = document.getElementById("coachRole")?.value.trim() || "Table Tennis Coach";
-      coach.bio = document.getElementById("coachBio")?.value.trim() || "";
-      coach.links = Array.from(document.querySelectorAll(".coach-link-row")).map((row, index) => ({
-        id: row.querySelector(".coach-link-url")?.value.trim() || `link-${index + 1}`,
-        title: row.querySelector(".coach-link-title")?.value.trim() || "Link",
-        url: row.querySelector(".coach-link-url")?.value.trim() || "#",
-        icon: "↗",
-        visible: row.querySelector(".coach-link-visible")?.checked !== false,
-        order: index + 1
-      }));
       persist();
       render();
-    }
-
-    function addCoachLink() {
-      const coach = getCurrentCoach();
-      coach.links = [...(coach.links || []), {
-        id: `link-${Date.now()}`,
-        title: "New link",
-        url: "https://",
-        icon: "↗",
-        visible: true,
-        order: (coach.links || []).length + 1
-      }];
-      render();
-    }
-
-    function downloadCoachQr(coach) {
-      loadQrDataUrl(coach, 200).then(dataUrl => {
-        const link = document.createElement("a");
-        link.download = `coach-qr-${coach.slug}.png`;
-        link.href = dataUrl;
-        link.click();
-      }).catch(() => {});
     }
 
     function openOnboarding(type) {
@@ -2653,34 +1956,18 @@ export function initApp(config = {}) {
       submitOnboarding();
     }
 
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
     (async function bootstrap() {
+      state = await loadState();
       render();
-      if (supabase) {
-        const { data } = await supabase.auth.getSession();
-        await applyAuthUser(data.session?.user || null);
-      }
-      loadState()
-        .then(async nextState => {
-          state = nextState;
-          const localCentreProfile = getCentreProfile();
-          if (!state.centreProfile?.links?.length && localCentreProfile.links.length) {
-            state.centreProfile = localCentreProfile;
-            persist();
-          } else {
-            state.centreProfile = normalizeCentreProfile(state.centreProfile);
-          }
-          render();
-          if (supabase) {
-            const { data } = await supabase.auth.getSession();
-            await applyAuthUser(data.session?.user || null);
-            bindAuthStateListener();
-          }
-          render();
-          subscribeToRealtime();
-        })
-        .catch(() => {
-          state = normalizeState(createInitialState());
-          render();
-        });
+      persist();
     })();
-}
+  

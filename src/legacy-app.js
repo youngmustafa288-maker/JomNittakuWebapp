@@ -680,11 +680,14 @@ export function initApp(config = {}) {
       const reportsLastMonth = getVisibleReportsForMonth(getPreviousMonthPrefix()).length;
       const activeStudents = getVisibleStudents().filter(student => student.status !== "Inactive").length;
       const activeCoaches = getVisibleCoaches().filter(coach => coach.status !== "Inactive").length;
-      return [
+      const stats = [
         { title: "Reports Created This Month", value: reportsThisMonth, footnote: formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
-        { title: "Total Students", value: activeStudents, footnote: "" },
-        { title: "Total Coaches", value: activeCoaches, footnote: "" }
+        { title: "Total Students", value: activeStudents, footnote: "" }
       ];
+      if (state.auth.role === "admin") {
+        stats.push({ title: "Total Coaches", value: activeCoaches, footnote: "" });
+      }
+      return stats;
     }
 
     function sortReportsDesc(reports) {

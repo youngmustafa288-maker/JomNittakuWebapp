@@ -667,7 +667,7 @@ export function initApp(config = {}) {
               </div>
             </div>
             <h2 class="login-title">Sign in</h2>
-            <form class="login-form" data-action="sign-in">
+            <form class="login-form">
               <div class="field">
                 <label for="loginEmail">Email</label>
                 <input id="loginEmail" class="text-input" type="email" autocomplete="email" required>
@@ -1521,12 +1521,20 @@ export function initApp(config = {}) {
 
     function render() {
       const app = document.getElementById("app");
+      // A re-render replaces the whole subtree, so anything the user has
+      // half-typed into the login form (and the caret position) is lost
+      // unless it is carried across explicitly.
       const activeElement = document.activeElement;
-      const loginFocusState = activeElement && app.contains(activeElement) && activeElement.closest(".login-form")
+      const loginForm = app.querySelector(".login-form");
+      const loginFormState = loginForm
         ? {
-            id: activeElement.id || null,
-            selectionStart: typeof activeElement.selectionStart === "number" ? activeElement.selectionStart : null,
-            selectionEnd: typeof activeElement.selectionEnd === "number" ? activeElement.selectionEnd : null
+            values: Array.from(loginForm.querySelectorAll("input")).reduce((acc, input) => {
+              if (input.id && input.type !== "checkbox" && input.type !== "radio") acc[input.id] = input.value;
+              return acc;
+            }, {}),
+            activeId: activeElement && loginForm.contains(activeElement) ? activeElement.id || null : null,
+            selectionStart: activeElement && typeof activeElement.selectionStart === "number" ? activeElement.selectionStart : null,
+            selectionEnd: activeElement && typeof activeElement.selectionEnd === "number" ? activeElement.selectionEnd : null
           }
         : null;
       const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
@@ -1547,12 +1555,20 @@ export function initApp(config = {}) {
         // that have no hydrate step of their own.
         stampTableLabels();
       }
-      if (loginFocusState) {
-        const nextFocus = loginFocusState.id ? document.getElementById(loginFocusState.id) : null;
+      if (loginFormState) {
+        Object.entries(loginFormState.values).forEach(([id, value]) => {
+          const input = document.getElementById(id);
+          if (input && value) input.value = value;
+        });
+        const nextFocus = loginFormState.activeId ? document.getElementById(loginFormState.activeId) : null;
         if (nextFocus && typeof nextFocus.focus === "function") {
           nextFocus.focus({ preventScroll: true });
-          if (typeof nextFocus.setSelectionRange === "function" && loginFocusState.selectionStart !== null && loginFocusState.selectionEnd !== null) {
-            nextFocus.setSelectionRange(loginFocusState.selectionStart, loginFocusState.selectionEnd);
+          if (typeof nextFocus.setSelectionRange === "function" && loginFormState.selectionStart !== null && loginFormState.selectionEnd !== null) {
+            try {
+              nextFocus.setSelectionRange(loginFormState.selectionStart, loginFormState.selectionEnd);
+            } catch {
+              // Some input types (e.g. email) disallow selection APIs.
+            }
           }
         }
       }
@@ -1620,6 +1636,13 @@ export function initApp(config = {}) {
       if (!appEventsBound) {
         const app = document.getElementById("app");
         app.addEventListener("click", event => {
+          // Clicks that land on a form control must never be treated as an
+          // action/nav trigger. Otherwise an ancestor carrying data-action
+          // (e.g. a <form>) swallows the click, preventDefault() blocks the
+          // caret, and the following re-render wipes what the user typed.
+          if (event.target.closest("input, textarea, select, label, option")) {
+            return;
+          }
           const actionButton = event.target.closest("[data-action]");
           if (actionButton) {
             event.preventDefault();

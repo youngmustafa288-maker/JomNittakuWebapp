@@ -294,7 +294,16 @@ export function initApp(config = {}) {
     function applyRemoteState(payload) {
       if (!payload) return;
       isApplyingRemoteState = true;
+      // auth and ui are per-browser session state. They are deliberately not
+      // written to the shared dashboard_state row, so normalizeState() resets
+      // them to blank defaults. Carrying the live values over prevents an
+      // incoming change (including the echo of this client's own write) from
+      // signing the user out or yanking them to a different tab.
+      const liveAuth = state.auth;
+      const liveUi = state.ui;
       state = normalizeState(payload);
+      state.auth = liveAuth;
+      state.ui = liveUi;
       render();
       window.setTimeout(() => {
         isApplyingRemoteState = false;
@@ -2619,7 +2628,12 @@ export function initApp(config = {}) {
       }
       loadState()
         .then(async nextState => {
+          // loadState() returns a fresh state whose auth is blank, so the
+          // session resolved above has to be carried over. Otherwise a
+          // signed-in user gets dropped back on the login screen on reload.
+          const liveAuth = state.auth;
           state = nextState;
+          state.auth = liveAuth;
           const localCentreProfile = getCentreProfile();
           if (!state.centreProfile?.links?.length && localCentreProfile.links.length) {
             state.centreProfile = localCentreProfile;
@@ -2627,12 +2641,12 @@ export function initApp(config = {}) {
           } else {
             state.centreProfile = normalizeCentreProfile(state.centreProfile);
           }
-          render();
           if (supabase) {
             const { data } = await supabase.auth.getSession();
             await applyAuthUser(data.session?.user || null);
             bindAuthStateListener();
           }
+          render();
           subscribeToRealtime();
         })
         .catch(() => {

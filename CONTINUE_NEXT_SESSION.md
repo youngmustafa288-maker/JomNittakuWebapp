@@ -1,6 +1,6 @@
 # Continue Next Session
 
-Date: September 2, 2026
+Date: September 4, 2026
 Project: JomNittaku web app
 Workspace: `C:\Users\jcomp\OneDrive\Desktop\New folder`
 
@@ -53,6 +53,32 @@ codex mcp login supabase
 6. Test sign-in with one admin and one coach account.
 7. Confirm admin `app_metadata.role` is `admin`; confirm coach `app_metadata.coach_id` or email matches a row in `public.coaches`.
 8. Test coach report student/date filters and student edits/uploads against the live Supabase project.
+
+## Centre QR Links - Priority Next Task
+
+The centre QR code opens `/centre`, but the public page currently says `No contact info available` because centre links were previously stored in browser `localStorage` and inside the private `dashboard_state` payload. A new public-safe migration and frontend path are prepared but not yet applied or pushed.
+
+Pending implementation files:
+
+- `supabase/migrations/20260904_000005_public_centre_links.sql`
+- `src/legacy-app.js`
+
+Next-session steps:
+
+1. Restart/reload Codex so the newly authenticated Supabase MCP session is available.
+2. Verify Supabase MCP database tools can access project `vjhjvcvmtfpkoyjxfmxu`.
+3. Apply `supabase/migrations/20260904_000005_public_centre_links.sql` to the project.
+4. Verify table `public.centre_links` exists with RLS enabled and policies allowing public SELECT but authenticated INSERT/UPDATE only.
+5. Verify the existing centre links were copied into `centre_links` by logging into the dashboard or manually checking the row with `id = 'centre'`.
+6. Test `/centre` in a private/incognito browser session and scan the generated QR code from a report.
+7. Run `npm run build` and then commit/push the pending frontend and migration files to `origin/main` for Vercel deployment.
+
+## Current Git Status
+
+- Branch: `main`, currently aligned with `origin/main` at commit `c918fa4`.
+- Pending uncommitted changes: `src/legacy-app.js` and `supabase/migrations/20260904_000005_public_centre_links.sql`.
+- These centre-link changes have not been pushed yet.
+- The last completed build before this handoff passed with `npm run build`.
 
 ## Important Notes
 

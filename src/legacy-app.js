@@ -124,6 +124,12 @@ export function initApp(config = {}) {
       state.centreProfile = normalizeCentreProfile(state.centreProfile);
       localStorage.setItem(CENTRE_PROFILE_KEY, JSON.stringify(state.centreProfile));
       persist();
+      if (supabase) {
+        supabase
+          .from("centre_links")
+          .upsert({ id: "centre", links: state.centreProfile.links }, { onConflict: "id" })
+          .catch(() => {});
+      }
     }
     function centreLinkUrl(link) {
       return String(link.url || "").trim();
@@ -275,6 +281,22 @@ export function initApp(config = {}) {
         }
       } catch (error) {}
       return normalizeState(createInitialState());
+    }
+
+    async function loadPublicCentreProfile() {
+      const localProfile = getCentreProfile();
+      if (!supabase) return localProfile;
+      try {
+        const { data, error } = await supabase
+          .from("centre_links")
+          .select("links")
+          .eq("id", "centre")
+          .maybeSingle();
+        if (!error && data) {
+          return normalizeCentreProfile({ links: data.links });
+        }
+      } catch (error) {}
+      return localProfile;
     }
 
     async function flushStateToSupabase() {
@@ -886,7 +908,6 @@ export function initApp(config = {}) {
               <div class="section-title">
                 <h2>Reports</h2>
               </div>
-              <button class="secondary-btn" data-action="export-csv">Export CSV</button>
             </div>
             <div class="reports-filter-bar">
               <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">
@@ -1838,7 +1859,6 @@ export function initApp(config = {}) {
       if (action === "view-report") return openReportView(event.currentTarget.dataset.reportId);
       if (action === "close-report-view") return navigate("reports");
       if (action === "download-report-pdf") return downloadReportPdf();
-      if (action === "export-csv") return exportCsv();
       if (action === "upload-admin-photo") return triggerProfileUpload("admin");
       if (action === "upload-coach-photo") return triggerProfileUpload("coach");
       if (action === "save-admin-profile") return saveAdminProfile();
@@ -2162,21 +2182,6 @@ export function initApp(config = {}) {
         const report = state.reports.find(item => item.id === reportId);
         if (report) primeReportExport(report);
       });
-    }
-
-    function exportCsv() {
-      const rows = [["REF #", "Student", "Coach", "Lesson", "Date", "Time", "Report Status"]];
-      getVisibleReports().forEach(report => {
-        const student = getStudentById(report.studentId);
-        const coach = getCoachById(report.coachId);
-        rows.push([report.ref, student.name, coach.name, `Lesson ${report.lessonNumber}`, report.date, report.time, report.status]);
-      });
-      const blob = new Blob([rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "dao-sports-method-reports-july-2026.csv";
-      link.click();
-      URL.revokeObjectURL(link.href);
     }
 
     async function waitForReportReady(element) {
@@ -2672,6 +2677,11 @@ export function initApp(config = {}) {
 
     (async function bootstrap() {
       render();
+      if (/^\/centre\/?$/i.test(window.location.pathname)) {
+        state.centreProfile = await loadPublicCentreProfile();
+        render();
+        return;
+      }
       if (supabase) {
         const { data } = await supabase.auth.getSession();
         await applyAuthUser(data.session?.user || null);
@@ -2690,6 +2700,12 @@ export function initApp(config = {}) {
             persist();
           } else {
             state.centreProfile = normalizeCentreProfile(state.centreProfile);
+          }
+          if (supabase && state.centreProfile.links.length) {
+            supabase
+              .from("centre_links")
+              .upsert({ id: "centre", links: state.centreProfile.links }, { onConflict: "id" })
+              .catch(() => {});
           }
           if (supabase) {
             const { data } = await supabase.auth.getSession();

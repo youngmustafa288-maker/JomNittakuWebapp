@@ -1998,7 +1998,7 @@ export function initApp(config = {}) {
               </div>
             </td>
             <td><span class="badge green"><span class="dot"></span>Active</span></td>
-            <td><button class="icon-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button></td>
+            <td><button class="icon-btn table-edit-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button></td>
           </tr>
         `;
       }).join("");

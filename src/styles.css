@@ -941,6 +941,17 @@
       border: 1px solid rgba(214, 40, 69, 0.16);
     }
 
+    .table-edit-btn {
+      width: auto;
+      min-width: 58px;
+      height: 38px;
+      padding: 8px 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }
+
     .table-title-link {
       display: inline-flex;
       align-items: center;

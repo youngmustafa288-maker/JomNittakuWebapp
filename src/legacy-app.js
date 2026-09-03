@@ -307,9 +307,24 @@ export function initApp(config = {}) {
       // signing the user out or yanking them to a different tab.
       const liveAuth = state.auth;
       const liveUi = state.ui;
+      const focusedWizardField = document.activeElement?.closest("#wizardModal input, #wizardModal textarea, #wizardModal select");
+      const localWizardDraft = focusedWizardField && wizardDraftId && state.reportDrafts?.[wizardDraftId]
+        ? {
+            ...state.reportDrafts[wizardDraftId],
+            summary: { ...state.reportDrafts[wizardDraftId].summary }
+          }
+        : null;
       state = normalizeState(payload);
       state.auth = liveAuth;
       state.ui = liveUi;
+      if (localWizardDraft) {
+        // Realtime echoes must not replace the wizard while a field is active.
+        // Keep the locally edited draft until the field loses focus or the user
+        // explicitly navigates to another wizard step.
+        state.reportDrafts[wizardDraftId] = localWizardDraft;
+        isApplyingRemoteState = false;
+        return;
+      }
       render();
       window.setTimeout(() => {
         isApplyingRemoteState = false;

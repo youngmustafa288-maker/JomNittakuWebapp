@@ -7,8 +7,14 @@ export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
     const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Image 1.jpg?v=2";
-    const MONTH_LABEL = "July 2026";
-    const CURRENT_MONTH_PREFIX = "2026-07";
+    const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      year: "numeric"
+    }).format(new Date());
+    const CURRENT_MONTH_PREFIX = (() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    })();
     const REPORT_TEMPLATE_SIZE = { width: 896, height: 1200 };
     const REPORT_TEMPLATE_BULLET_MASKS = [
       { left: 8.9, top: 45.35 },
@@ -641,11 +647,43 @@ export function initApp(config = {}) {
       scheduleRender();
     }
 
+    function getVisibleCoaches() {
+      return state.auth.role === "admin"
+        ? state.coaches
+        : state.coaches.filter(coach => coach.id === getCurrentCoach().id);
+    }
+
+    function getVisibleStudents() {
+      return state.auth.role === "admin"
+        ? state.students
+        : state.students.filter(student => student.coachId === getCurrentCoach().id);
+    }
+
+    function getVisibleReportsForMonth(monthPrefix) {
+      return getVisibleReports().filter(report => String(report.date || "").startsWith(monthPrefix));
+    }
+
+    function getPreviousMonthPrefix() {
+      const previousMonth = new Date();
+      previousMonth.setMonth(previousMonth.getMonth() - 1);
+      return `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, "0")}`;
+    }
+
+    function formatPercentChange(current, previous) {
+      if (previous === 0) return current > 0 ? "up 100% vs last month" : "no change vs last month";
+      const percent = Math.round(((current - previous) / previous) * 100);
+      return `${percent >= 0 ? "up" : "down"} ${Math.abs(percent)}% vs last month`;
+    }
+
     function overviewStats() {
+      const reportsThisMonth = getVisibleReportsForMonth(CURRENT_MONTH_PREFIX).length;
+      const reportsLastMonth = getVisibleReportsForMonth(getPreviousMonthPrefix()).length;
+      const activeStudents = getVisibleStudents().filter(student => student.status !== "Inactive").length;
+      const activeCoaches = getVisibleCoaches().filter(coach => coach.status !== "Inactive").length;
       return [
-        { title: "Reports Created This Month", value: "147", footnote: "↑ 12% vs last month", tone: "positive" },
-        { title: "Total Students", value: "84", footnote: "" },
-        { title: "Total Coaches", value: "9", footnote: "" }
+        { title: "Reports Created This Month", value: reportsThisMonth, footnote: formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
+        { title: "Total Students", value: activeStudents, footnote: "" },
+        { title: "Total Coaches", value: activeCoaches, footnote: "" }
       ];
     }
 
@@ -882,7 +920,7 @@ export function initApp(config = {}) {
             <div class="table-topline">
               <div class="section-title">
                 <h2>Coaches</h2>
-                <p>9 active coaches</p>
+                <p>${getVisibleCoaches().filter(coach => coach.status !== "Inactive").length} active coaches</p>
               </div>
               <button class="primary-btn" data-action="stub-add-coach">+ Add Coach</button>
             </div>
@@ -924,7 +962,7 @@ export function initApp(config = {}) {
             <div class="table-topline">
               <div class="section-title">
                 <h2>Students</h2>
-                <p>${state.auth.role === "admin" ? "84 active students" : `${state.students.filter(student => student.coachId === getCurrentCoach().id).length} active students`}</p>
+                <p>${getVisibleStudents().filter(student => student.status !== "Inactive").length} active students</p>
               </div>
               <button class="primary-btn" data-action="add-student">+ Add Student</button>
             </div>
@@ -1408,7 +1446,7 @@ export function initApp(config = {}) {
             <header class="page-header">
               <div class="header-copy">
                 <h1>Academy Overview 🏓</h1>
-                <p>JomNittaku Coach Reporting System · July 2026</p>
+                <p>JomNittaku Coach Reporting System · ${MONTH_LABEL}</p>
               </div>
             </header>
             ${pageContent}

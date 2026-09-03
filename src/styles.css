@@ -1709,13 +1709,6 @@
       display: block;
     }
 
-    .report-export-note {
-      margin-top: 10px;
-      text-align: center;
-      color: var(--slate-500);
-      font-size: 0.93rem;
-    }
-
     .report-info-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -2091,7 +2084,7 @@
         display: flex;
       }
 
-      /* Multi-button cells (View Profile / Download QR) stack evenly */
+      /* Keep table action links comfortably sized on mobile. */
       .table-wrap tbody td .secondary-btn {
         flex: 1 1 auto;
         text-align: center;

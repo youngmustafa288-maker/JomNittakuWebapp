@@ -675,7 +675,15 @@ export function initApp(config = {}) {
     }
 
     function getVisibleReportsForMonth(monthPrefix) {
-      return getVisibleReports().filter(report => String(report.date || "").startsWith(monthPrefix));
+      return getVisibleReports().filter(report => {
+        const createdValue = report.generatedAt || report.date || "";
+        const createdDate = new Date(createdValue);
+        if (Number.isNaN(createdDate.getTime())) {
+          return String(createdValue).startsWith(monthPrefix);
+        }
+        const createdMonth = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, "0")}`;
+        return createdMonth === monthPrefix;
+      });
     }
 
     function getPreviousMonthPrefix() {
@@ -793,7 +801,7 @@ export function initApp(config = {}) {
       return `
         <div class="topbar">
           <div class="topbar-actions">
-            <button class="primary-btn" data-action="new-report">+ New Report</button>
+            ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">+ New Report</button>` : ""}
             <button class="avatar-btn" data-action="toggle-avatar-menu" ${profile.photo ? `style="background-image:url('${profile.photo}');"` : ""}>
               ${profile.photo ? "" : initials(profile.name)}
             </button>
@@ -1118,7 +1126,6 @@ export function initApp(config = {}) {
                 </div>
               </div>
               ${renderReportTemplate(report)}
-              <div class="report-export-note">Photos are pulled from the student and coach profile settings automatically.</div>
             </div>
           </div>
         </section>
@@ -1843,10 +1850,6 @@ export function initApp(config = {}) {
       if (action === "delete-centre-link") { state.centreProfile.links = state.centreProfile.links.filter(link => link.id !== event.currentTarget.dataset.linkId); return render(); }
       if (action === "save-centre-profile") return saveCentreProfileFromInputs();
       if (action === "add-coach-link") return addCoachLink();
-      if (action === "download-coach-qr") {
-        const coach = state.coaches.find(item => item.id === event.currentTarget.dataset.coachId);
-        if (coach) return downloadCoachQr(coach);
-      }
       if (action === "student-upload") return triggerStudentUpload(event.currentTarget.dataset.studentId);
       if (action === "student-edit") return openStudentEditModal(event.currentTarget.dataset.studentId);
       if (action === "student-edit-photo") return triggerStudentUpload(event.currentTarget.dataset.studentId);
@@ -1958,7 +1961,6 @@ export function initApp(config = {}) {
           <td><span class="badge green"><span class="dot"></span>Active</span></td>
           <td>
             <a class="secondary-btn" href="/coach/${encodeURIComponent(coach.slug)}" target="_blank" rel="noreferrer">View Profile</a>
-            <button class="secondary-btn" data-action="download-coach-qr" data-coach-id="${coach.id}">Download QR</button>
           </td>
         </tr>
       `).join("");
@@ -2040,6 +2042,7 @@ export function initApp(config = {}) {
         return;
       }
       const coach = getCurrentCoach();
+      const now = new Date();
       const id = `draft-${Date.now()}`;
       const refNumber = state.reports.length + Object.keys(state.reportDrafts).length + 1;
       state.reportDrafts[id] = {
@@ -2047,8 +2050,8 @@ export function initApp(config = {}) {
         ref: `DSM-26-${String(refNumber).padStart(4, "0")}`,
         coachId: coach.id,
         studentId: "",
-        date: "2026-07-31",
-        time: "18:00",
+        date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
+        time: `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
         lessonNumber: "",
         step: 1,
         status: "Pending",
@@ -2129,7 +2132,7 @@ export function initApp(config = {}) {
         date: draft.date,
         time: draft.time,
         status: "Generated",
-        generatedAt: `${draft.date}T${draft.time}:00`,
+        generatedAt: new Date().toISOString(),
         summary: { ...draft.summary }
       };
       state.reports.unshift(finalReport);
@@ -2559,15 +2562,6 @@ export function initApp(config = {}) {
         order: (coach.links || []).length + 1
       }];
       render();
-    }
-
-    function downloadCoachQr(coach) {
-      loadQrDataUrl(coach, 200).then(dataUrl => {
-        const link = document.createElement("a");
-        link.download = `coach-qr-${coach.slug}.png`;
-        link.href = dataUrl;
-        link.click();
-      }).catch(() => {});
     }
 
     function openOnboarding(type) {

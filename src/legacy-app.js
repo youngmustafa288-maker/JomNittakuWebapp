@@ -303,6 +303,16 @@ export function initApp(config = {}) {
       return localProfile;
     }
 
+    async function refreshCoachesFromSupabase() {
+      if (!supabase || !state.auth.userId) return;
+      const query = supabase.from("coaches").select("*").order("created_at", { ascending: true });
+      const { data, error } = state.auth.role === "admin"
+        ? await query
+        : await query.eq("id", state.auth.userId);
+      if (error || !Array.isArray(data)) return;
+      state.coaches = data.map(normalizeCoach);
+    }
+
     async function flushStateToSupabase() {
       if (!hasSupabaseConfig() || isApplyingRemoteState) {
         return;
@@ -369,6 +379,14 @@ export function initApp(config = {}) {
             if (payload.new?.id === "dashboard" && nextPayload) {
               applyRemoteState(nextPayload);
             }
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "coaches" },
+          async () => {
+            await refreshCoachesFromSupabase();
+            render();
           }
         )
         .subscribe();
@@ -2782,6 +2800,7 @@ export function initApp(config = {}) {
             const { data, error } = await initialSessionPromise;
             if (error && !callbackError) callbackError = error.message;
             await applyAuthUser(data.session?.user || null);
+            await refreshCoachesFromSupabase();
           }
           authInitializing = false;
           authReady = true;

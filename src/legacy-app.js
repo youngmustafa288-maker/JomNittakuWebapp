@@ -51,7 +51,9 @@ export function initApp(config = {}) {
     ];
     const supabase = hasSupabaseConfig()
       ? createClient(SUPABASE_URL, SUPABASE_KEY, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+          // The callback is exchanged explicitly in bootstrap below. Keeping
+          // automatic URL detection off prevents a second exchange racing it.
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
         })
       : null;
     let state = createInitialState();

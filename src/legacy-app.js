@@ -672,6 +672,22 @@ export function initApp(config = {}) {
           }
         }
       }
+      const isGoogleUser = user.app_metadata?.provider === "google"
+        || user.identities?.some(identity => identity.provider === "google");
+      if (!coach && isGoogleUser) {
+        // A trigger can provision the row after the first session (or an
+        // existing Google user may predate that trigger). Keep the session
+        // alive and give the account a usable local profile while the row is
+        // reconciled on the next state refresh.
+        coach = normalizeCoach({
+          id: user.id,
+          name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Coach",
+          email: user.email || "",
+          branch: "Unassigned",
+          branchAddress: "Unassigned"
+        });
+        state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
+      }
       state.auth = {
         role: appRole === "admin" ? "admin" : coach ? "coach" : null,
         coachId: coach?.id || null,
@@ -2723,10 +2739,19 @@ export function initApp(config = {}) {
     (async function bootstrap() {
       let callbackError = "";
       if (supabase && window.location.pathname === "/auth/callback") {
-        const code = new URLSearchParams(window.location.search).get("code");
+        const callbackParams = new URLSearchParams(window.location.search);
+        const code = callbackParams.get("code");
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) callbackError = error.message || "Unable to complete Google sign-in.";
+        } else {
+          const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+          const accessToken = hashParams.get("access_token");
+          const refreshToken = hashParams.get("refresh_token");
+          if (accessToken && refreshToken) {
+            const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+            if (error) callbackError = error.message || "Unable to complete Google sign-in.";
+          }
         }
         window.history.replaceState({}, document.title, "/");
       }

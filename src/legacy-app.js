@@ -638,7 +638,7 @@ export function initApp(config = {}) {
       render();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: window.location.origin }
+        options: { redirectTo: `${window.location.origin}/auth/callback` }
       });
       if (error) {
         isSigningIn = false;
@@ -657,10 +657,14 @@ export function initApp(config = {}) {
       let coach = state.coaches.find(item => item.id === coachId)
         || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
       if (!coach && supabase) {
-        const { data } = await supabase.from("coaches").select("*").eq("id", user.id).maybeSingle();
-        if (data) {
-          coach = normalizeCoach(data);
-          state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
+        for (let attempt = 0; attempt < 3 && !coach; attempt += 1) {
+          const { data } = await supabase.from("coaches").select("*").eq("id", user.id).maybeSingle();
+          if (data) {
+            coach = normalizeCoach(data);
+            state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
+          } else if (attempt < 2) {
+            await new Promise(resolve => window.setTimeout(resolve, 250));
+          }
         }
       }
       state.auth = {
@@ -2708,6 +2712,14 @@ export function initApp(config = {}) {
     }
 
     (async function bootstrap() {
+      if (supabase && window.location.pathname === "/auth/callback") {
+        const code = new URLSearchParams(window.location.search).get("code");
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) loginError = error.message || "Unable to complete Google sign-in.";
+        }
+        window.history.replaceState({}, document.title, "/");
+      }
       render();
       if (/^\/centre\/?$/i.test(window.location.pathname)) {
         state.centreProfile = await loadPublicCentreProfile();

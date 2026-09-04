@@ -64,6 +64,7 @@ export function initApp(config = {}) {
     let loginError = "";
     let isSigningIn = false;
     let authReady = !supabase;
+    let authInitializing = Boolean(supabase);
     let draftProfileUploadContext = null;
     let persistTimer = null;
     let isApplyingRemoteState = false;
@@ -704,7 +705,7 @@ export function initApp(config = {}) {
       supabase.auth.onAuthStateChange((_event, session) => {
         window.setTimeout(async () => {
           await applyAuthUser(session?.user || null);
-          render();
+          if (!authInitializing) render();
         }, 0);
       });
     }
@@ -2745,11 +2746,15 @@ export function initApp(config = {}) {
       }
       if (/^\/centre\/?$/i.test(window.location.pathname)) {
         authReady = true;
+        authInitializing = false;
         render();
         state.centreProfile = await loadPublicCentreProfile();
         render();
         return;
       }
+      const initialSessionPromise = supabase
+        ? (bindAuthStateListener(), supabase.auth.getSession())
+        : Promise.resolve({ data: { session: null }, error: null });
       loadState()
         .then(async nextState => {
           // loadState() returns a fresh state whose auth is blank, so the
@@ -2772,12 +2777,13 @@ export function initApp(config = {}) {
               .catch(() => {});
           }
           if (supabase) {
-            bindAuthStateListener();
-            // getSession waits for Supabase's async URL callback processing.
-            const { data, error } = await supabase.auth.getSession();
+            // Wait for URL callback processing/session persistence before the
+            // first authenticated render.
+            const { data, error } = await initialSessionPromise;
             if (error && !callbackError) callbackError = error.message;
             await applyAuthUser(data.session?.user || null);
           }
+          authInitializing = false;
           authReady = true;
           if (callbackError) loginError = callbackError;
           render();
@@ -2785,6 +2791,7 @@ export function initApp(config = {}) {
         })
         .catch(() => {
           state = normalizeState(createInitialState());
+          authInitializing = false;
           authReady = true;
           if (callbackError) loginError = callbackError;
           render();

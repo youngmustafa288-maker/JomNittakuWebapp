@@ -628,6 +628,25 @@ export function initApp(config = {}) {
       render();
     }
 
+    async function signInWithGoogle() {
+      if (!supabase) {
+        loginError = "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.";
+        return render();
+      }
+      isSigningIn = true;
+      loginError = "";
+      render();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin }
+      });
+      if (error) {
+        isSigningIn = false;
+        loginError = error.message || "Unable to sign in with Google.";
+        render();
+      }
+    }
+
     async function applyAuthUser(user) {
       if (!user) {
         state.auth = { role: null, coachId: null, userId: null };
@@ -635,8 +654,15 @@ export function initApp(config = {}) {
       }
       const appRole = user.app_metadata?.role;
       const coachId = user.app_metadata?.coach_id;
-      const coach = state.coaches.find(item => item.id === coachId)
+      let coach = state.coaches.find(item => item.id === coachId)
         || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
+      if (!coach && supabase) {
+        const { data } = await supabase.from("coaches").select("*").eq("id", user.id).maybeSingle();
+        if (data) {
+          coach = normalizeCoach(data);
+          state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
+        }
+      }
       state.auth = {
         role: appRole === "admin" ? "admin" : coach ? "coach" : null,
         coachId: coach?.id || null,
@@ -773,6 +799,11 @@ export function initApp(config = {}) {
               </div>
               ${loginError ? `<p class="form-error" role="alert">${escapeHtml(loginError)}</p>` : ""}
               <button class="primary-btn" type="submit" ${isSigningIn ? "disabled" : ""}>${isSigningIn ? "Signing in..." : "Sign in"}</button>
+              <div class="login-divider"><span>or</span></div>
+              <button class="google-btn" type="button" data-action="sign-in-google" ${isSigningIn ? "disabled" : ""}>
+                <span class="google-mark" aria-hidden="true">G</span>
+                Continue with Google
+              </button>
             </form>
           </div>
         </section>
@@ -1776,6 +1807,7 @@ export function initApp(config = {}) {
         event.preventDefault();
         signIn();
       });
+      document.querySelector('[data-action="sign-in-google"]')?.addEventListener("click", signInWithGoogle);
 
       const coachSearch = document.getElementById("coachSearch");
       if (coachSearch) {

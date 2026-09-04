@@ -184,6 +184,51 @@
       max-width: 520px;
     }
 
+    .login-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #94a3b8;
+      font-size: 0.85rem;
+    }
+
+    .login-divider::before,
+    .login-divider::after {
+      content: "";
+      height: 1px;
+      flex: 1;
+      background: #e2e8f0;
+    }
+
+    .google-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      border: 1px solid #d7deeb;
+      border-radius: 10px;
+      background: #ffffff;
+      color: #1f2937;
+      font-weight: 600;
+    }
+
+    .google-btn:hover {
+      border-color: #b9c4d7;
+      background: #f8fafc;
+    }
+
+    .google-mark {
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      color: #4285f4;
+      font-family: Arial, sans-serif;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+
     .form-error {
       margin: 0;
       color: #b42318;

@@ -2714,10 +2714,6 @@ export function initApp(config = {}) {
         render();
         return;
       }
-      if (supabase) {
-        const { data } = await supabase.auth.getSession();
-        await applyAuthUser(data.session?.user || null);
-      }
       loadState()
         .then(async nextState => {
           // loadState() returns a fresh state whose auth is blank, so the

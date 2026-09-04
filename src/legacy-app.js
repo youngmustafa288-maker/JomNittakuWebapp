@@ -51,9 +51,9 @@ export function initApp(config = {}) {
     ];
     const supabase = hasSupabaseConfig()
       ? createClient(SUPABASE_URL, SUPABASE_KEY, {
-          // The callback is exchanged explicitly in bootstrap below. Keeping
-          // automatic URL detection off prevents a second exchange racing it.
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+          // Supabase owns the OAuth callback exchange and persists the session
+          // before getSession() is read during bootstrap.
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
         })
       : null;
     let state = createInitialState();
@@ -2740,19 +2740,7 @@ export function initApp(config = {}) {
       let callbackError = "";
       if (supabase && window.location.pathname === "/auth/callback") {
         const callbackParams = new URLSearchParams(window.location.search);
-        const code = callbackParams.get("code");
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) callbackError = error.message || "Unable to complete Google sign-in.";
-        } else {
-          const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-          const accessToken = hashParams.get("access_token");
-          const refreshToken = hashParams.get("refresh_token");
-          if (accessToken && refreshToken) {
-            const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-            if (error) callbackError = error.message || "Unable to complete Google sign-in.";
-          }
-        }
+        callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         window.history.replaceState({}, document.title, "/");
       }
       if (/^\/centre\/?$/i.test(window.location.pathname)) {
@@ -2784,9 +2772,11 @@ export function initApp(config = {}) {
               .catch(() => {});
           }
           if (supabase) {
-            const { data } = await supabase.auth.getSession();
-            await applyAuthUser(data.session?.user || null);
             bindAuthStateListener();
+            // getSession waits for Supabase's async URL callback processing.
+            const { data, error } = await supabase.auth.getSession();
+            if (error && !callbackError) callbackError = error.message;
+            await applyAuthUser(data.session?.user || null);
           }
           authReady = true;
           if (callbackError) loginError = callbackError;

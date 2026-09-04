@@ -74,6 +74,7 @@ export function initApp(config = {}) {
     let reportFilterTimer = null;
     let coachFilterTimer = null;
     let studentFilterTimer = null;
+    let coachAccountCount = 0;
     let centreQrDataUrlPromise = null;
     const coachQrDataUrlCache = new Map();
     let qrCodeModulePromise = null;
@@ -313,6 +314,14 @@ export function initApp(config = {}) {
       state.coaches = data.map(normalizeCoach);
     }
 
+    async function refreshCoachAccountCount() {
+      if (!supabase || state.auth.role !== "admin") return;
+      const { count, error } = await supabase
+        .from("coaches")
+        .select("id", { count: "exact", head: true });
+      if (!error && Number.isInteger(count)) coachAccountCount = count;
+    }
+
     async function flushStateToSupabase() {
       if (!hasSupabaseConfig() || isApplyingRemoteState) {
         return;
@@ -386,6 +395,7 @@ export function initApp(config = {}) {
           { event: "*", schema: "public", table: "coaches" },
           async () => {
             await refreshCoachesFromSupabase();
+            await refreshCoachAccountCount();
             render();
           }
         )
@@ -723,6 +733,8 @@ export function initApp(config = {}) {
       supabase.auth.onAuthStateChange((_event, session) => {
         window.setTimeout(async () => {
           await applyAuthUser(session?.user || null);
+          await refreshCoachesFromSupabase();
+          await refreshCoachAccountCount();
           if (!authInitializing) render();
         }, 0);
       });
@@ -794,13 +806,12 @@ export function initApp(config = {}) {
       const reportsThisMonth = getVisibleReportsForMonth(CURRENT_MONTH_PREFIX).length;
       const reportsLastMonth = getVisibleReportsForMonth(getPreviousMonthPrefix()).length;
       const activeStudents = getVisibleStudents().filter(student => student.status !== "Inactive").length;
-      const activeCoaches = getVisibleCoaches().filter(coach => coach.status !== "Inactive").length;
       const stats = [
         { title: "Reports Created This Month", value: reportsThisMonth, footnote: formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
         { title: "Total Students", value: activeStudents, footnote: "" }
       ];
       if (state.auth.role === "admin") {
-        stats.push({ title: "Total Coaches", value: activeCoaches, footnote: "" });
+        stats.push({ title: "Total Coaches", value: coachAccountCount, footnote: "" });
       }
       return stats;
     }
@@ -1042,7 +1053,7 @@ export function initApp(config = {}) {
             <div class="table-topline">
               <div class="section-title">
                 <h2>Coaches</h2>
-                <p>${getVisibleCoaches().filter(coach => coach.status !== "Inactive").length} active coaches</p>
+                <p>${getVisibleCoaches().filter(coach => coach.status !== "Inactive").length} active coaches · ${coachAccountCount} total accounts</p>
               </div>
               <button class="primary-btn" data-action="stub-add-coach">+ Add Coach</button>
             </div>
@@ -2801,6 +2812,7 @@ export function initApp(config = {}) {
             if (error && !callbackError) callbackError = error.message;
             await applyAuthUser(data.session?.user || null);
             await refreshCoachesFromSupabase();
+            await refreshCoachAccountCount();
           }
           authInitializing = false;
           authReady = true;

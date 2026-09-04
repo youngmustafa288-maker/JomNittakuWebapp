@@ -61,6 +61,7 @@ export function initApp(config = {}) {
     let studentEditModal = null;
     let loginError = "";
     let isSigningIn = false;
+    let authReady = !supabase;
     let draftProfileUploadContext = null;
     let persistTimer = null;
     let isApplyingRemoteState = false;
@@ -657,13 +658,15 @@ export function initApp(config = {}) {
       let coach = state.coaches.find(item => item.id === coachId)
         || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
       if (!coach && supabase) {
-        for (let attempt = 0; attempt < 3 && !coach; attempt += 1) {
+        // OAuth account provisioning runs in a database trigger and can lag
+        // behind the auth session by a few hundred milliseconds.
+        for (let attempt = 0; attempt < 10 && !coach; attempt += 1) {
           const { data } = await supabase.from("coaches").select("*").eq("id", user.id).maybeSingle();
           if (data) {
             coach = normalizeCoach(data);
             state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
-          } else if (attempt < 2) {
-            await new Promise(resolve => window.setTimeout(resolve, 250));
+          } else if (attempt < 9) {
+            await new Promise(resolve => window.setTimeout(resolve, 300));
           }
         }
       }
@@ -1649,6 +1652,10 @@ export function initApp(config = {}) {
 
     function render() {
       const app = document.getElementById("app");
+      if (!authReady) {
+        app.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading JomNittaku...</div>';
+        return;
+      }
       // A re-render replaces the whole subtree, so anything the user has
       // half-typed into the login form (and the caret position) is lost
       // unless it is carried across explicitly.
@@ -2712,16 +2719,18 @@ export function initApp(config = {}) {
     }
 
     (async function bootstrap() {
+      let callbackError = "";
       if (supabase && window.location.pathname === "/auth/callback") {
         const code = new URLSearchParams(window.location.search).get("code");
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) loginError = error.message || "Unable to complete Google sign-in.";
+          if (error) callbackError = error.message || "Unable to complete Google sign-in.";
         }
         window.history.replaceState({}, document.title, "/");
       }
-      render();
       if (/^\/centre\/?$/i.test(window.location.pathname)) {
+        authReady = true;
+        render();
         state.centreProfile = await loadPublicCentreProfile();
         render();
         return;
@@ -2752,11 +2761,15 @@ export function initApp(config = {}) {
             await applyAuthUser(data.session?.user || null);
             bindAuthStateListener();
           }
+          authReady = true;
+          if (callbackError) loginError = callbackError;
           render();
           subscribeToRealtime();
         })
         .catch(() => {
           state = normalizeState(createInitialState());
+          authReady = true;
+          if (callbackError) loginError = callbackError;
           render();
         });
     })();

@@ -365,6 +365,7 @@ export function initApp(config = {}) {
       // signing the user out or yanking them to a different tab.
       const liveAuth = state.auth;
       const liveUi = state.ui;
+      const liveCentreProfile = state.centreProfile;
       const focusedWizardField = document.activeElement?.closest("#wizardModal input, #wizardModal textarea, #wizardModal select");
       const localWizardDraft = focusedWizardField && wizardDraftId && state.reportDrafts?.[wizardDraftId]
         ? {
@@ -375,6 +376,7 @@ export function initApp(config = {}) {
       state = normalizeState(payload);
       state.auth = liveAuth;
       state.ui = liveUi;
+      state.centreProfile = liveCentreProfile;
       if (localWizardDraft) {
         // Realtime echoes must not replace the wizard while a field is active.
         // Keep the locally edited draft until the field loses focus or the user
@@ -417,6 +419,14 @@ export function initApp(config = {}) {
           { event: "*", schema: "public", table: "students" },
           async () => {
             await refreshStudentsFromSupabase();
+            render();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "centre_links" },
+          async () => {
+            state.centreProfile = await loadPublicCentreProfile();
             render();
           }
         )
@@ -2891,19 +2901,6 @@ export function initApp(config = {}) {
           const liveAuth = state.auth;
           state = nextState;
           state.auth = liveAuth;
-          const localCentreProfile = getCentreProfile();
-          if (!state.centreProfile?.links?.length && localCentreProfile.links.length) {
-            state.centreProfile = localCentreProfile;
-            persist();
-          } else {
-            state.centreProfile = normalizeCentreProfile(state.centreProfile);
-          }
-          if (supabase && state.centreProfile.links.length) {
-            supabase
-              .from("centre_links")
-              .upsert({ id: "centre", links: state.centreProfile.links }, { onConflict: "id" })
-              .catch(() => {});
-          }
           if (supabase) {
             // Wait for URL callback processing/session persistence before the
             // first authenticated render.
@@ -2913,6 +2910,9 @@ export function initApp(config = {}) {
             await refreshCoachesFromSupabase();
             await refreshStudentsFromSupabase();
             await refreshCoachAccountCount();
+            state.centreProfile = await loadPublicCentreProfile();
+          } else {
+            state.centreProfile = normalizeCentreProfile(state.centreProfile);
           }
           authInitializing = false;
           authReady = true;

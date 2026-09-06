@@ -236,6 +236,8 @@ export function initApp(config = {}) {
     function normalizeStudent(student) {
       return {
         ...student,
+        coachId: student.coachId || student.coach_id,
+        parentHp: student.parentHp ?? student.parent_hp ?? "",
         photo: student.photo || student.photo_url || student.photoUrl || student.image_url || ""
       };
     }
@@ -313,6 +315,16 @@ export function initApp(config = {}) {
         : await query.eq("id", state.auth.userId);
       if (error || !Array.isArray(data)) return;
       state.coaches = data.map(normalizeCoach);
+    }
+
+    async function refreshStudentsFromSupabase() {
+      if (!supabase || !state.auth.userId) return;
+      const query = supabase.from("students").select("*").order("created_at", { ascending: true });
+      const { data, error } = state.auth.role === "admin"
+        ? await query
+        : await query.eq("coach_id", state.auth.userId);
+      if (error || !Array.isArray(data)) return;
+      state.students = data.map(normalizeStudent);
     }
 
     async function refreshCoachAccountCount() {
@@ -397,6 +409,14 @@ export function initApp(config = {}) {
           async () => {
             await refreshCoachesFromSupabase();
             await refreshCoachAccountCount();
+            render();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "students" },
+          async () => {
+            await refreshStudentsFromSupabase();
             render();
           }
         )
@@ -735,6 +755,7 @@ export function initApp(config = {}) {
         window.setTimeout(async () => {
           await applyAuthUser(session?.user || null);
           await refreshCoachesFromSupabase();
+          await refreshStudentsFromSupabase();
           await refreshCoachAccountCount();
           if (!authInitializing) render();
         }, 0);
@@ -1886,9 +1907,13 @@ export function initApp(config = {}) {
         hiddenStudentUpload.addEventListener("change", event => {
           const [file] = event.target.files || [];
           if (!file || !event.target.dataset.studentId) return;
-          uploadProfileImage(file, "student", event.target.dataset.studentId).then(url => {
+          uploadProfileImage(file, "student", event.target.dataset.studentId).then(async url => {
             const student = getStudentById(event.target.dataset.studentId);
-            if (student) student.photo = url;
+            if (student) {
+              student.photo = url;
+              const savedStudent = await saveStudentRecord(student);
+              state.students = state.students.map(item => item.id === savedStudent.id ? savedStudent : item);
+            }
             event.target.value = "";
             persist();
             render();
@@ -2134,7 +2159,7 @@ export function initApp(config = {}) {
       render();
     }
 
-    function saveStudentEdit() {
+    async function saveStudentEdit() {
       const student = studentEditModal && getStudentById(studentEditModal.studentId);
       if (!student) return;
       const name = document.getElementById("editStudentName")?.value.trim();
@@ -2146,9 +2171,15 @@ export function initApp(config = {}) {
       student.name = name;
       student.parentHp = document.getElementById("editStudentPhone")?.value.trim() || "";
       student.lessons = lessons;
-      studentEditModal = null;
-      persist();
-      render();
+      try {
+        const savedStudent = await saveStudentRecord(student);
+        state.students = state.students.map(item => item.id === savedStudent.id ? savedStudent : item);
+        studentEditModal = null;
+        persist();
+        render();
+      } catch (error) {
+        alert(error.message || "Unable to save student.");
+      }
     }
 
     function startReportFlow() {
@@ -2639,6 +2670,27 @@ export function initApp(config = {}) {
       return normalizeCoach(data);
     }
 
+    async function saveStudentRecord(student) {
+      if (!supabase) throw new Error("Supabase is not configured.");
+      const { data, error } = await supabase
+        .from("students")
+        .upsert({
+          id: student.id,
+          coach_id: student.coachId,
+          name: student.name,
+          lessons: Number(student.lessons) || 0,
+          parent_hp: student.parentHp || "",
+          photo: student.photo || "",
+          status: student.status || "Active",
+          age: student.age || "",
+          centre: student.centre || ""
+        }, { onConflict: "id" })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return normalizeStudent(data);
+    }
+
     function saveAdminProfile() {
       const fullName = document.getElementById("adminFullName")?.value.trim();
       if (!fullName) {
@@ -2769,11 +2821,11 @@ export function initApp(config = {}) {
       });
     }
 
-    function submitStudentOnboarding(values) {
+    async function submitStudentOnboarding(values) {
       const name = [values.firstName, values.lastName].filter(Boolean).join(" ").trim() || "—";
       const coachId = resolveCoachIdForStudent(values.centre || "");
       const student = {
-        id: `student-${Date.now()}`,
+        id: crypto.randomUUID(),
         name,
         coachId,
         lessons: 1,
@@ -2783,25 +2835,30 @@ export function initApp(config = {}) {
         age: values.age || "",
         centre: values.centre || ""
       };
-      state.students.unshift(student);
+      const savedStudent = await saveStudentRecord(student);
+      state.students.unshift(savedStudent);
       const coach = getCoachById(coachId);
       if (coach) {
         coach.studentIds = coach.studentIds || [];
-        coach.studentIds.unshift(student.id);
+        coach.studentIds.unshift(savedStudent.id);
       }
     }
 
-    function submitOnboarding() {
+    async function submitOnboarding() {
       if (!onboardingModal) return;
       const values = onboardingModal.values;
-      if (onboardingModal.type === "coach") {
-        submitCoachOnboarding(values);
-      } else {
-        submitStudentOnboarding(values);
+      try {
+        if (onboardingModal.type === "coach") {
+          submitCoachOnboarding(values);
+        } else {
+          await submitStudentOnboarding(values);
+        }
+        onboardingModal = null;
+        persist();
+        render();
+      } catch (error) {
+        alert(error.message || "Unable to save student.");
       }
-      onboardingModal = null;
-      persist();
-      render();
     }
 
     function saveStudentFromModal() {
@@ -2854,6 +2911,7 @@ export function initApp(config = {}) {
             if (error && !callbackError) callbackError = error.message;
             await applyAuthUser(data.session?.user || null);
             await refreshCoachesFromSupabase();
+            await refreshStudentsFromSupabase();
             await refreshCoachAccountCount();
           }
           authInitializing = false;

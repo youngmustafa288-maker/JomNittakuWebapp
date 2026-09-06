@@ -125,15 +125,15 @@ export function initApp(config = {}) {
         return normalizeCentreProfile();
       }
     }
-    function saveCentreProfile() {
+    async function saveCentreProfile() {
       state.centreProfile = normalizeCentreProfile(state.centreProfile);
       localStorage.setItem(CENTRE_PROFILE_KEY, JSON.stringify(state.centreProfile));
       persist();
       if (supabase) {
-        supabase
+        const { error } = await supabase
           .from("centre_links")
           .upsert({ id: "centre", links: state.centreProfile.links }, { onConflict: "id" })
-          .catch(() => {});
+        if (error) throw error;
       }
     }
     function centreLinkUrl(link) {
@@ -168,20 +168,21 @@ export function initApp(config = {}) {
       const photo = coach.photo || coach.photo_url || coach.photoUrl || coach.image_url || "";
       return {
         ...coach,
+        centreContact: coach.centreContact ?? coach.centre_contact ?? "",
+        branchAddress: coach.branchAddress || coach.branch_address || coach.branch || "",
         slug: coach.slug || slugify(coach.name),
         role: coach.role || "Table Tennis Coach",
         bio: coach.bio || "",
         photo,
         photo_url: photo,
-        links: Array.isArray(coach.links) && coach.links.length
+        links: Array.isArray(coach.links)
           ? coach.links.map((link, index) => ({
               ...link,
               id: link.id || `link-${index + 1}`,
               visible: link.visible !== false,
               order: link.order || index + 1
             }))
-          : DEFAULT_COACH_LINKS.map(link => ({ ...link })),
-        branchAddress: coach.branchAddress || coach.branch || ""
+          : DEFAULT_COACH_LINKS.map(link => ({ ...link }))
       };
     }
 
@@ -1902,12 +1903,15 @@ export function initApp(config = {}) {
           if (!file || !draftProfileUploadContext) return;
           const context = draftProfileUploadContext;
           const targetId = context === "admin" ? "admin" : getCurrentCoach().id;
-          uploadProfileImage(file, context, targetId).then(url => {
+          uploadProfileImage(file, context, targetId).then(async url => {
             if (context === "admin") {
               state.adminProfile.photo = url;
             } else {
-              getCurrentCoach().photo = url;
-              getCurrentCoach().photo_url = url;
+              const coach = getCurrentCoach();
+              coach.photo = url;
+              coach.photo_url = url;
+              const savedCoach = await saveCoachRecord(coach);
+              state.coaches = state.coaches.map(item => item.id === savedCoach.id ? savedCoach : item);
             }
             draftProfileUploadContext = null;
             event.target.value = "";
@@ -2541,18 +2545,22 @@ export function initApp(config = {}) {
       return await reportExportPromise;
     }
 
-    function saveCentreProfileFromInputs() {
+    async function saveCentreProfileFromInputs() {
       const links = [...document.querySelectorAll(".centre-link-row")].map(row => ({
         id: row.dataset.linkId || `link-${Date.now()}-${Math.random()}`,
         label: row.querySelector('[data-link-field="label"]')?.value.trim() || "",
         url: row.querySelector('[data-link-field="url"]')?.value.trim() || ""
       }));
       state.centreProfile = { links };
-      saveCentreProfile();
-      const button = document.querySelector('[data-action="save-centre-profile"]');
-      if (button) {
-        button.textContent = "Saved";
-        window.setTimeout(() => { if (button.isConnected) button.textContent = "Save"; }, 1500);
+      try {
+        await saveCentreProfile();
+        const button = document.querySelector('[data-action="save-centre-profile"]');
+        if (button) {
+          button.textContent = "Saved";
+          window.setTimeout(() => { if (button.isConnected) button.textContent = "Save"; }, 1500);
+        }
+      } catch (error) {
+        alert(error.message || "Unable to save centre links.");
       }
     }
 
@@ -2607,6 +2615,30 @@ export function initApp(config = {}) {
       return supabase.storage.from(PROFILE_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
     }
 
+    async function saveCoachRecord(coach) {
+      if (!supabase) throw new Error("Supabase is not configured.");
+      const { data, error } = await supabase
+        .from("coaches")
+        .update({
+          name: coach.name,
+          branch: coach.branch,
+          centre_contact: coach.centreContact || "",
+          branch_address: coach.branchAddress || "",
+          email: coach.email || "",
+          phone: coach.phone || "",
+          slug: coach.slug,
+          role: coach.role || "Table Tennis Coach",
+          bio: coach.bio || "",
+          photo: coach.photo || "",
+          links: Array.isArray(coach.links) ? coach.links : []
+        })
+        .eq("id", coach.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return normalizeCoach(data);
+    }
+
     function saveAdminProfile() {
       const fullName = document.getElementById("adminFullName")?.value.trim();
       if (!fullName) {
@@ -2618,8 +2650,12 @@ export function initApp(config = {}) {
       render();
     }
 
-    function saveCoachProfile() {
+    async function saveCoachProfile() {
       const coach = getCurrentCoach();
+      if (!coach) {
+        alert("Coach profile could not be found.");
+        return;
+      }
       coach.name = document.getElementById("coachFullName")?.value.trim() || coach.name;
       coach.branch = document.getElementById("coachBranch")?.value.trim() || coach.branch;
       coach.centreContact = document.getElementById("coachCentreContact")?.value.trim() || coach.centreContact;
@@ -2643,8 +2679,14 @@ export function initApp(config = {}) {
         visible: row.querySelector(".coach-link-visible")?.checked !== false,
         order: index + 1
       }));
-      persist();
-      render();
+      try {
+        const savedCoach = await saveCoachRecord(coach);
+        state.coaches = state.coaches.map(item => item.id === savedCoach.id ? savedCoach : item);
+        persist();
+        render();
+      } catch (error) {
+        alert(error.message || "Unable to save coach profile.");
+      }
     }
 
     function addCoachLink() {

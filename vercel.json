@@ -1,6 +1,9 @@
 {
   "framework": "vite",
   "rewrites": [
-    { "source": "/auth/callback", "destination": "/index.html" }
+    { "source": "/auth/callback", "destination": "/index.html" },
+    { "source": "/centre", "destination": "/index.html" },
+    { "source": "/centre/", "destination": "/index.html" },
+    { "source": "/coach/:slug", "destination": "/index.html" }
   ]
 }

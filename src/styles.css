@@ -917,6 +917,9 @@
     .report-layout-toolbar select, .report-layout-toolbar input { min-height:36px; border:1px solid var(--slate-200); border-radius:8px; background:#fff; padding:6px 8px; color:var(--navy-900); }
     .report-overlay-item.is-editing { pointer-events:auto; cursor:move; outline:1px dashed rgba(200,16,46,.72); outline-offset:3px; }
     .report-overlay-item.is-selected { outline:2px solid var(--red-500); outline-offset:3px; }
+    .certificate-design-page { display:grid; gap:16px; }
+    .certificate-design-page .template-report-shell { width:min(100%, 896px); justify-self:center; }
+    .certificate-design-note { color:var(--slate-500); text-align:center; font-size:.9rem; }
 
     /* Dao Sports Method visual refresh */
     :root {

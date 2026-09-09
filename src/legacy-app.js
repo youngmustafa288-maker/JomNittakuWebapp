@@ -1382,6 +1382,35 @@ export function initApp(config = {}) {
       `;
     }
 
+    function getCertificateDesignPreviewReport(coach) {
+      const existing = state.reports.find(report => report.coachId === coach.id);
+      if (existing) return existing;
+      const student = state.students.find(item => item.coachId === coach.id);
+      const today = new Date();
+      return {
+        id: "certificate-design-preview",
+        ref: "PREVIEW",
+        coachId: coach.id,
+        studentId: student?.id || "",
+        lessonNumber: 1,
+        date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
+        time: "10:00",
+        summary: { whatTaught: "Forehand drive", beforeCoaching: "Developing", afterTraining: "More consistent contact", nextLesson: "Backhand control", remarks: "Keep building consistency." }
+      };
+    }
+
+    function renderCertificateDesignPage() {
+      const coach = getCurrentCoach();
+      const previewReport = getCertificateDesignPreviewReport(coach);
+      reportLayoutEditing = true;
+      return `<section class="page certificate-design-page ${state.ui.page === "certificate-design" ? "active" : ""}">
+        <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><button class="secondary-btn" data-action="reset-report-layout">Reset layout</button></div>
+        ${renderReportLayoutToolbar(coach)}
+        ${renderReportTemplate(previewReport)}
+        <div class="certificate-design-note">Select a field on the certificate, then drag it to reposition it. Changes save to your coach account.</div>
+      </section>`;
+    }
+
     function renderReportWizard() {
       const draft = wizardDraftId ? state.reportDrafts[wizardDraftId] : null;
       if (!draft) {
@@ -1606,7 +1635,8 @@ export function initApp(config = {}) {
         : [
             ["overview", "Overview"],
             ["reports", "Reports"],
-            ["students", "Students"]
+            ["students", "Students"],
+            ["certificate-design", "Certificate Design"]
           ];
       navItems.push(["centre-settings", "Centre Links"]);
       const pageContent = state.ui.page === "reports"
@@ -1621,8 +1651,10 @@ export function initApp(config = {}) {
               ? renderAdminProfilePage()
               : state.ui.page === "profile"
                 ? renderCoachProfilePage()
-                : state.ui.page === "report-view"
+          : state.ui.page === "report-view"
                   ? renderReportViewPage()
+                  : state.ui.page === "certificate-design"
+                    ? renderCertificateDesignPage()
                   : renderOverviewPage();
       return `
         <div class="dashboard">
@@ -1913,7 +1945,7 @@ export function initApp(config = {}) {
             document.removeEventListener("pointermove", move);
             document.removeEventListener("pointerup", up);
             coach.reportLayout = getReportLayout(coach);
-            persist();
+            saveReportLayout(coach);
           };
           document.addEventListener("pointermove", move);
           document.addEventListener("pointerup", up, { once: true });
@@ -2022,7 +2054,15 @@ export function initApp(config = {}) {
       if (!coach || !selectedReportOverlay) return;
       coach.reportLayout = getReportLayout(coach);
       Object.assign(coach.reportLayout[selectedReportOverlay], changes);
+      saveReportLayout(coach);
+    }
+
+    async function saveReportLayout(coach) {
       persist();
+      if (supabase && coach?.id && state.auth.role === "coach") {
+        const savedCoach = await saveCoachRecord(coach).catch(() => null);
+        if (savedCoach) state.coaches = state.coaches.map(item => item.id === savedCoach.id ? savedCoach : item);
+      }
       render();
     }
 
@@ -2056,8 +2096,7 @@ export function initApp(config = {}) {
       if (action === "reset-report-layout") {
         const coach = getCurrentCoach();
         coach.reportLayout = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value }]));
-        persist();
-        return render();
+        return saveReportLayout(coach);
       }
       if (action === "upload-admin-photo") return triggerProfileUpload("admin");
       if (action === "upload-coach-photo") return triggerProfileUpload("coach");

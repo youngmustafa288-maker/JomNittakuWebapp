@@ -34,6 +34,18 @@ export function initApp(config = {}) {
     const REPORT_CANVAS_REMARK_LINE_YS = [794, 825, 856, 887, 918];
     const REPORT_TEMPLATE_FOOTER_TOP_DEFAULT = 75.95;
     const REPORT_CANVAS_FOOTER_Y_DEFAULT = 950;
+    const DEFAULT_REPORT_LAYOUT = {
+      date: { left: 17.9, top: 27.2, width: 23, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
+      time: { left: 17.9, top: 29.58, width: 23, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
+      centre: { left: 17.9, top: 31.94, width: 25, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
+      coach: { left: 24.25, top: 34.34, width: 19, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
+      whatTaught: { left: 11.8, top: 44.9, width: 35.2, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      beforeCoaching: { left: 11.8, top: 52.8, width: 35.2, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      afterTraining: { left: 55.4, top: 44.9, width: 38.5, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      nextLesson: { left: 55.4, top: 52.8, width: 38.5, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.9, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
+      address: { left: 34.55, top: 86.35, width: 31.2, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 }
+    };
     const PHOTO_PLACEHOLDER_SVG = `
       <svg xmlns="http://www.w3.org/2000/svg" width="123" height="111" viewBox="0 0 123 111" aria-hidden="true">
         <rect width="123" height="111" rx="12" fill="#E5E7EB"></rect>
@@ -82,6 +94,8 @@ export function initApp(config = {}) {
     let jsPdfModulePromise = null;
     let reportExportPromise = null;
     let reportExportKey = "";
+    let reportLayoutEditing = false;
+    let selectedReportOverlay = "date";
 
     async function getQrCodeLib() {
       if (!qrCodeModulePromise) {
@@ -183,7 +197,16 @@ export function initApp(config = {}) {
               order: link.order || index + 1
             }))
           : DEFAULT_COACH_LINKS.map(link => ({ ...link }))
+        , reportLayout: Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...((coach.reportLayout || coach.report_layout)?.[key] || {}) }]))
       };
+    }
+
+    function getReportLayout(coach) {
+      return coach?.reportLayout || DEFAULT_REPORT_LAYOUT;
+    }
+
+    function overlayStyle(layout, extra = "") {
+      return `left:${layout.left}%;top:${layout.top}%;width:${layout.width}%;font-size:${layout.fontSize}cqw;font-family:${escapeHtml(layout.fontFamily)};color:${escapeHtml(layout.color)};font-weight:${layout.fontWeight};${extra}`;
     }
 
     function slugify(value) {
@@ -566,9 +589,9 @@ export function initApp(config = {}) {
       `).join("");
     }
 
-    function renderPlainBulletOverlays(lines, positions) {
+    function renderPlainBulletOverlays(lines, positions, layout, field) {
       return positions.map((position, index) => `
-        <div class="template-text template-bullet ${lines[index] ? (lines[index].length > 48 ? "is-compact" : "") : "empty"}" style="left:${position.left}%;top:${position.top}%;width:${position.width}%;height:${position.height}%;">
+        <div class="template-text template-bullet report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === field ? "is-selected" : ""} ${lines[index] ? "" : "empty"}" data-overlay-id="${field}" style="${overlayStyle({ ...layout, top: layout.top + (index * 2.58) }, `height:${position.height}%;`)}">
           <span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span>
         </div>
       `).join("");
@@ -584,6 +607,7 @@ export function initApp(config = {}) {
 
     function renderReportTemplate(report) {
       const data = getReportTemplateData(report);
+      const layout = getReportLayout(data.coach);
       const footerTop = data.remarksLines.length
         ? Math.min(
             REPORT_TEMPLATE_FOOTER_TOP_DEFAULT,
@@ -594,10 +618,10 @@ export function initApp(config = {}) {
         <div class="template-report-shell" id="reportTemplatePreview">
           <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
           <div class="template-report-overlay" aria-hidden="true">
-            <div class="template-text template-session" style="left:17.9%;top:27.2%;width:23%;">${escapeHtml(data.session.date)}</div>
-            <div class="template-text template-session" style="left:17.9%;top:29.58%;width:23%;">${escapeHtml(data.session.time)}</div>
-            <div class="template-text template-session template-session-centre" style="left:17.9%;top:31.94%;width:25%;">${escapeHtml(data.session.centre)}</div>
-            <div class="template-text template-session" style="left:24.25%;top:34.34%;width:19%;">${escapeHtml(data.session.coachName)}</div>
+            ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
+            ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
+            ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
+            ${renderEditableOverlay("coach", escapeHtml(data.session.coachName), layout.coach, "white-space:nowrap;")}
 
             <div class="template-report-photo-group">
               ${renderTemplatePhoto(data.studentPhoto, "STUDENT")}
@@ -611,19 +635,19 @@ export function initApp(config = {}) {
             ${renderPlainBulletOverlays(data.bullets.whatTaught, [
               { left: 11.8, top: 44.9, width: 35.2, height: 4.4 },
               { left: 11.8, top: 47.48, width: 35.2, height: 4.4 }
-            ])}
+            ], layout.whatTaught, "whatTaught")}
             ${renderPlainBulletOverlays(data.bullets.beforeCoaching, [
               { left: 11.8, top: 52.8, width: 35.2, height: 4.4 },
               { left: 11.8, top: 55.35, width: 35.2, height: 4.4 }
-            ])}
+            ], layout.beforeCoaching, "beforeCoaching")}
             ${renderPlainBulletOverlays(data.bullets.afterTraining, [
               { left: 55.4, top: 44.9, width: 38.5, height: 4.4 },
               { left: 55.4, top: 47.48, width: 38.5, height: 4.4 }
-            ])}
+            ], layout.afterTraining, "afterTraining")}
             ${renderPlainBulletOverlays(data.bullets.nextLesson, [
               { left: 55.4, top: 52.8, width: 38.5, height: 4.4 },
               { left: 55.4, top: 55.35, width: 38.5, height: 4.4 }
-            ])}
+            ], layout.nextLesson, "nextLesson")}
 
               ${REPORT_TEMPLATE_REMARK_TOPS.map((top, index) => data.remarksLines[index] ? `
                 <div class="template-text template-bullet template-remarks-bullet" style="left:10.1%;top:${top}%;width:86%;">
@@ -631,8 +655,8 @@ export function initApp(config = {}) {
                 </div>
               ` : "").join("")}
 
-            <div class="template-text template-footer-number" style="left:34.55%;top:79.9%;width:31.2%;">${escapeHtml(data.centreContact)}</div>
-            <div class="template-text template-footer-address" style="left:34.55%;top:86.35%;width:31.2%;">${escapeHtml(data.address).replace(/\n/g, "<br>")}</div>
+            ${renderEditableOverlay("contact", escapeHtml(data.centreContact), layout.contact)}
+            ${renderEditableOverlay("address", escapeHtml(data.address).replace(/\n/g, "<br>"), layout.address)}
           </div>
           <div class="template-report-qr-pocket">
             <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
@@ -689,6 +713,10 @@ export function initApp(config = {}) {
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
       render();
+    }
+
+    function renderEditableOverlay(id, content, layout, extra = "") {
+      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${overlayStyle(layout, extra)}">${content}</div>`;
     }
 
     async function signInWithGoogle() {
@@ -1262,9 +1290,11 @@ export function initApp(config = {}) {
                   <p>${coach.name} · ${formatDate(report.date)} · ${formatTime(report.time)}</p>
                 </div>
                 <div class="report-actions">
+                  ${state.auth.role === "coach" ? `<button class="secondary-btn" data-action="toggle-report-layout">${reportLayoutEditing ? "Done Editing" : "Edit Layout"}</button>` : ""}
                   <button class="primary-btn" data-action="download-report-pdf">Download PDF</button>
                 </div>
               </div>
+              ${reportLayoutEditing ? renderReportLayoutToolbar(coach) : ""}
               ${renderReportTemplate(report)}
             </div>
           </div>
@@ -1861,6 +1891,33 @@ export function initApp(config = {}) {
             navigate(navButton.dataset.nav);
           }
         });
+        app.addEventListener("pointerdown", event => {
+          const item = event.target.closest(".report-overlay-item.is-editing");
+          const preview = document.querySelector("#reportTemplatePreview");
+          if (!item || !preview) return;
+          selectedReportOverlay = item.dataset.overlayId;
+          const coach = getCurrentCoach();
+          const layout = getReportLayout(coach)[selectedReportOverlay];
+          const startX = event.clientX;
+          const startY = event.clientY;
+          const startLeft = layout.left;
+          const startTop = layout.top;
+          const rect = preview.getBoundingClientRect();
+          const move = moveEvent => {
+            layout.left = Math.max(0, Math.min(95, startLeft + ((moveEvent.clientX - startX) / rect.width) * 100));
+            layout.top = Math.max(0, Math.min(95, startTop + ((moveEvent.clientY - startY) / rect.height) * 100));
+            item.style.left = `${layout.left}%`;
+            item.style.top = `${layout.top}%`;
+          };
+          const up = () => {
+            document.removeEventListener("pointermove", move);
+            document.removeEventListener("pointerup", up);
+            coach.reportLayout = getReportLayout(coach);
+            persist();
+          };
+          document.addEventListener("pointermove", move);
+          document.addEventListener("pointerup", up, { once: true });
+        });
         appEventsBound = true;
       }
 
@@ -1953,6 +2010,20 @@ export function initApp(config = {}) {
           element.addEventListener("input", updateWizardDraftFromInputs);
         }
       });
+      document.querySelectorAll("[data-overlay-id]").forEach(item => item.addEventListener("click", () => { selectedReportOverlay = item.dataset.overlayId; if (reportLayoutEditing) render(); }));
+      document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
+      document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
+      document.querySelector("[data-layout-size]")?.addEventListener("input", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
+      document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
+    }
+
+    function updateSelectedReportLayout(changes) {
+      const coach = getCurrentCoach();
+      if (!coach || !selectedReportOverlay) return;
+      coach.reportLayout = getReportLayout(coach);
+      Object.assign(coach.reportLayout[selectedReportOverlay], changes);
+      persist();
+      render();
     }
 
     function handleAction(event) {
@@ -1981,6 +2052,13 @@ export function initApp(config = {}) {
       if (action === "view-report") return openReportView(event.currentTarget.dataset.reportId);
       if (action === "close-report-view") return navigate("reports");
       if (action === "download-report-pdf") return downloadReportPdf();
+      if (action === "toggle-report-layout") { reportLayoutEditing = !reportLayoutEditing; return render(); }
+      if (action === "reset-report-layout") {
+        const coach = getCurrentCoach();
+        coach.reportLayout = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value }]));
+        persist();
+        return render();
+      }
       if (action === "upload-admin-photo") return triggerProfileUpload("admin");
       if (action === "upload-coach-photo") return triggerProfileUpload("coach");
       if (action === "save-admin-profile") return saveAdminProfile();
@@ -2196,6 +2274,17 @@ export function initApp(config = {}) {
       } catch (error) {
         alert(error.message || "Unable to save student.");
       }
+    }
+
+    function renderReportLayoutToolbar(coach) {
+      const layout = getReportLayout(coach)[selectedReportOverlay] || DEFAULT_REPORT_LAYOUT.date;
+      return `<div class="report-layout-toolbar">
+        <label>Field <select data-layout-field>${Object.keys(DEFAULT_REPORT_LAYOUT).map(key => `<option value="${key}" ${key === selectedReportOverlay ? "selected" : ""}>${key}</option>`).join("")}</select></label>
+        <label>Font <select data-layout-font>${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
+        <label>Size <input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize}"></label>
+        <label>Colour <input type="color" data-layout-color value="${layout.color}"></label>
+        <button class="secondary-btn" data-action="reset-report-layout">Reset</button>
+      </div>`;
     }
 
     function startReportFlow() {
@@ -2710,7 +2799,8 @@ export function initApp(config = {}) {
           role: coach.role || "Table Tennis Coach",
           bio: coach.bio || "",
           photo: coach.photo || "",
-          links: Array.isArray(coach.links) ? coach.links : []
+          links: Array.isArray(coach.links) ? coach.links : [],
+          report_layout: coach.reportLayout || DEFAULT_REPORT_LAYOUT
         })
         .eq("id", coach.id)
         .select("*")

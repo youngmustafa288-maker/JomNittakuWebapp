@@ -912,6 +912,11 @@
       pointer-events: auto;
       user-select: text;
     }
+    .report-layout-toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin:0 0 16px; padding:12px; border:1px solid var(--slate-200); border-radius:14px; background:var(--slate-50); }
+    .report-layout-toolbar label { display:grid; gap:4px; color:var(--slate-700); font-size:.75rem; font-weight:700; text-transform:uppercase; }
+    .report-layout-toolbar select, .report-layout-toolbar input { min-height:36px; border:1px solid var(--slate-200); border-radius:8px; background:#fff; padding:6px 8px; color:var(--navy-900); }
+    .report-overlay-item.is-editing { pointer-events:auto; cursor:move; outline:1px dashed rgba(200,16,46,.72); outline-offset:3px; }
+    .report-overlay-item.is-selected { outline:2px solid var(--red-500); outline-offset:3px; }
 
     /* Dao Sports Method visual refresh */
     :root {

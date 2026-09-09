@@ -987,10 +987,10 @@
     }
 
     .brand-lockup { display: grid; justify-items: center; gap: 12px; margin-bottom: 28px; text-align: center; }
-    .brand-logo { width: min(190px, 58vw); height: auto; display: block; }
-    .brand-copy h1 { color: #1b2a4a; font-size: 1.55rem; }
-    .brand-copy p { color: #64748b; }
-    .login-title { color: #1b2a4a; font-size: clamp(2rem, 7vw, 2.8rem); text-align: center; }
+    .brand-system-title { margin: 0 0 2px; color: #1b2a4a; font-family: "Outfit", sans-serif; font-size: clamp(1rem, 3.4vw, 1.28rem); font-weight: 800; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
+    .brand-logo-crop { width: min(190px, 58vw); height: min(132px, 40vw); overflow: hidden; display: flex; justify-content: center; background: #fff; }
+    .brand-logo { width: 100%; height: auto; display: block; transform: translateY(-2px); }
+    .brand-copy h1 { margin: 0; color: #1b2a4a; font-size: clamp(1.3rem, 5vw, 1.7rem); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
     .login-form { max-width: none; }
     .login-form .text-input:focus { border-color: #c8102e; box-shadow: 0 0 0 4px rgba(200,16,46,.12); }
     .login-form .primary-btn { min-height: 50px; background: #c8102e; }

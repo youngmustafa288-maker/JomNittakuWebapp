@@ -3,7 +3,7 @@ import { initApp } from "./legacy-app.js";
 
 const root = document.querySelector("#app");
 root.classList.add("app-shell");
-root.innerHTML = '<main class="splash-screen" aria-label="Loading JomNittaku"><section class="splash-card"><img class="splash-logo" src="/Logo_with_Changes_made.png" alt="Dao Sports Method Table Tennis Training"><p class="splash-kicker">DAO SPORTS METHOD</p><h1>JomNittaku</h1></section></main>';
+root.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading JomNittaku...</div>';
 
 const runtimeConfig = window.__APP_CONFIG__ || {
   supabaseUrl: "https://vjhjvcvmtfpkoyjxfmxu.supabase.co",

@@ -35,6 +35,7 @@ export function initApp(config = {}) {
     const REPORT_TEMPLATE_FOOTER_TOP_DEFAULT = 75.95;
     const REPORT_CANVAS_FOOTER_Y_DEFAULT = 950;
     const DEFAULT_REPORT_LAYOUT = {
+      background: { left: 0, top: 0, width: 100, fontSize: 1, fontFamily: "Arial", color: "#111111", fontWeight: 400, opacity: 1 },
       date: { left: 17.9, top: 27.2, width: 23, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
       time: { left: 17.9, top: 29.58, width: 23, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
       centre: { left: 17.9, top: 31.94, width: 25, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
@@ -616,7 +617,7 @@ export function initApp(config = {}) {
         : REPORT_TEMPLATE_FOOTER_TOP_DEFAULT;
       return `
         <div class="template-report-shell" id="reportTemplatePreview">
-          <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
+          <img class="template-report-base report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "background" ? "is-selected" : ""}" data-overlay-id="background" src="${REPORT_TEMPLATE_SRC}" alt="Training report template" style="width:${layout.background.width}%;left:${layout.background.left}%;top:${layout.background.top}%;opacity:${layout.background.opacity};position:absolute;">
           <div class="template-report-overlay" aria-hidden="true">
             ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
             ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
@@ -2047,6 +2048,10 @@ export function initApp(config = {}) {
       document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
       document.querySelector("[data-layout-size]")?.addEventListener("input", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
       document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
+      document.querySelector("[data-layout-left]")?.addEventListener("input", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
+      document.querySelector("[data-layout-top]")?.addEventListener("input", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
+      document.querySelector("[data-layout-width]")?.addEventListener("input", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
+      document.querySelector("[data-layout-opacity]")?.addEventListener("input", event => updateSelectedReportLayout({ opacity: Math.max(0, Math.min(1, Number(event.target.value))) }));
     }
 
     function updateSelectedReportLayout(changes) {
@@ -2322,6 +2327,10 @@ export function initApp(config = {}) {
         <label>Font <select data-layout-font>${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
         <label>Size <input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize}"></label>
         <label>Colour <input type="color" data-layout-color value="${layout.color}"></label>
+        <label>X <input type="number" step="0.1" data-layout-left value="${layout.left}"></label>
+        <label>Y <input type="number" step="0.1" data-layout-top value="${layout.top}"></label>
+        <label>Width <input type="number" min="1" max="100" step="0.1" data-layout-width value="${layout.width}"></label>
+        <label>Opacity <input type="number" min="0" max="1" step="0.05" data-layout-opacity value="${layout.opacity ?? 1}"></label>
         <button class="secondary-btn" data-action="reset-report-layout">Reset</button>
       </div>`;
     }

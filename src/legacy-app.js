@@ -868,10 +868,10 @@ export function initApp(config = {}) {
         <section class="login-screen">
           <div class="login-panel">
             <div class="brand-lockup">
-              <p class="brand-system-title">Coach Training Reporting System</p>
               <div class="brand-logo-crop">
                 <img class="brand-logo" src="/Logo_with_Changes_made.png" alt="Dao Sports Method table tennis logo">
               </div>
+              <p class="brand-system-title">Coach Training Reporting System</p>
               <div class="brand-copy">
                 <h1>JomNittaku</h1>
               </div>
@@ -1378,13 +1378,7 @@ export function initApp(config = {}) {
       return `
         <div id="wizardModal" class="modal-backdrop open">
           <div class="modal-card">
-            <div class="section-header">
-              <div class="section-title">
-                <h2><span class="section-sport-icon" aria-hidden="true">🏓</span> Generate Report</h2>
-                <p>${draft.ref} · ${coach.name}</p>
-              </div>
-              <button class="ghost-btn" data-action="save-close-wizard">X</button>
-            </div>
+            <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
             <div class="wizard-steps">
               ${[
                 ["Step 1", "Select Student"],
@@ -1420,7 +1414,6 @@ export function initApp(config = {}) {
             </div>
 
             <div class="wizard-panel ${step === 3 ? "active" : ""}">
-              <div class="training-summary-banner"><span aria-hidden="true">🏓</span><div><strong>Training summary</strong><small>Capture the session in clear, actionable bullets.</small></div><span aria-hidden="true">⚡</span></div>
               <div class="split-grid">
                 <div class="field">
                   <label for="wizardWhatTaught">What Was Taught Today</label>

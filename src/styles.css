@@ -913,6 +913,103 @@
       user-select: text;
     }
 
+    /* Dao Sports Method visual refresh */
+    :root {
+      --navy-900: #1b2a4a;
+      --navy-800: #1b2a4a;
+      --navy-700: #29416e;
+      --red-600: #a60d25;
+      --red-500: #c8102e;
+      --slate-50: #f4f4f4;
+    }
+
+    .splash-screen {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      position: relative;
+      overflow: hidden;
+      padding: 32px 20px;
+      background: #1b2a4a;
+      color: #fff;
+      isolation: isolate;
+    }
+
+    .splash-screen::before,
+    .splash-screen::after {
+      content: "";
+      position: absolute;
+      width: 42vw;
+      height: 42vw;
+      max-width: 560px;
+      max-height: 560px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 50%;
+      z-index: -1;
+    }
+
+    .splash-screen::before { top: -24%; left: -14%; }
+    .splash-screen::after { right: -14%; bottom: -24%; border-color: rgba(200,16,46,.5); }
+
+    .splash-card {
+      width: min(520px, 100%);
+      padding: clamp(34px, 7vw, 64px) 28px;
+      text-align: center;
+      border-radius: 24px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.18);
+      box-shadow: 0 26px 70px rgba(0,0,0,.24);
+      backdrop-filter: blur(10px);
+    }
+
+    .splash-logo { width: min(240px, 68vw); height: auto; display: block; margin: 0 auto 24px; }
+    .splash-kicker { margin: 0 0 10px; color: #ffd700; font-size: .72rem; font-weight: 800; letter-spacing: .18em; }
+    .splash-card h1 { margin: 0; font-size: clamp(2.3rem, 8vw, 4.2rem); letter-spacing: .02em; }
+    .splash-tagline { margin: 12px 0 28px; color: rgba(255,255,255,.78); font-size: 1.05rem; }
+    .splash-continue { min-width: 220px; background: #c8102e; }
+    .splash-continue span { margin-left: 8px; font-size: 1.15em; }
+    .splash-decor { position: absolute; color: #ffd700; font-size: clamp(2.5rem, 8vw, 5rem); opacity: .16; transform: rotate(-18deg); }
+    .splash-decor-left { top: 18%; left: 8%; }
+    .splash-decor-right { right: 9%; bottom: 16%; transform: rotate(14deg); }
+
+    .login-screen {
+      background: #f4f4f4;
+      padding: 28px 18px;
+    }
+
+    .login-panel {
+      width: min(540px, 100%);
+      padding: clamp(28px, 6vw, 48px);
+      border-radius: 24px;
+      background: #fff;
+      border: 1px solid rgba(27,42,74,.12);
+      box-shadow: 0 22px 55px rgba(27,42,74,.14);
+    }
+
+    .brand-lockup { display: grid; justify-items: center; gap: 12px; margin-bottom: 28px; text-align: center; }
+    .brand-logo { width: min(190px, 58vw); height: auto; display: block; }
+    .brand-copy h1 { color: #1b2a4a; font-size: 1.55rem; }
+    .brand-copy p { color: #64748b; }
+    .login-title { color: #1b2a4a; font-size: clamp(2rem, 7vw, 2.8rem); text-align: center; }
+    .login-form { max-width: none; }
+    .login-form .text-input:focus { border-color: #c8102e; box-shadow: 0 0 0 4px rgba(200,16,46,.12); }
+    .login-form .primary-btn { min-height: 50px; background: #c8102e; }
+    .google-btn { min-height: 50px; border-radius: 14px; }
+
+    .modal-card { border-radius: 24px; }
+    .section-sport-icon { display: inline-grid; place-items: center; width: 36px; height: 36px; margin-right: 5px; border-radius: 12px; background: #c8102e; color: #fff; font-size: 1.15rem; vertical-align: -4px; }
+    .training-summary-banner { display: flex; align-items: center; gap: 12px; margin: 0 0 20px; padding: 14px 16px; border-radius: 16px; background: #1b2a4a; color: #fff; }
+    .training-summary-banner > span { flex: 0 0 auto; color: #ffd700; font-size: 1.45rem; }
+    .training-summary-banner div { flex: 1; }
+    .training-summary-banner strong, .training-summary-banner small { display: block; }
+    .training-summary-banner small { margin-top: 2px; color: rgba(255,255,255,.7); }
+
+    @media (max-width: 720px) {
+      .splash-decor { display: none; }
+      .training-summary-banner { align-items: flex-start; }
+      .training-summary-banner small { line-height: 1.35; }
+    }
+
     .text-area {
       min-height: 132px;
       resize: vertical;

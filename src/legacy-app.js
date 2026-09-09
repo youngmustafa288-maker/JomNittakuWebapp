@@ -63,6 +63,9 @@ export function initApp(config = {}) {
     let studentEditModal = null;
     let loginError = "";
     let isSigningIn = false;
+    // The brand splash is deliberately shown before authentication on every
+    // fresh app load, including when a Supabase session already exists.
+    let splashVisible = true;
     let authReady = !supabase;
     let authInitializing = Boolean(supabase);
     let draftProfileUploadContext = null;
@@ -868,7 +871,7 @@ export function initApp(config = {}) {
         <section class="login-screen">
           <div class="login-panel">
             <div class="brand-lockup">
-              <div class="brand-mark"></div>
+              <img class="brand-logo" src="/Logo_with_Changes_made.png" alt="Dao Sports Method Table Tennis Training">
               <div class="brand-copy">
                 <h1>JomNittaku</h1>
                 <p>Coach Reporting System</p>
@@ -894,6 +897,22 @@ export function initApp(config = {}) {
             </form>
           </div>
         </section>
+      `;
+    }
+
+    function renderSplash() {
+      return `
+        <main class="splash-screen" aria-labelledby="splash-title">
+          <div class="splash-decor splash-decor-left" aria-hidden="true">🏓</div>
+          <div class="splash-decor splash-decor-right" aria-hidden="true">🏆</div>
+          <section class="splash-card">
+            <img class="splash-logo" src="/Logo_with_Changes_made.png" alt="Dao Sports Method Table Tennis Training">
+            <p class="splash-kicker">DAO SPORTS METHOD</p>
+            <h1 id="splash-title">JomNittaku</h1>
+            <p class="splash-tagline">Coach reporting, built for better sessions.</p>
+            <button class="primary-btn splash-continue" type="button" data-action="dismiss-splash">Enter coach portal <span aria-hidden="true">→</span></button>
+          </section>
+        </main>
       `;
     }
 
@@ -1379,7 +1398,7 @@ export function initApp(config = {}) {
           <div class="modal-card">
             <div class="section-header">
               <div class="section-title">
-                <h2>Generate Report</h2>
+                <h2><span class="section-sport-icon" aria-hidden="true">🏓</span> Generate Report</h2>
                 <p>${draft.ref} · ${coach.name}</p>
               </div>
               <button class="ghost-btn" data-action="save-close-wizard">X</button>
@@ -1419,6 +1438,7 @@ export function initApp(config = {}) {
             </div>
 
             <div class="wizard-panel ${step === 3 ? "active" : ""}">
+              <div class="training-summary-banner"><span aria-hidden="true">🏓</span><div><strong>Training summary</strong><small>Capture the session in clear, actionable bullets.</small></div><span aria-hidden="true">⚡</span></div>
               <div class="split-grid">
                 <div class="field">
                   <label for="wizardWhatTaught">What Was Taught Today</label>
@@ -1732,7 +1752,7 @@ export function initApp(config = {}) {
 
     function render() {
       const app = document.getElementById("app");
-      if (!authReady) {
+      if (!authReady && !splashVisible) {
         app.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading JomNittaku...</div>';
         return;
       }
@@ -1758,7 +1778,11 @@ export function initApp(config = {}) {
         app.innerHTML = renderCentrePage();
         return;
       }
-      app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
+      app.innerHTML = publicCoach
+        ? renderPublicCoachPage(publicCoach)
+        : splashVisible
+          ? renderSplash()
+          : state.auth.role ? renderDashboard() : renderLogin();
       if (publicCoach) return;
       attachEvents();
       if (state.auth.role) {
@@ -1967,6 +1991,10 @@ export function initApp(config = {}) {
     function handleAction(event) {
       const action = event.currentTarget.dataset.action;
       if (action === "sign-in") return signIn();
+      if (action === "dismiss-splash") {
+        splashVisible = false;
+        return render();
+      }
       if (action === "logout") return logout();
       if (action === "toggle-avatar-menu") {
         state.ui.avatarMenuOpen = !state.ui.avatarMenuOpen;

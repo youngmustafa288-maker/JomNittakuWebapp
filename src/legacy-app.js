@@ -1649,15 +1649,16 @@ export function initApp(config = {}) {
     }
 
     function renderCentreSettingsPage() {
-      const profile = state.centreProfile;
+      const isCoach = state.auth.role === "coach";
+      const links = isCoach ? (getCurrentCoach().links || []) : (state.centreProfile.links || []);
       return `
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
           <div class="profile-card centre-settings-card">
-            <div class="section-title"><h2>Centre Links</h2></div>
+            <div class="section-title"><h2>${isCoach ? "Coach Links" : "Centre Links"}</h2></div>
             <div class="centre-links-editor">
-              ${profile.links.map(link => `
+              ${links.map(link => `
                 <div class="centre-link-row" data-link-id="${escapeHtml(link.id)}">
-                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label)}" placeholder="Label">
+                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label || link.title || "")}" placeholder="Label">
                   <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://...">
                   <button class="ghost-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}">Delete</button>
                 </div>
@@ -1682,16 +1683,10 @@ export function initApp(config = {}) {
     function renderPublicCoachPage(coach) {
       const reports = state.reports.filter(report => report.coachId === coach.id);
       const generated = reports.filter(report => report.status === "Generated").length;
-      const centreLinks = (state.centreProfile?.links || []).map(link => ({
-        ...link,
-        title: link.label || link.title || "Centre link",
-        icon: link.icon || ""
-      }));
       const coachLinks = (coach.links || [])
         .filter(link => link.visible !== false && String(link.url || "").trim())
         .map(link => ({ ...link, title: link.title || link.label || "Coach link" }));
-      const links = [...centreLinks, ...coachLinks]
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const links = coachLinks.sort((a, b) => (a.order || 0) - (b.order || 0));
       const avatar = coach.photo_url || coach.photo;
       return `
         <main class="public-coach-page">
@@ -1991,10 +1986,24 @@ export function initApp(config = {}) {
       if (action === "save-admin-profile") return saveAdminProfile();
       if (action === "save-coach-profile") return saveCoachProfile();
       if (action === "add-centre-link") {
-        state.centreProfile.links.push({ id: crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`, label: "", url: "" });
+        if (state.auth.role === "coach") {
+          const coach = getCurrentCoach();
+          coach.links = [...(coach.links || []), { id: crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`, title: "", url: "", icon: "↗", visible: true, order: (coach.links || []).length + 1 }];
+        } else {
+          state.centreProfile.links.push({ id: crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`, label: "", url: "" });
+        }
         return render();
       }
-      if (action === "delete-centre-link") { state.centreProfile.links = state.centreProfile.links.filter(link => link.id !== event.currentTarget.dataset.linkId); return render(); }
+      if (action === "delete-centre-link") {
+        const linkId = event.currentTarget.dataset.linkId;
+        if (state.auth.role === "coach") {
+          const coach = getCurrentCoach();
+          coach.links = (coach.links || []).filter(link => link.id !== linkId);
+        } else {
+          state.centreProfile.links = state.centreProfile.links.filter(link => link.id !== linkId);
+        }
+        return render();
+      }
       if (action === "save-centre-profile") return saveCentreProfileFromInputs();
       if (action === "add-coach-link") return addCoachLink();
       if (action === "student-upload") return triggerStudentUpload(event.currentTarget.dataset.studentId);
@@ -2599,6 +2608,29 @@ export function initApp(config = {}) {
         label: row.querySelector('[data-link-field="label"]')?.value.trim() || "",
         url: row.querySelector('[data-link-field="url"]')?.value.trim() || ""
       }));
+      if (state.auth.role === "coach") {
+        const coach = getCurrentCoach();
+        coach.links = links.map((link, index) => ({
+          id: link.id,
+          title: link.label,
+          url: link.url,
+          icon: "↗",
+          visible: true,
+          order: index + 1
+        }));
+        try {
+          const savedCoach = await saveCoachRecord(coach);
+          state.coaches = state.coaches.map(item => item.id === savedCoach.id ? savedCoach : item);
+          const button = document.querySelector('[data-action="save-centre-profile"]');
+          if (button) {
+            button.textContent = "Saved";
+            window.setTimeout(() => { if (button.isConnected) button.textContent = "Save"; }, 1500);
+          }
+        } catch (error) {
+          alert(error.message || "Unable to save coach links.");
+        }
+        return;
+      }
       state.centreProfile = { links };
       try {
         await saveCentreProfile();

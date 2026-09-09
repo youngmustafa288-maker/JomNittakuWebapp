@@ -1198,12 +1198,19 @@
     }
 
     .wizard-step {
+      width: 100%;
+      text-align: left;
+      font: inherit;
       padding: 14px;
       border-radius: 18px;
       background: var(--slate-100);
       border: 1px solid var(--slate-200);
       color: var(--slate-500);
     }
+
+    .wizard-step.is-clickable { cursor: pointer; }
+    .wizard-step.is-clickable:hover { border-color: var(--red-500); transform: translateY(-1px); }
+    .wizard-step:disabled { cursor: default; opacity: .72; }
 
     .wizard-step.active {
       background: rgba(214, 40, 69, 0.09);

@@ -1388,7 +1388,8 @@ export function initApp(config = {}) {
               ].map((item, index) => {
                 const stepNumber = index + 1;
                 const klass = stepNumber < step ? "done" : stepNumber === step ? "active" : "";
-                return `<div class="wizard-step ${klass}">${item[0]}<strong>${item[1]}</strong></div>`;
+                const canNavigate = stepNumber <= step;
+                return `<button class="wizard-step ${klass} ${canNavigate ? "is-clickable" : ""}" type="button" data-action="wizard-go-step" data-step="${stepNumber}" ${canNavigate ? "" : "disabled"}>${item[0]}<strong>${item[1]}</strong></button>`;
               }).join("")}
             </div>
 
@@ -1979,6 +1980,7 @@ export function initApp(config = {}) {
       if (action === "save-close-wizard") return closeWizard();
       if (action === "wizard-next") return advanceWizard();
       if (action === "wizard-back") return retreatWizard();
+      if (action === "wizard-go-step") return goToWizardStep(event.currentTarget.dataset.step);
       if (action === "wizard-generate") return finalizeWizard();
       if (action === "pick-student") return pickStudent(event.currentTarget.dataset.studentId);
       if (action === "view-report") return openReportView(event.currentTarget.dataset.reportId);
@@ -2260,6 +2262,16 @@ export function initApp(config = {}) {
       if (!draft) return;
       updateWizardDraftFromInputs();
       draft.step = Math.max(1, draft.step - 1);
+      persist();
+      render();
+    }
+
+    function goToWizardStep(targetStep) {
+      const draft = state.reportDrafts[wizardDraftId];
+      const nextStep = Number(targetStep);
+      if (!draft || !Number.isInteger(nextStep) || nextStep < 1 || nextStep > draft.step) return;
+      updateWizardDraftFromInputs();
+      draft.step = nextStep;
       persist();
       render();
     }

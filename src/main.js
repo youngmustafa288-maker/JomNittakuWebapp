@@ -13,5 +13,5 @@ const runtimeConfig = window.__APP_CONFIG__ || {
 initApp({
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || runtimeConfig.supabaseUrl,
   supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || runtimeConfig.supabaseKey,
-  reportTemplateSrc: "/Image 1.jpg?v=2"
+  reportTemplateSrc: "/Certificate Template.jpg?v=1"
 });

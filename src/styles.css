@@ -1835,6 +1835,23 @@
       overflow: visible;
     }
 
+    .template-report-qr-pocket::before {
+      content: "SCAN NIE";
+      position: absolute;
+      right: 0;
+      bottom: 100%;
+      margin-bottom: 0.7cqw;
+      padding: 0.5cqw 1.1cqw;
+      border-radius: 0.6cqw;
+      background: #111111;
+      color: #ffffff;
+      font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+      font-size: 1.25cqw;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
     .template-report-qr {
       display: block;
       position: absolute;
@@ -1848,6 +1865,8 @@
       object-fit: contain;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
+      border: 0.35cqw solid #ffffff;
+      box-sizing: border-box;
     }
 
     .template-report-photo-group {

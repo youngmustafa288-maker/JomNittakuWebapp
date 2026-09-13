@@ -6,7 +6,10 @@ const CENTRE_PROFILE_KEY = "centre_profile";
 export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
-    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate Template.jpg?v=1";
+    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate%20Template.jpg?v=2";
+    // Fixed artwork layer supplied by Image 1. It shares the template's
+    // native 896x1200 dimensions, so it remains aligned at every scale.
+    const REPORT_TEMPLATE_ART_SRC = config.reportTemplateArtSrc || "/Image%201.jpg?v=2";
     const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
       month: "long",
       year: "numeric"
@@ -636,6 +639,7 @@ export function initApp(config = {}) {
       return `
         <div class="template-report-shell" id="reportTemplatePreview">
           <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
+          <img class="template-report-art" src="${REPORT_TEMPLATE_ART_SRC}" alt="">
           <div class="template-report-overlay" aria-hidden="true">
             ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
             ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
@@ -1436,9 +1440,7 @@ export function initApp(config = {}) {
       reportLayoutEditing = true;
       return `<section class="page certificate-design-page ${state.ui.page === "certificate-design" ? "active" : ""}">
         <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><button class="secondary-btn" data-action="reset-report-layout">Reset layout</button></div>
-        ${renderReportLayoutToolbar(coach)}
-        ${renderCertificateLayerPanel(coach)}
-        ${renderReportTemplate(previewReport)}
+        <div class="certificate-editor-workspace"><aside class="certificate-editor-rail">${renderReportLayoutToolbar(coach)}</aside><main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
         <div class="certificate-design-note">Select a field on the certificate, then drag it to reposition it. Changes save to your coach account.</div>
       </section>`;
     }

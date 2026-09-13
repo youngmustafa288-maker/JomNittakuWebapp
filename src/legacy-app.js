@@ -49,7 +49,26 @@ export function initApp(config = {}) {
       contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.9, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
       address: { left: 34.55, top: 86.35, width: 31.2, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 }
     };
+    const ARTWORK_SLICES = {
+      "art-brand": { left: 8, top: 2, width: 84, height: 22 },
+      "art-session": { left: 8, top: 23, width: 88, height: 16 },
+      "art-summary": { left: 8, top: 38, width: 88, height: 22 },
+      "art-remarks": { left: 8, top: 58, width: 88, height: 8 },
+      "art-badge": { left: 5, top: 75, width: 20, height: 17 },
+      "art-contact": { left: 29, top: 75, width: 40, height: 16 },
+      "art-footer": { left: 0, top: 89, width: 100, height: 11 }
+    };
+    const DEFAULT_LAYER_GEOMETRY = {
+      ...ARTWORK_SLICES,
+      "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
+      "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
+      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 }
+    };
     const DEFAULT_CERTIFICATE_LAYERS = [
+      ["art-brand", "Brand header and logo", "image"], ["art-session", "Session headings", "image"],
+      ["art-summary", "Training summary headings", "image"], ["art-remarks", "Coach remarks heading", "image"],
+      ["art-badge", "Certification badge", "image"], ["art-contact", "Contact box", "image"],
+      ["art-footer", "Footer bar", "image"],
       ["brand-title", "Brand title", "text"], ["brand-logo", "Logo / seal", "image"],
       ["report-title", "Report title", "text"], ["date", "Date", "dynamic-text"],
       ["time", "Time", "dynamic-text"], ["centre", "Centre", "dynamic-text"],
@@ -59,7 +78,7 @@ export function initApp(config = {}) {
       ["nextLesson", "Next lesson", "dynamic-text"], ["remarks", "Coach remarks", "dynamic-text"],
       ["contact", "Centre contact", "dynamic-text"], ["address", "Address", "dynamic-text"],
       ["badge", "Badge", "image"], ["qr", "QR code", "image"], ["footer", "Footer bar", "shape"]
-    ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2 }));
+    ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2, ...(DEFAULT_LAYER_GEOMETRY[id] || {}) }));
     const PHOTO_PLACEHOLDER_SVG = `
       <svg xmlns="http://www.w3.org/2000/svg" width="123" height="111" viewBox="0 0 123 111" aria-hidden="true">
         <rect width="123" height="111" rx="12" fill="#E5E7EB"></rect>
@@ -218,7 +237,12 @@ export function initApp(config = {}) {
     function normalizeReportLayout(saved = {}) {
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
       const layers = Array.isArray(saved?.layers)
-        ? saved.layers.map((layer, index) => ({ ...layer, visible: layer.visible !== false, zIndex: Number(layer.zIndex) || index + 2 }))
+        ? DEFAULT_CERTIFICATE_LAYERS.map((defaultLayer, index) => ({
+            ...defaultLayer,
+            ...(saved.layers.find(layer => layer.id === defaultLayer.id) || {}),
+            visible: saved.layers.find(layer => layer.id === defaultLayer.id)?.visible !== false,
+            zIndex: Number(saved.layers.find(layer => layer.id === defaultLayer.id)?.zIndex) || index + 2
+          })).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id)))
         : DEFAULT_CERTIFICATE_LAYERS.map(layer => ({ ...layer }));
       return { ...keyed, layers };
     }
@@ -639,7 +663,6 @@ export function initApp(config = {}) {
       return `
         <div class="template-report-shell" id="reportTemplatePreview">
           <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
-          <img class="template-report-art" src="${REPORT_TEMPLATE_ART_SRC}" alt="">
           <div class="template-report-overlay" aria-hidden="true">
             ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
             ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
@@ -647,8 +670,8 @@ export function initApp(config = {}) {
             ${renderEditableOverlay("coach", escapeHtml(data.session.coachName), layout.coach, "white-space:nowrap;")}
 
             <div class="template-report-photo-group">
-              ${renderTemplatePhoto(data.studentPhoto, "STUDENT")}
-              ${renderTemplatePhoto(data.coachPhoto, "COACH")}
+              ${renderEditablePhoto("student-photo", data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"))}
+              ${renderEditablePhoto("coach-photo", data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"))}
             </div>
 
             ${REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
@@ -682,7 +705,7 @@ export function initApp(config = {}) {
             ${renderEditableOverlay("address", escapeHtml(data.address).replace(/\n/g, "<br>"), layout.address)}
             ${renderCustomCertificateLayers(layout)}
           </div>
-          <div class="template-report-qr-pocket">
+          <div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""}" data-overlay-id="qr" style="left:${layout.layers.find(layer => layer.id === "qr")?.left ?? 87.7}%;top:${layout.layers.find(layer => layer.id === "qr")?.top ?? 91.88}%;width:${layout.layers.find(layer => layer.id === "qr")?.width ?? 9.5}%;height:${layout.layers.find(layer => layer.id === "qr")?.height ?? 7.12}%;right:auto;bottom:auto;">
             <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
           </div>
         </div>
@@ -745,6 +768,18 @@ export function initApp(config = {}) {
 
     function renderCustomCertificateLayers(layout) {
       return (layout.layers || []).filter(layer => !DEFAULT_REPORT_LAYOUT[layer.id] && layer.visible !== false).map(layer => {
+        const slice = ARTWORK_SLICES[layer.id];
+        if (slice) {
+          const left = Number(layer.left ?? slice.left) || 0;
+          const top = Number(layer.top ?? slice.top) || 0;
+          const width = Number(layer.width ?? slice.width) || slice.width;
+          const height = Number(layer.height ?? slice.height) || slice.height;
+          const imageLeft = (-slice.left / width) * 100;
+          const imageTop = (-slice.top / height) * 100;
+          const imageWidth = 10000 / width;
+          const imageHeight = 10000 / height;
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;"></div>`;
+        }
         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};background:${escapeHtml(layer.fill || "transparent")};`;
         const content = layer.type === "image" || layer.type === "photo"
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
@@ -958,6 +993,12 @@ export function initApp(config = {}) {
           </div>
         </section>
       `;
+    }
+
+    function renderEditablePhoto(id, photo, label, layer) {
+      const geometry = layer || DEFAULT_LAYER_GEOMETRY[id];
+      const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;`;
+      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}</div>`;
     }
 
     function renderSidebar() {
@@ -2411,9 +2452,11 @@ export function initApp(config = {}) {
     }
 
     function renderReportLayoutToolbar(coach) {
-      const layout = getReportLayout(coach)[selectedReportOverlay] || DEFAULT_REPORT_LAYOUT.date;
+      const reportLayout = getReportLayout(coach);
+      const selectableFields = [...Object.keys(DEFAULT_REPORT_LAYOUT), ...(reportLayout.layers || []).map(layer => layer.id)];
+      const layout = reportLayout[selectedReportOverlay] || (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay) || DEFAULT_REPORT_LAYOUT.date;
       return `<div class="report-layout-toolbar">
-        <label>Field <select data-layout-field>${Object.keys(DEFAULT_REPORT_LAYOUT).map(key => `<option value="${key}" ${key === selectedReportOverlay ? "selected" : ""}>${key}</option>`).join("")}</select></label>
+        <label>Field <select data-layout-field>${selectableFields.map(key => `<option value="${escapeHtml(key)}" ${key === selectedReportOverlay ? "selected" : ""}>${escapeHtml(key)}</option>`).join("")}</select></label>
         <label>Font <select data-layout-font>${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
         <label>Size <input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize}"></label>
         <label>Colour <input type="color" data-layout-color value="${layout.color}"></label>

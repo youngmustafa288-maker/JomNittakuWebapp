@@ -50,13 +50,46 @@ export function initApp(config = {}) {
       address: { left: 34.55, top: 86.35, width: 31.2, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 }
     };
     const ARTWORK_SLICES = {
-      "art-brand": { left: 8, top: 2, width: 84, height: 22 },
-      "art-session": { left: 8, top: 23, width: 88, height: 16 },
-      "art-summary": { left: 8, top: 38, width: 88, height: 22 },
-      "art-remarks": { left: 8, top: 58, width: 88, height: 8 },
-      "art-badge": { left: 5, top: 75, width: 20, height: 17 },
-      "art-contact": { left: 29, top: 75, width: 40, height: 16 },
-      "art-footer": { left: 0, top: 89, width: 100, height: 11 }
+      "decor-top-left": { left: 1.8, top: 1.2, width: 23, height: 15 },
+      "decor-top-right": { left: 77, top: 1.2, width: 21.5, height: 14 },
+      "brand-logo-art": { left: 20.8, top: 5.4, width: 10.8, height: 7.8 },
+      "brand-name": { left: 31.8, top: 6.7, width: 48.5, height: 3.7 },
+      "brand-subtitle": { left: 32.1, top: 10.3, width: 44.5, height: 2.6 },
+      "brand-tagline": { left: 24.2, top: 13.4, width: 53.8, height: 2.7 },
+      "report-title-art": { left: 16, top: 16.4, width: 70, height: 5.8 },
+      "session-title": { left: 9.7, top: 24.5, width: 23, height: 2.6 },
+      "date-label": { left: 9.7, top: 27.3, width: 8, height: 2.2 },
+      "time-label": { left: 9.7, top: 29.6, width: 8, height: 2.2 },
+      "centre-label": { left: 9.7, top: 31.9, width: 9, height: 2.2 },
+      "coach-label": { left: 9.7, top: 34.2, width: 15, height: 2.2 },
+      "session-divider": { left: 9.7, top: 37.7, width: 80, height: 0.7 },
+      "training-title": { left: 9.7, top: 39, width: 29, height: 2.6 },
+      "taught-title": { left: 9.7, top: 42, width: 31, height: 2.4 },
+      "taught-dot-1": { left: 9.7, top: 44.6, width: 2.2, height: 1.8 },
+      "taught-dot-2": { left: 9.7, top: 47, width: 2.2, height: 1.8 },
+      "before-title": { left: 9.7, top: 50, width: 34, height: 2.4 },
+      "before-dot-1": { left: 9.7, top: 52.6, width: 2.2, height: 1.8 },
+      "before-dot-2": { left: 9.7, top: 55, width: 2.2, height: 1.8 },
+      "after-title": { left: 53.8, top: 42, width: 40, height: 2.4 },
+      "after-dot-1": { left: 53.8, top: 44.6, width: 2.2, height: 1.8 },
+      "after-dot-2": { left: 53.8, top: 47, width: 2.2, height: 1.8 },
+      "next-title": { left: 53.8, top: 50, width: 35, height: 2.4 },
+      "next-dot-1": { left: 53.8, top: 52.6, width: 2.2, height: 1.8 },
+      "next-dot-2": { left: 53.8, top: 55, width: 2.2, height: 1.8 },
+      "summary-divider": { left: 9.7, top: 58, width: 80, height: 0.7 },
+      "remarks-title-art": { left: 9.7, top: 59.5, width: 25, height: 2.7 },
+      "remark-line-1": { left: 9.7, top: 64.1, width: 80, height: 0.7 },
+      "remark-line-2": { left: 9.7, top: 66.6, width: 80, height: 0.7 },
+      "remark-line-3": { left: 9.7, top: 68.8, width: 80, height: 0.7 },
+      "remark-line-4": { left: 9.7, top: 71, width: 80, height: 0.7 },
+      "remark-line-5": { left: 9.7, top: 73.2, width: 80, height: 0.7 },
+      "certification-badge": { left: 5, top: 75.8, width: 18, height: 15 },
+      "contact-frame": { left: 34.4, top: 76, width: 31.8, height: 14.2 },
+      "contact-title-art": { left: 35.6, top: 77, width: 29.5, height: 2.5 },
+      "address-title-art": { left: 42.5, top: 82.5, width: 15, height: 2.6 },
+      "decor-bottom-left": { left: 1.8, top: 84, width: 23, height: 14 },
+      "footer-bar-art": { left: 0, top: 89, width: 100, height: 11 },
+      "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
     };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -65,20 +98,20 @@ export function initApp(config = {}) {
       qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 }
     };
     const DEFAULT_CERTIFICATE_LAYERS = [
-      ["art-brand", "Brand header and logo", "image"], ["art-session", "Session headings", "image"],
-      ["art-summary", "Training summary headings", "image"], ["art-remarks", "Coach remarks heading", "image"],
-      ["art-badge", "Certification badge", "image"], ["art-contact", "Contact box", "image"],
-      ["art-footer", "Footer bar", "image"],
-      ["brand-title", "Brand title", "text"], ["brand-logo", "Logo / seal", "image"],
-      ["report-title", "Report title", "text"], ["date", "Date", "dynamic-text"],
+      ...Object.keys(ARTWORK_SLICES).map(id => [id, id.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" "), "image"]),
+      ["date", "Date value", "dynamic-text"],
       ["time", "Time", "dynamic-text"], ["centre", "Centre", "dynamic-text"],
       ["coach", "Coach name", "dynamic-text"], ["student-photo", "Student photo", "photo"],
       ["coach-photo", "Coach photo", "photo"], ["whatTaught", "What was taught", "dynamic-text"],
       ["beforeCoaching", "Before coaching", "dynamic-text"], ["afterTraining", "After training", "dynamic-text"],
       ["nextLesson", "Next lesson", "dynamic-text"], ["remarks", "Coach remarks", "dynamic-text"],
       ["contact", "Centre contact", "dynamic-text"], ["address", "Address", "dynamic-text"],
-      ["badge", "Badge", "image"], ["qr", "QR code", "image"], ["footer", "Footer bar", "shape"]
+      ["qr", "QR code", "image"]
     ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2, ...(DEFAULT_LAYER_GEOMETRY[id] || {}) }));
+    const RETIRED_CERTIFICATE_LAYER_IDS = new Set([
+      "art-brand", "art-session", "art-summary", "art-remarks", "art-badge", "art-contact", "art-footer",
+      "brand-title", "brand-logo", "report-title", "remarks", "badge", "footer"
+    ]);
     const PHOTO_PLACEHOLDER_SVG = `
       <svg xmlns="http://www.w3.org/2000/svg" width="123" height="111" viewBox="0 0 123 111" aria-hidden="true">
         <rect width="123" height="111" rx="12" fill="#E5E7EB"></rect>
@@ -242,7 +275,7 @@ export function initApp(config = {}) {
             ...(saved.layers.find(layer => layer.id === defaultLayer.id) || {}),
             visible: saved.layers.find(layer => layer.id === defaultLayer.id)?.visible !== false,
             zIndex: Number(saved.layers.find(layer => layer.id === defaultLayer.id)?.zIndex) || index + 2
-          })).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id)))
+          })).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id) && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)))
         : DEFAULT_CERTIFICATE_LAYERS.map(layer => ({ ...layer }));
       return { ...keyed, layers };
     }
@@ -252,7 +285,7 @@ export function initApp(config = {}) {
     }
 
     function overlayStyle(layout, extra = "") {
-      return `left:${layout.left}%;top:${layout.top}%;width:${layout.width}%;font-size:${layout.fontSize}cqw;font-family:${escapeHtml(layout.fontFamily)};color:${escapeHtml(layout.color)};font-weight:${layout.fontWeight};${extra}`;
+      return `left:${layout.left}%;top:${layout.top}%;width:${layout.width}%;${layout.height ? `height:${layout.height}%;` : ""}font-size:${layout.fontSize}cqw;font-family:${escapeHtml(layout.fontFamily)};color:${escapeHtml(layout.color)};font-weight:${layout.fontWeight};opacity:${layout.opacity ?? 1};z-index:${layout.zIndex ?? 20};${extra}`;
     }
 
     function slugify(value) {
@@ -669,10 +702,8 @@ export function initApp(config = {}) {
             ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
             ${renderEditableOverlay("coach", escapeHtml(data.session.coachName), layout.coach, "white-space:nowrap;")}
 
-            <div class="template-report-photo-group">
-              ${renderEditablePhoto("student-photo", data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"))}
-              ${renderEditablePhoto("coach-photo", data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"))}
-            </div>
+            ${renderEditablePhoto("student-photo", data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"))}
+            ${renderEditablePhoto("coach-photo", data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"))}
 
             ${REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
@@ -705,9 +736,7 @@ export function initApp(config = {}) {
             ${renderEditableOverlay("address", escapeHtml(data.address).replace(/\n/g, "<br>"), layout.address)}
             ${renderCustomCertificateLayers(layout)}
           </div>
-          <div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""}" data-overlay-id="qr" style="left:${layout.layers.find(layer => layer.id === "qr")?.left ?? 87.7}%;top:${layout.layers.find(layer => layer.id === "qr")?.top ?? 91.88}%;width:${layout.layers.find(layer => layer.id === "qr")?.width ?? 9.5}%;height:${layout.layers.find(layer => layer.id === "qr")?.height ?? 7.12}%;right:auto;bottom:auto;">
-            <img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">
-          </div>
+          ${renderEditableQr(layout.layers.find(layer => layer.id === "qr"))}
         </div>
       `;
     }
@@ -763,7 +792,8 @@ export function initApp(config = {}) {
     }
 
     function renderEditableOverlay(id, content, layout, extra = "") {
-      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${overlayStyle(layout, extra)}">${content}</div>`;
+      if (layout.visible === false) return "";
+      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${overlayStyle(layout, extra)}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
     }
 
     function renderCustomCertificateLayers(layout) {
@@ -774,11 +804,11 @@ export function initApp(config = {}) {
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
           const height = Number(layer.height ?? slice.height) || slice.height;
-          const imageLeft = (-slice.left / width) * 100;
-          const imageTop = (-slice.top / height) * 100;
-          const imageWidth = 10000 / width;
-          const imageHeight = 10000 / height;
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;"></div>`;
+          const imageLeft = (-slice.left / slice.width) * 100;
+          const imageTop = (-slice.top / slice.height) * 100;
+          const imageWidth = 10000 / slice.width;
+          const imageHeight = 10000 / slice.height;
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};background:${escapeHtml(layer.fill || "transparent")};`;
         const content = layer.type === "image" || layer.type === "photo"
@@ -996,9 +1026,16 @@ export function initApp(config = {}) {
     }
 
     function renderEditablePhoto(id, photo, label, layer) {
+      if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY[id];
       const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;`;
-      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}</div>`;
+      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+    }
+
+    function renderEditableQr(layer) {
+      if (layer?.visible === false) return "";
+      const geometry = layer || DEFAULT_LAYER_GEOMETRY.qr;
+      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
     }
 
     function renderSidebar() {
@@ -1481,7 +1518,7 @@ export function initApp(config = {}) {
       reportLayoutEditing = true;
       return `<section class="page certificate-design-page ${state.ui.page === "certificate-design" ? "active" : ""}">
         <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><button class="secondary-btn" data-action="reset-report-layout">Reset layout</button></div>
-        <div class="certificate-editor-workspace"><aside class="certificate-editor-rail">${renderReportLayoutToolbar(coach)}</aside><main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
+        <div class="certificate-editor-workspace"><aside class="certificate-editor-rail">${renderCertificateLayerPanel(coach)}${renderReportLayoutToolbar(coach)}</aside><main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
         <div class="certificate-design-note">Select a field on the certificate, then drag it to reposition it. Changes save to your coach account.</div>
       </section>`;
     }
@@ -2158,6 +2195,7 @@ export function initApp(config = {}) {
       document.querySelector("[data-layout-left]")?.addEventListener("input", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
       document.querySelector("[data-layout-top]")?.addEventListener("input", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
       document.querySelector("[data-layout-width]")?.addEventListener("input", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
+      document.querySelector("[data-layout-height]")?.addEventListener("input", event => updateSelectedReportLayout({ height: Number(event.target.value) || 0.5 }));
       document.querySelector("[data-layout-opacity]")?.addEventListener("input", event => updateSelectedReportLayout({ opacity: Math.max(0, Math.min(1, Number(event.target.value))) }));
     }
 
@@ -2222,6 +2260,17 @@ export function initApp(config = {}) {
       if (action === "reset-report-layout") {
         const coach = getCurrentCoach();
         coach.reportLayout = normalizeReportLayout();
+        return saveReportLayout(coach);
+      }
+      if (["toggle-certificate-layer", "lower-certificate-layer", "raise-certificate-layer"].includes(action)) {
+        const coach = getCurrentCoach();
+        const layout = getReportLayout(coach);
+        const target = layout[selectedReportOverlay] || (layout.layers || []).find(layer => layer.id === selectedReportOverlay);
+        if (!target) return;
+        if (action === "toggle-certificate-layer") target.visible = target.visible === false;
+        if (action === "lower-certificate-layer") target.zIndex = Math.max(1, Number(target.zIndex || 20) - 1);
+        if (action === "raise-certificate-layer") target.zIndex = Number(target.zIndex || 20) + 1;
+        coach.reportLayout = layout;
         return saveReportLayout(coach);
       }
       if (action === "add-certificate-text" || action === "add-certificate-shape" || action === "add-certificate-image") {
@@ -2458,12 +2507,16 @@ export function initApp(config = {}) {
       return `<div class="report-layout-toolbar">
         <label>Field <select data-layout-field>${selectableFields.map(key => `<option value="${escapeHtml(key)}" ${key === selectedReportOverlay ? "selected" : ""}>${escapeHtml(key)}</option>`).join("")}</select></label>
         <label>Font <select data-layout-font>${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
-        <label>Size <input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize}"></label>
-        <label>Colour <input type="color" data-layout-color value="${layout.color}"></label>
+        <label>Size <input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}"></label>
+        <label>Colour <input type="color" data-layout-color value="${layout.color || "#111111"}"></label>
         <label>X <input type="number" step="0.1" data-layout-left value="${layout.left}"></label>
         <label>Y <input type="number" step="0.1" data-layout-top value="${layout.top}"></label>
         <label>Width <input type="number" min="1" max="100" step="0.1" data-layout-width value="${layout.width}"></label>
+        <label>Height <input type="number" min="0.5" max="100" step="0.1" data-layout-height value="${layout.height ?? 4}"></label>
         <label>Opacity <input type="number" min="0" max="1" step="0.05" data-layout-opacity value="${layout.opacity ?? 1}"></label>
+        <button class="secondary-btn" data-action="toggle-certificate-layer">${layout.visible === false ? "Show layer" : "Hide layer"}</button>
+        <button class="secondary-btn" data-action="lower-certificate-layer">Send backward</button>
+        <button class="secondary-btn" data-action="raise-certificate-layer">Bring forward</button>
         <button class="secondary-btn" data-action="reset-report-layout">Reset</button>
         <button class="secondary-btn" data-action="download-report-png">Export PNG</button>
       </div>`;

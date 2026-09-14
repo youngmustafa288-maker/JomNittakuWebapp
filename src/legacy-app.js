@@ -826,14 +826,13 @@ export function initApp(config = {}) {
     }
 
     function renderCertificateOrnaments() {
-      return ["decor-top-left", "decor-top-right", "decor-bottom-left", "decor-bottom-right"].map(id => {
-        const slice = ARTWORK_SLICES[id];
-        const imageLeft = (-slice.left / slice.width) * 100;
-        const imageTop = (-slice.top / slice.height) * 100;
-        const imageWidth = 10000 / slice.width;
-        const imageHeight = 10000 / slice.height;
-        return `<div class="template-art-slice template-certificate-ornament" aria-hidden="true" style="left:${slice.left}%;top:${slice.top}%;width:${slice.width}%;height:${slice.height}%;z-index:3;"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;"></div>`;
-      }).join("");
+      const corners = [
+        "polygon(0 0, 18% 0, 18% 18%, 0 18%)",
+        "polygon(82% 0, 100% 0, 100% 18%, 82% 18%)",
+        "polygon(0 82%, 18% 82%, 18% 100%, 0 100%)",
+        "polygon(82% 82%, 100% 82%, 100% 100%, 82% 100%)"
+      ];
+      return corners.map(clipPath => `<div class="template-certificate-ornament-canvas" aria-hidden="true" style="clip-path:${clipPath};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt=""></div>`).join("");
     }
 
     async function signInWithGoogle() {

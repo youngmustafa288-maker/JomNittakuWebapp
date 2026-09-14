@@ -14,5 +14,5 @@ initApp({
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || runtimeConfig.supabaseUrl,
   supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || runtimeConfig.supabaseKey,
   reportTemplateSrc: "/Certificate%20Template.jpg?v=2",
-  reportTemplateArtSrc: "/Image%201.jpg?v=2"
+  reportTemplateLayerRoot: "/certificate-layers"
 });

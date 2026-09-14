@@ -7,9 +7,7 @@ export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
     const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate%20Template.jpg?v=2";
-    // Fixed artwork layer supplied by Image 1. It shares the template's
-    // native 896x1200 dimensions, so it remains aligned at every scale.
-    const REPORT_TEMPLATE_ART_SRC = config.reportTemplateArtSrc || "/Image%201.jpg?v=2";
+    const REPORT_TEMPLATE_LAYER_ROOT = config.reportTemplateLayerRoot || "/certificate-layers";
     const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
       month: "long",
       year: "numeric"
@@ -809,11 +807,8 @@ export function initApp(config = {}) {
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
           const height = Number(layer.height ?? slice.height) || slice.height;
-          const imageLeft = (-slice.left / slice.width) * 100;
-          const imageTop = (-slice.top / slice.height) * 100;
-          const imageWidth = 10000 / slice.width;
-          const imageHeight = 10000 / slice.height;
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+          const source = `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=1`;
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};"><img src="${source}" alt="">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};background:${escapeHtml(layer.fill || "transparent")};`;
         const content = layer.type === "image" || layer.type === "photo"

@@ -700,7 +700,6 @@ export function initApp(config = {}) {
         <div class="template-report-shell" id="reportTemplatePreview">
           <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
           <div class="template-report-overlay" aria-hidden="true">
-            ${renderCertificateOrnaments()}
             ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
             ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
             ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
@@ -799,7 +798,6 @@ export function initApp(config = {}) {
     function renderCustomCertificateLayers(layout) {
       const builtInLayerIds = new Set([
         ...Object.keys(DEFAULT_REPORT_LAYOUT),
-        ...Object.keys(ARTWORK_SLICES),
         "student-photo",
         "coach-photo",
         "qr"
@@ -823,16 +821,6 @@ export function initApp(config = {}) {
           : escapeHtml(layer.text || "");
         return `<div class="template-custom-layer report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
       }).join("");
-    }
-
-    function renderCertificateOrnaments() {
-      const corners = [
-        "polygon(0 0, 18% 0, 18% 18%, 0 18%)",
-        "polygon(82% 0, 100% 0, 100% 18%, 82% 18%)",
-        "polygon(0 82%, 18% 82%, 18% 100%, 0 100%)",
-        "polygon(82% 82%, 100% 82%, 100% 100%, 82% 100%)"
-      ];
-      return corners.map(clipPath => `<div class="template-certificate-ornament-canvas" aria-hidden="true" style="clip-path:${clipPath};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt=""></div>`).join("");
     }
 
     async function signInWithGoogle() {

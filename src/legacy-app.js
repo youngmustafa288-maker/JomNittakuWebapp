@@ -42,10 +42,11 @@ export function initApp(config = {}) {
       time: { left: 17.9, top: 29.58, width: 23, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
       centre: { left: 17.9, top: 31.94, width: 25, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
       coach: { left: 24.25, top: 34.34, width: 19, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
-      whatTaught: { left: 11.8, top: 44.9, width: 35.2, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      beforeCoaching: { left: 11.8, top: 52.8, width: 35.2, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      afterTraining: { left: 55.4, top: 44.9, width: 38.5, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      nextLesson: { left: 55.4, top: 52.8, width: 38.5, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      whatTaught: { left: 11.8, top: 44.9, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      beforeCoaching: { left: 11.8, top: 52.8, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      afterTraining: { left: 55.4, top: 44.9, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      nextLesson: { left: 55.4, top: 52.8, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      remarks: { left: 10.1, top: 62.4, width: 86, height: 12.9, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.9, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
       address: { left: 34.55, top: 86.35, width: 31.2, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 }
     };
@@ -162,6 +163,7 @@ export function initApp(config = {}) {
     let reportExportKey = "";
     let reportLayoutEditing = false;
     let selectedReportOverlay = "date";
+    let certificateEditorTool = "layers";
 
     async function getQrCodeLib() {
       if (!qrCodeModulePromise) {
@@ -669,11 +671,11 @@ export function initApp(config = {}) {
     }
 
     function renderPlainBulletOverlays(lines, positions, layout, field) {
-      return positions.map((position, index) => `
-        <div class="template-text template-bullet report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === field ? "is-selected" : ""} ${lines[index] ? "" : "empty"}" data-overlay-id="${field}" style="${overlayStyle({ ...layout, top: layout.top + (index * 2.58) }, `height:${position.height}%;`)}">
-          <span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span>
-        </div>
-      `).join("");
+      const rowHeight = 100 / positions.length;
+      return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" style="${overlayStyle(layout)}">
+        ${positions.map((_position, index) => `<div class="template-text template-bullet ${lines[index] ? "" : "empty"}" style="left:0;top:${index * rowHeight}%;width:100%;max-height:${rowHeight}%;"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
+        ${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}
+      </div>`;
     }
 
     function splitReportRemarks(value, limit = 5) {
@@ -726,11 +728,7 @@ export function initApp(config = {}) {
               { left: 55.4, top: 55.35, width: 38.5, height: 4.4 }
             ], layout.nextLesson, "nextLesson")}
 
-              ${REPORT_TEMPLATE_REMARK_TOPS.map((top, index) => data.remarksLines[index] ? `
-                <div class="template-text template-bullet template-remarks-bullet" style="left:10.1%;top:${top}%;width:86%;">
-                  <span>${escapeHtml(data.remarksLines[index])}</span>
-                </div>
-              ` : "").join("")}
+            ${renderPlainBulletOverlays(data.remarksLines, REPORT_TEMPLATE_REMARK_TOPS.map(top => ({ left: 10.1, top, width: 86, height: 2.5 })), layout.remarks, "remarks")}
 
             ${renderEditableOverlay("contact", escapeHtml(data.centreContact), layout.contact)}
             ${renderEditableOverlay("address", escapeHtml(data.address).replace(/\n/g, "<br>"), layout.address)}
@@ -793,7 +791,7 @@ export function initApp(config = {}) {
 
     function renderEditableOverlay(id, content, layout, extra = "") {
       if (layout.visible === false) return "";
-      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${overlayStyle(layout, extra)}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${overlayStyle(layout, extra)}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
     }
 
     function renderCustomCertificateLayers(layout) {
@@ -808,13 +806,13 @@ export function initApp(config = {}) {
           const imageTop = (-slice.top / slice.height) * 100;
           const imageWidth = 10000 / slice.width;
           const imageHeight = 10000 / slice.height;
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};background:${escapeHtml(layer.fill || "transparent")};`;
         const content = layer.type === "image" || layer.type === "photo"
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
           : escapeHtml(layer.text || "");
-        return `<div class="template-custom-layer report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="${style}">${content}</div>`;
+        return `<div class="template-custom-layer report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
       }).join("");
     }
 
@@ -1029,13 +1027,13 @@ export function initApp(config = {}) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY[id];
       const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;`;
-      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
     }
 
     function renderEditableQr(layer) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY.qr;
-      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
     }
 
     function renderSidebar() {
@@ -1517,18 +1515,34 @@ export function initApp(config = {}) {
       const previewReport = getCertificateDesignPreviewReport(coach);
       reportLayoutEditing = true;
       return `<section class="page certificate-design-page ${state.ui.page === "certificate-design" ? "active" : ""}">
-        <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><button class="secondary-btn" data-action="reset-report-layout">Reset layout</button></div>
-        <div class="certificate-editor-workspace"><aside class="certificate-editor-rail">${renderCertificateLayerPanel(coach)}${renderReportLayoutToolbar(coach)}</aside><main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
+        <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><div class="certificate-header-actions"><button class="secondary-btn" data-action="reset-report-layout">Reset</button><button class="primary-btn" data-action="download-report-png">Export</button></div></div>
+        <div class="certificate-editor-workspace">
+          ${renderCertificateToolStrip()}
+          <aside class="certificate-editor-rail">${renderCertificateToolPanel(coach)}</aside>
+          <div class="certificate-editor-main">${renderReportLayoutToolbar(coach)}<main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
+        </div>
         <div class="certificate-design-note">Select a field on the certificate, then drag it to reposition it. Changes save to your coach account.</div>
       </section>`;
+    }
+
+    function renderCertificateToolStrip() {
+      const tools = [["elements", "□", "Elements"], ["text", "T", "Text"], ["uploads", "+", "Uploads"], ["layers", "≡", "Layers"], ["position", "↕", "Position"]];
+      return `<nav class="certificate-tool-strip" aria-label="Certificate editor tools">${tools.map(([id, icon, label]) => `<button type="button" class="certificate-tool-button ${certificateEditorTool === id ? "is-active" : ""}" data-certificate-tool="${id}" aria-pressed="${certificateEditorTool === id}"><span aria-hidden="true">${icon}</span><small>${label}</small></button>`).join("")}</nav>`;
+    }
+
+    function renderCertificateToolPanel(coach) {
+      if (certificateEditorTool === "elements") return `<div class="certificate-tool-panel"><strong>Elements</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-shape"><span aria-hidden="true">□</span>Add shape</button></div>`;
+      if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add text</button></div>`;
+      if (certificateEditorTool === "uploads") return `<div class="certificate-tool-panel"><strong>Uploads</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-image"><span aria-hidden="true">+</span>Upload image</button></div>`;
+      if (certificateEditorTool === "position") return `<div class="certificate-tool-panel"><strong>Position</strong><button type="button" class="certificate-panel-action" data-action="raise-certificate-layer">Bring forward</button><button type="button" class="certificate-panel-action" data-action="lower-certificate-layer">Send backward</button><button type="button" class="certificate-panel-action" data-action="toggle-certificate-lock">Lock or unlock</button></div>`;
+      return renderCertificateLayerPanel(coach);
     }
 
     function renderCertificateLayerPanel(coach) {
       const layers = getReportLayout(coach).layers || [];
       return `<div class="certificate-layer-panel" aria-label="Certificate layers">
         <strong>Layers</strong>
-        <div class="certificate-layer-list">${layers.map(layer => `<button type="button" class="certificate-layer-row ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-layer-select="${escapeHtml(layer.id)}"><span>${escapeHtml(layer.name || layer.id)}</span><small>${escapeHtml(layer.type || "layer")}</small></button>`).join("")}</div>
-        <div class="certificate-add-tools"><button type="button" class="secondary-btn" data-action="add-certificate-text">Add text</button><button type="button" class="secondary-btn" data-action="add-certificate-shape">Add shape</button><button type="button" class="secondary-btn" data-action="add-certificate-image">Add image</button></div>
+        <div class="certificate-layer-list">${layers.map(layer => `<button type="button" class="certificate-layer-row ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-layer-select="${escapeHtml(layer.id)}"><span>${escapeHtml(layer.name || layer.id)}</span><small>${layer.locked === true ? "Locked" : escapeHtml(layer.type || "layer")}</small></button>`).join("")}</div>
       </div>`;
     }
 
@@ -2054,14 +2068,17 @@ export function initApp(config = {}) {
           const fullLayout = getReportLayout(coach);
           const layout = fullLayout[selectedReportOverlay] || (fullLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
           if (!layout) return;
+          if (layout.locked === true) return;
           const startX = event.clientX;
           const startY = event.clientY;
-          const startLeft = layout.left;
-          const startTop = layout.top;
+          const startLeft = Number(layout.left) || 0;
+          const startTop = Number(layout.top) || 0;
           const startWidth = Number(layout.width) || 10;
           const startHeight = Number(layout.height) || 8;
           const resizing = Boolean(event.target.closest(".certificate-resize-handle"));
           const rect = preview.getBoundingClientRect();
+          item.setPointerCapture?.(event.pointerId);
+          event.preventDefault();
           const move = moveEvent => {
             const dx = ((moveEvent.clientX - startX) / rect.width) * 100;
             const dy = ((moveEvent.clientY - startY) / rect.height) * 100;
@@ -2074,17 +2091,22 @@ export function initApp(config = {}) {
             }
             item.style.left = `${layout.left}%`;
             item.style.top = `${layout.top}%`;
-            item.style.width = `${layout.width}%`;
-            item.style.height = `${layout.height}%`;
+            if (resizing) {
+              item.style.width = `${layout.width}%`;
+              item.style.height = `${layout.height}%`;
+            }
           };
           const up = () => {
             document.removeEventListener("pointermove", move);
             document.removeEventListener("pointerup", up);
-            coach.reportLayout = getReportLayout(coach);
+            document.removeEventListener("pointercancel", up);
+            item.releasePointerCapture?.(event.pointerId);
+            coach.reportLayout = fullLayout;
             saveReportLayout(coach);
           };
           document.addEventListener("pointermove", move);
           document.addEventListener("pointerup", up, { once: true });
+          document.addEventListener("pointercancel", up, { once: true });
         });
         appEventsBound = true;
       }
@@ -2178,25 +2200,59 @@ export function initApp(config = {}) {
           element.addEventListener("input", updateWizardDraftFromInputs);
         }
       });
-      document.querySelectorAll("[data-overlay-id]").forEach(item => item.addEventListener("click", () => { selectedReportOverlay = item.dataset.overlayId; if (reportLayoutEditing) render(); }));
+      document.querySelectorAll("[data-overlay-id]").forEach(item => item.addEventListener("click", event => {
+        event.stopPropagation();
+        selectedReportOverlay = item.dataset.overlayId;
+        if (reportLayoutEditing) render();
+      }));
+      document.querySelector("#reportTemplatePreview")?.addEventListener("click", event => {
+        if (!event.target.closest(".report-overlay-item")) {
+          selectedReportOverlay = "";
+          render();
+        }
+      });
       document.querySelectorAll("[data-layer-select]").forEach(item => item.addEventListener("click", () => { selectedReportOverlay = item.dataset.layerSelect; render(); }));
+      document.querySelectorAll("[data-certificate-tool]").forEach(item => item.addEventListener("click", () => {
+        certificateEditorTool = item.dataset.certificateTool;
+        render();
+      }));
       document.querySelectorAll(".template-custom-layer[data-overlay-id]").forEach(item => item.addEventListener("dblclick", () => {
-        const layer = (getReportLayout(getCurrentCoach()).layers || []).find(entry => entry.id === item.dataset.overlayId);
+        const coach = getCurrentCoach();
+        const fullLayout = getReportLayout(coach);
+        const layer = (fullLayout.layers || []).find(entry => entry.id === item.dataset.overlayId);
         if (!layer || layer.type !== "text") return;
         item.contentEditable = "true";
         item.focus();
-        const finish = () => { layer.text = item.textContent.trim().slice(0, 500); item.contentEditable = "false"; saveReportLayout(getCurrentCoach()); };
+        const finish = () => {
+          layer.text = item.textContent.trim().slice(0, 500);
+          item.contentEditable = "false";
+          coach.reportLayout = fullLayout;
+          saveReportLayout(coach);
+        };
         item.addEventListener("blur", finish, { once: true });
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
       document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
-      document.querySelector("[data-layout-size]")?.addEventListener("input", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
+      document.querySelector("[data-layout-size]")?.addEventListener("change", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
       document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
-      document.querySelector("[data-layout-left]")?.addEventListener("input", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
-      document.querySelector("[data-layout-top]")?.addEventListener("input", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
-      document.querySelector("[data-layout-width]")?.addEventListener("input", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
-      document.querySelector("[data-layout-height]")?.addEventListener("input", event => updateSelectedReportLayout({ height: Number(event.target.value) || 0.5 }));
-      document.querySelector("[data-layout-opacity]")?.addEventListener("input", event => updateSelectedReportLayout({ opacity: Math.max(0, Math.min(1, Number(event.target.value))) }));
+      document.querySelector("[data-layout-left]")?.addEventListener("change", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
+      document.querySelector("[data-layout-top]")?.addEventListener("change", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
+      document.querySelector("[data-layout-width]")?.addEventListener("change", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
+      document.querySelector("[data-layout-height]")?.addEventListener("change", event => updateSelectedReportLayout({ height: Number(event.target.value) || 0.5 }));
+      document.querySelector("[data-layout-opacity]")?.addEventListener("change", event => updateSelectedReportLayout({ opacity: Math.max(0, Math.min(1, Number(event.target.value))) }));
+      document.getElementById("hiddenCertificateUpload")?.addEventListener("change", event => {
+        const [file] = event.target.files || [];
+        if (!file) return;
+        uploadProfileImage(file, "certificate", getCurrentCoach().id).then(url => {
+          const coach = getCurrentCoach();
+          const layout = getReportLayout(coach);
+          const layer = (layout.layers || []).find(entry => entry.id === selectedReportOverlay);
+          if (layer) layer.source = url;
+          coach.reportLayout = layout;
+          event.target.value = "";
+          return saveReportLayout(coach);
+        }).catch(error => alert(error.message || "Unable to upload certificate image."));
+      });
     }
 
     function updateSelectedReportLayout(changes) {
@@ -2215,17 +2271,6 @@ export function initApp(config = {}) {
         const savedCoach = await saveCoachRecord(coach).catch(() => null);
         if (savedCoach) state.coaches = state.coaches.map(item => item.id === savedCoach.id ? savedCoach : item);
       }
-      const hiddenCertificateUpload = document.getElementById("hiddenCertificateUpload");
-      hiddenCertificateUpload?.addEventListener("change", event => {
-        const [file] = event.target.files || [];
-        if (!file) return;
-        uploadProfileImage(file, "certificate", getCurrentCoach().id).then(url => {
-          const coach = getCurrentCoach(); const layout = getReportLayout(coach);
-          const layer = (layout.layers || []).find(entry => entry.id === selectedReportOverlay);
-          if (layer) layer.source = url;
-          coach.reportLayout = layout; event.target.value = ""; return saveReportLayout(coach);
-        }).catch(error => alert(error.message || "Unable to upload certificate image."));
-      });
       render();
     }
 
@@ -2270,6 +2315,28 @@ export function initApp(config = {}) {
         if (action === "toggle-certificate-layer") target.visible = target.visible === false;
         if (action === "lower-certificate-layer") target.zIndex = Math.max(1, Number(target.zIndex || 20) - 1);
         if (action === "raise-certificate-layer") target.zIndex = Number(target.zIndex || 20) + 1;
+        coach.reportLayout = layout;
+        return saveReportLayout(coach);
+      }
+      if (["toggle-certificate-lock", "duplicate-certificate-layer", "delete-certificate-layer"].includes(action)) {
+        const coach = getCurrentCoach();
+        const layout = getReportLayout(coach);
+        const index = (layout.layers || []).findIndex(layer => layer.id === selectedReportOverlay);
+        const selectedLayer = index >= 0 ? layout.layers[index] : null;
+        const target = layout[selectedReportOverlay] || selectedLayer;
+        if (!target) return;
+        if (action === "toggle-certificate-lock") {
+          target.locked = target.locked !== true;
+        } else if (action === "duplicate-certificate-layer" && selectedLayer?.id.startsWith("custom-")) {
+          const copy = { ...selectedLayer, id: `custom-${Date.now()}`, name: `${selectedLayer.name || "Layer"} copy`, left: Math.min(100 - (Number(selectedLayer.width) || 10), (Number(selectedLayer.left) || 0) + 2), top: Math.min(100 - (Number(selectedLayer.height) || 8), (Number(selectedLayer.top) || 0) + 2), zIndex: Math.max(...layout.layers.map(layer => Number(layer.zIndex) || 1), 1) + 1, locked: false };
+          layout.layers.push(copy);
+          selectedReportOverlay = copy.id;
+        } else if (action === "delete-certificate-layer" && selectedLayer?.id.startsWith("custom-")) {
+          layout.layers.splice(index, 1);
+          selectedReportOverlay = layout.layers[0]?.id || "date";
+        } else {
+          return;
+        }
         coach.reportLayout = layout;
         return saveReportLayout(coach);
       }
@@ -2502,23 +2569,25 @@ export function initApp(config = {}) {
 
     function renderReportLayoutToolbar(coach) {
       const reportLayout = getReportLayout(coach);
-      const selectableFields = [...Object.keys(DEFAULT_REPORT_LAYOUT), ...(reportLayout.layers || []).map(layer => layer.id)];
-      const layout = reportLayout[selectedReportOverlay] || (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay) || DEFAULT_REPORT_LAYOUT.date;
+      const layout = reportLayout[selectedReportOverlay] || (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
+      if (!layout) return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
+      const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
+      const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
+      const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text"));
       return `<div class="report-layout-toolbar">
-        <label>Field <select data-layout-field>${selectableFields.map(key => `<option value="${escapeHtml(key)}" ${key === selectedReportOverlay ? "selected" : ""}>${escapeHtml(key)}</option>`).join("")}</select></label>
-        <label>Font <select data-layout-font>${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
-        <label>Size <input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}"></label>
-        <label>Colour <input type="color" data-layout-color value="${layout.color || "#111111"}"></label>
-        <label>X <input type="number" step="0.1" data-layout-left value="${layout.left}"></label>
-        <label>Y <input type="number" step="0.1" data-layout-top value="${layout.top}"></label>
-        <label>Width <input type="number" min="1" max="100" step="0.1" data-layout-width value="${layout.width}"></label>
-        <label>Height <input type="number" min="0.5" max="100" step="0.1" data-layout-height value="${layout.height ?? 4}"></label>
-        <label>Opacity <input type="number" min="0" max="1" step="0.05" data-layout-opacity value="${layout.opacity ?? 1}"></label>
-        <button class="secondary-btn" data-action="toggle-certificate-layer">${layout.visible === false ? "Show layer" : "Hide layer"}</button>
-        <button class="secondary-btn" data-action="lower-certificate-layer">Send backward</button>
-        <button class="secondary-btn" data-action="raise-certificate-layer">Bring forward</button>
-        <button class="secondary-btn" data-action="reset-report-layout">Reset</button>
-        <button class="secondary-btn" data-action="download-report-png">Export PNG</button>
+        ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><label class="toolbar-number"><span class="sr-only">Font size</span><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"></label><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label>` : ""}
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <label class="toolbar-coordinate"><span>X</span><input type="number" step="0.1" data-layout-left value="${layout.left}" aria-label="Horizontal position"></label>
+        <label class="toolbar-coordinate"><span>Y</span><input type="number" step="0.1" data-layout-top value="${layout.top}" aria-label="Vertical position"></label>
+        <label class="toolbar-coordinate"><span>W</span><input type="number" min="1" max="100" step="0.1" data-layout-width value="${layout.width}" aria-label="Width"></label>
+        <label class="toolbar-coordinate"><span>H</span><input type="number" min="0.5" max="100" step="0.1" data-layout-height value="${layout.height ?? 4}" aria-label="Height"></label>
+        <label class="toolbar-opacity"><span>Opacity</span><input type="number" min="0" max="1" step="0.05" data-layout-opacity value="${layout.opacity ?? 1}" aria-label="Opacity"></label>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
+        <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>
+        <button class="certificate-icon-action" data-action="toggle-certificate-lock" title="${layout.locked === true ? "Unlock" : "Lock"}" aria-label="${layout.locked === true ? "Unlock" : "Lock"}">${layout.locked === true ? "Unlock" : "Lock"}</button>
+        ${isCustomLayer ? `<button class="certificate-icon-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate">Duplicate</button><button class="certificate-icon-action is-danger" data-action="delete-certificate-layer" title="Delete" aria-label="Delete">Delete</button>` : ""}
+        <button class="certificate-icon-action" data-action="toggle-certificate-layer">${layout.visible === false ? "Show" : "Hide"}</button>
       </div>`;
     }
 

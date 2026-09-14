@@ -1610,6 +1610,8 @@
     .template-bullet-group .template-bullet { position:absolute; font-family:inherit; font-size:inherit; font-weight:inherit; color:inherit; }
     .template-art-slice { position:absolute; overflow:hidden; box-sizing:border-box; }
     .template-art-slice img { position:absolute; max-width:none; pointer-events:none; }
+    .template-certificate-ornament { pointer-events:none; }
+    .report-overlay-item.is-dragging { opacity: .92; }
     .certificate-resize-handle { position:absolute; width:10px; height:10px; right:1px; bottom:1px; border:2px solid #7c3aed; background:#fff; border-radius:2px; cursor:nwse-resize; visibility:hidden; box-sizing:border-box; }
     .report-overlay-item.is-selected > .certificate-resize-handle { visibility:visible; }
     .report-overlay-item.is-locked > .certificate-resize-handle { visibility:hidden; }

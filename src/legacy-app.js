@@ -164,6 +164,7 @@ export function initApp(config = {}) {
     let reportLayoutEditing = false;
     let selectedReportOverlay = "date";
     let certificateEditorTool = "layers";
+    let reportOverlayDragged = false;
 
     async function getQrCodeLib() {
       if (!qrCodeModulePromise) {
@@ -699,6 +700,7 @@ export function initApp(config = {}) {
         <div class="template-report-shell" id="reportTemplatePreview">
           <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
           <div class="template-report-overlay" aria-hidden="true">
+            ${renderCertificateOrnaments()}
             ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
             ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
             ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
@@ -795,7 +797,14 @@ export function initApp(config = {}) {
     }
 
     function renderCustomCertificateLayers(layout) {
-      return (layout.layers || []).filter(layer => !DEFAULT_REPORT_LAYOUT[layer.id] && layer.visible !== false).map(layer => {
+      const builtInLayerIds = new Set([
+        ...Object.keys(DEFAULT_REPORT_LAYOUT),
+        ...Object.keys(ARTWORK_SLICES),
+        "student-photo",
+        "coach-photo",
+        "qr"
+      ]);
+      return (layout.layers || []).filter(layer => !builtInLayerIds.has(layer.id) && layer.visible !== false).map(layer => {
         const slice = ARTWORK_SLICES[layer.id];
         if (slice) {
           const left = Number(layer.left ?? slice.left) || 0;
@@ -813,6 +822,17 @@ export function initApp(config = {}) {
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
           : escapeHtml(layer.text || "");
         return `<div class="template-custom-layer report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+      }).join("");
+    }
+
+    function renderCertificateOrnaments() {
+      return ["decor-top-left", "decor-top-right", "decor-bottom-left", "decor-bottom-right"].map(id => {
+        const slice = ARTWORK_SLICES[id];
+        const imageLeft = (-slice.left / slice.width) * 100;
+        const imageTop = (-slice.top / slice.height) * 100;
+        const imageWidth = 10000 / slice.width;
+        const imageHeight = 10000 / slice.height;
+        return `<div class="template-art-slice template-certificate-ornament" aria-hidden="true" style="left:${slice.left}%;top:${slice.top}%;width:${slice.width}%;height:${slice.height}%;z-index:3;"><img src="${REPORT_TEMPLATE_ART_SRC}" alt="" style="left:${imageLeft}%;top:${imageTop}%;width:${imageWidth}%;height:${imageHeight}%;"></div>`;
       }).join("");
     }
 
@@ -2077,9 +2097,14 @@ export function initApp(config = {}) {
           const startHeight = Number(layout.height) || 8;
           const resizing = Boolean(event.target.closest(".certificate-resize-handle"));
           const rect = preview.getBoundingClientRect();
+          reportOverlayDragged = false;
+          item.classList.add("is-dragging");
           item.setPointerCapture?.(event.pointerId);
           event.preventDefault();
           const move = moveEvent => {
+            if (Math.abs(moveEvent.clientX - startX) > 2 || Math.abs(moveEvent.clientY - startY) > 2) {
+              reportOverlayDragged = true;
+            }
             const dx = ((moveEvent.clientX - startX) / rect.width) * 100;
             const dy = ((moveEvent.clientY - startY) / rect.height) * 100;
             if (resizing) {
@@ -2101,6 +2126,7 @@ export function initApp(config = {}) {
             document.removeEventListener("pointerup", up);
             document.removeEventListener("pointercancel", up);
             item.releasePointerCapture?.(event.pointerId);
+            item.classList.remove("is-dragging");
             coach.reportLayout = fullLayout;
             saveReportLayout(coach);
           };
@@ -2202,6 +2228,10 @@ export function initApp(config = {}) {
       });
       document.querySelectorAll("[data-overlay-id]").forEach(item => item.addEventListener("click", event => {
         event.stopPropagation();
+        if (reportOverlayDragged) {
+          reportOverlayDragged = false;
+          return;
+        }
         selectedReportOverlay = item.dataset.overlayId;
         if (reportLayoutEditing) render();
       }));

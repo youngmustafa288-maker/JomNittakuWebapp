@@ -87,7 +87,7 @@ export function initApp(config = {}) {
       "contact-title-art": { left: 35.6, top: 77, width: 29.5, height: 2.5 },
       "address-title-art": { left: 42.5, top: 82.5, width: 15, height: 2.6 },
       "decor-bottom-left": { left: 1.8, top: 84, width: 23, height: 14 },
-      "footer-bar-art": { left: 0, top: 89, width: 100, height: 11 },
+      "footer-bar-art": { left: 0, top: 88.4, width: 100, height: 11.6 },
       "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
     };
     const DEFAULT_LAYER_GEOMETRY = {
@@ -96,7 +96,7 @@ export function initApp(config = {}) {
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
       qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 }
     };
-    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-left"]);
+    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-left", "decor-bottom-right"]);
     const DEFAULT_CERTIFICATE_LAYERS = [
       ...Object.keys(ARTWORK_SLICES).filter(id => !REMOVED_CERTIFICATE_LAYER_IDS.has(id)).map(id => [id, id.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" "), "image"]),
       ["date", "Date value", "dynamic-text"],
@@ -673,7 +673,9 @@ export function initApp(config = {}) {
 
     function renderPlainBulletOverlays(lines, positions, layout, field) {
       const rowHeight = 100 / positions.length;
-      return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" style="${overlayStyle(layout)}">
+      const displayLines = String(layout.textOverride ?? lines.join("\n")).split(/\n+/).slice(0, positions.length);
+      lines = displayLines;
+      return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" data-overlay-text="true" style="${overlayStyle(layout)}">
         ${positions.map((_position, index) => `<div class="template-text template-bullet ${lines[index] ? "" : "empty"}" style="left:0;top:${index * rowHeight}%;width:100%;max-height:${rowHeight}%;"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
         ${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}
       </div>`;
@@ -792,7 +794,8 @@ export function initApp(config = {}) {
 
     function renderEditableOverlay(id, content, layout, extra = "") {
       if (layout.visible === false) return "";
-      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${overlayStyle(layout, extra)}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+      const displayContent = layout.textOverride !== undefined ? escapeHtml(String(layout.textOverride)).replace(/\n/g, "<br>") : content;
+      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" data-overlay-text="true" style="${overlayStyle(layout, extra)}">${displayContent}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
     }
 
     function renderCustomCertificateLayers(layout) {
@@ -810,13 +813,13 @@ export function initApp(config = {}) {
           const width = Number(layer.width ?? slice.width) || slice.width;
           const height = Number(layer.height ?? slice.height) || slice.height;
           const source = `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=1`;
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};"><img src="${source}" alt="">${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${source}" alt="">${layer.textOverride ? `<span class="template-art-text">${escapeHtml(layer.textOverride)}</span>` : ""}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};background:${escapeHtml(layer.fill || "transparent")};`;
         const content = layer.type === "image" || layer.type === "photo"
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
           : escapeHtml(layer.text || "");
-        return `<div class="template-custom-layer report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+        return `<div class="template-custom-layer report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${layer.type === "text" ? 'data-overlay-text="true"' : ""} style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
       }).join("");
     }
 
@@ -2067,6 +2070,7 @@ export function initApp(config = {}) {
           const item = event.target.closest(".report-overlay-item.is-editing");
           const preview = document.querySelector("#reportTemplatePreview");
           if (!item || !preview) return;
+          if (event.target.closest('[contenteditable="true"]')) return;
           selectedReportOverlay = item.dataset.overlayId;
           const coach = getCurrentCoach();
           const fullLayout = getReportLayout(coach);
@@ -2111,8 +2115,10 @@ export function initApp(config = {}) {
             document.removeEventListener("pointercancel", up);
             item.releasePointerCapture?.(event.pointerId);
             item.classList.remove("is-dragging");
-            coach.reportLayout = fullLayout;
-            saveReportLayout(coach);
+            if (reportOverlayDragged || resizing) {
+              coach.reportLayout = fullLayout;
+              saveReportLayout(coach);
+            }
           };
           document.addEventListener("pointermove", move);
           document.addEventListener("pointerup", up, { once: true });
@@ -2230,20 +2236,42 @@ export function initApp(config = {}) {
         certificateEditorTool = item.dataset.certificateTool;
         render();
       }));
-      document.querySelectorAll(".template-custom-layer[data-overlay-id]").forEach(item => item.addEventListener("dblclick", () => {
+      document.querySelectorAll('[data-overlay-text="true"][data-overlay-id]').forEach(item => item.addEventListener("dblclick", event => {
+        event.stopPropagation();
         const coach = getCurrentCoach();
         const fullLayout = getReportLayout(coach);
         const layer = (fullLayout.layers || []).find(entry => entry.id === item.dataset.overlayId);
-        if (!layer || layer.type !== "text") return;
-        item.contentEditable = "true";
-        item.focus();
+        const layout = fullLayout[item.dataset.overlayId] || layer;
+        if (!layout || layout.locked === true) return;
+        let editor = item;
+        if (layer?.type === "image") {
+          editor = item.querySelector(".template-art-text") || document.createElement("span");
+          editor.className = "template-art-text";
+          if (!editor.isConnected) item.append(editor);
+        }
+        editor.contentEditable = "true";
+        editor.setAttribute("role", "textbox");
+        editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
+        editor.focus();
+        document.execCommand?.("selectAll", false, null);
         const finish = () => {
-          layer.text = item.textContent.trim().slice(0, 500);
-          item.contentEditable = "false";
+          const value = item.classList.contains("template-bullet-group")
+            ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
+            : editor.textContent.trim().slice(0, 500);
+          if (layer?.type === "text") layer.text = value;
+          else layout.textOverride = value;
+          editor.contentEditable = "false";
           coach.reportLayout = fullLayout;
           saveReportLayout(coach);
         };
-        item.addEventListener("blur", finish, { once: true });
+        editor.addEventListener("blur", finish, { once: true });
+        editor.addEventListener("keydown", keyEvent => {
+          if (keyEvent.key === "Escape") editor.blur();
+          if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
+            keyEvent.preventDefault();
+            editor.blur();
+          }
+        });
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
       document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));
@@ -2278,6 +2306,10 @@ export function initApp(config = {}) {
       const layerTarget = (coach.reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const target = coach.reportLayout[selectedReportOverlay] || layerTarget;
       if (!target) return;
+      if (Object.prototype.hasOwnProperty.call(changes, "text") && !layerTarget?.type?.includes("text")) {
+        changes = { ...changes, textOverride: changes.text };
+        delete changes.text;
+      }
       Object.assign(target, changes);
       if (changes.name && layerTarget) layerTarget.name = changes.name;
       saveReportLayout(coach);
@@ -2596,10 +2628,10 @@ export function initApp(config = {}) {
       if (!layout) return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
       const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
-      const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text"));
+      const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image");
       return `<div class="report-layout-toolbar">
         <label class="toolbar-text"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
-        ${isTextLayer && selectedLayer ? `<label class="toolbar-text toolbar-layer-text"><span>Text</span><input type="text" data-layout-text value="${escapeHtml(selectedLayer.text || "")}" aria-label="Element text" maxlength="500"></label>` : ""}
+        ${isTextLayer ? `<label class="toolbar-text toolbar-layer-text"><span>Text</span><input type="text" data-layout-text value="${escapeHtml(selectedLayer?.text || layout.textOverride || "")}" aria-label="Element text" maxlength="500"></label>` : ""}
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><label class="toolbar-number"><span class="sr-only">Font size</span><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"></label><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
         <label class="toolbar-coordinate"><span>X</span><input type="number" step="0.1" data-layout-left value="${layout.left}" aria-label="Horizontal position"></label>

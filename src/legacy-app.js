@@ -96,7 +96,7 @@ export function initApp(config = {}) {
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
       qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 }
     };
-    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-left", "decor-bottom-right"]);
+    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-right"]);
     const DEFAULT_CERTIFICATE_LAYERS = [
       ...Object.keys(ARTWORK_SLICES).filter(id => !REMOVED_CERTIFICATE_LAYER_IDS.has(id)).map(id => [id, id.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" "), "image"]),
       ["date", "Date value", "dynamic-text"],

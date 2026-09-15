@@ -96,8 +96,9 @@ export function initApp(config = {}) {
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
       qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 }
     };
+    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-left"]);
     const DEFAULT_CERTIFICATE_LAYERS = [
-      ...Object.keys(ARTWORK_SLICES).map(id => [id, id.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" "), "image"]),
+      ...Object.keys(ARTWORK_SLICES).filter(id => !REMOVED_CERTIFICATE_LAYER_IDS.has(id)).map(id => [id, id.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" "), "image"]),
       ["date", "Date value", "dynamic-text"],
       ["time", "Time", "dynamic-text"], ["centre", "Centre", "dynamic-text"],
       ["coach", "Coach name", "dynamic-text"], ["student-photo", "Student photo", "photo"],
@@ -109,7 +110,8 @@ export function initApp(config = {}) {
     ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2, ...(DEFAULT_LAYER_GEOMETRY[id] || {}) }));
     const RETIRED_CERTIFICATE_LAYER_IDS = new Set([
       "art-brand", "art-session", "art-summary", "art-remarks", "art-badge", "art-contact", "art-footer",
-      "brand-title", "brand-logo", "report-title", "remarks", "badge", "footer"
+      "brand-title", "brand-logo", "report-title", "remarks", "badge", "footer",
+      ...REMOVED_CERTIFICATE_LAYER_IDS
     ]);
     const PHOTO_PLACEHOLDER_SVG = `
       <svg xmlns="http://www.w3.org/2000/svg" width="123" height="111" viewBox="0 0 123 111" aria-hidden="true">
@@ -1517,7 +1519,7 @@ export function initApp(config = {}) {
       const previewReport = getCertificateDesignPreviewReport(coach);
       reportLayoutEditing = true;
       return `<section class="page certificate-design-page ${state.ui.page === "certificate-design" ? "active" : ""}">
-        <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><div class="certificate-header-actions"><button class="secondary-btn" data-action="reset-report-layout">Reset</button><button class="primary-btn" data-action="download-report-png">Export</button></div></div>
+        <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><div class="certificate-header-actions"><button class="secondary-btn" data-action="reset-report-layout">Reset</button><button class="primary-btn" data-action="save-report-layout">Save</button></div></div>
         <div class="certificate-editor-workspace">
           ${renderCertificateToolStrip()}
           <aside class="certificate-editor-rail">${renderCertificateToolPanel(coach)}</aside>
@@ -2244,6 +2246,8 @@ export function initApp(config = {}) {
         item.addEventListener("blur", finish, { once: true });
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
+      document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));
+      document.querySelector("[data-layout-text]")?.addEventListener("change", event => updateSelectedReportLayout({ text: event.target.value.slice(0, 500) }));
       document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
       document.querySelector("[data-layout-size]")?.addEventListener("change", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
       document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
@@ -2271,9 +2275,11 @@ export function initApp(config = {}) {
       const coach = getCurrentCoach();
       if (!coach || !selectedReportOverlay) return;
       coach.reportLayout = getReportLayout(coach);
-      const target = coach.reportLayout[selectedReportOverlay] || (coach.reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
+      const layerTarget = (coach.reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
+      const target = coach.reportLayout[selectedReportOverlay] || layerTarget;
       if (!target) return;
       Object.assign(target, changes);
+      if (changes.name && layerTarget) layerTarget.name = changes.name;
       saveReportLayout(coach);
     }
 
@@ -2313,6 +2319,11 @@ export function initApp(config = {}) {
       if (action === "close-report-view") return navigate("reports");
       if (action === "download-report-pdf") return downloadReportPdf();
       if (action === "download-report-png") return downloadReportPng();
+      if (action === "save-report-layout") {
+        const coach = getCurrentCoach();
+        if (!coach) return;
+        return saveReportLayout(coach);
+      }
       if (action === "toggle-report-layout") { reportLayoutEditing = !reportLayoutEditing; return render(); }
       if (action === "reset-report-layout") {
         const coach = getCurrentCoach();
@@ -2587,6 +2598,8 @@ export function initApp(config = {}) {
       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
       const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text"));
       return `<div class="report-layout-toolbar">
+        <label class="toolbar-text"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
+        ${isTextLayer && selectedLayer ? `<label class="toolbar-text toolbar-layer-text"><span>Text</span><input type="text" data-layout-text value="${escapeHtml(selectedLayer.text || "")}" aria-label="Element text" maxlength="500"></label>` : ""}
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><label class="toolbar-number"><span class="sr-only">Font size</span><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"></label><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
         <label class="toolbar-coordinate"><span>X</span><input type="number" step="0.1" data-layout-left value="${layout.left}" aria-label="Horizontal position"></label>

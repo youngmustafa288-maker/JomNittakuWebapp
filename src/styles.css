@@ -942,6 +942,8 @@
     .certificate-design-page .report-layout-toolbar.is-empty { visibility:hidden; }
     .certificate-design-page .report-layout-toolbar label { display:flex; align-items:center; gap:5px; flex:none; color:#4b5563; font-size:.72rem; font-weight:700; text-transform:none; }
     .certificate-design-page .report-layout-toolbar select, .certificate-design-page .report-layout-toolbar input { min-height:34px; height:34px; border:1px solid #d5d8df; border-radius:7px; padding:5px 7px; background:#fff; color:#111827; }
+    .certificate-design-page .report-layout-toolbar .toolbar-text input { width:132px; }
+    .certificate-design-page .report-layout-toolbar .toolbar-layer-text input { width:180px; }
     .certificate-design-page .toolbar-font select { width:112px; }
     .certificate-design-page .toolbar-number input { width:58px; }
     .certificate-design-page .toolbar-colour input { width:36px; padding:3px; }

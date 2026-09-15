@@ -87,7 +87,7 @@ export function initApp(config = {}) {
       "contact-title-art": { left: 35.6, top: 77, width: 29.5, height: 2.5 },
       "address-title-art": { left: 42.5, top: 82.5, width: 15, height: 2.6 },
       "decor-bottom-left": { left: 1.8, top: 84, width: 23, height: 14 },
-      "footer-bar-art": { left: 0, top: 88.4, width: 100, height: 11.6 },
+      "footer-bar-art": { left: 3, top: 88.4, width: 94, height: 11.6 },
       "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
     };
     const DEFAULT_LAYER_GEOMETRY = {
@@ -96,7 +96,7 @@ export function initApp(config = {}) {
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
       qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 }
     };
-    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-right"]);
+    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right"]);
     const DEFAULT_CERTIFICATE_LAYERS = [
       ...Object.keys(ARTWORK_SLICES).filter(id => !REMOVED_CERTIFICATE_LAYER_IDS.has(id)).map(id => [id, id.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" "), "image"]),
       ["date", "Date value", "dynamic-text"],

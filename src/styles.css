@@ -1612,6 +1612,8 @@
     .template-bullet-group .template-bullet { position:absolute; font-family:inherit; font-size:inherit; font-weight:inherit; color:inherit; }
     .template-art-slice { position:absolute; overflow:hidden; box-sizing:border-box; }
     .template-art-slice img { display:block; width:100%; height:100%; object-fit:fill; pointer-events:none; }
+    /* Keep the lower-left colour band after removing the floral decoration. */
+    .template-bottom-left-band { position:absolute; left:0; top:89%; width:25%; height:9%; background:#171a3c; z-index:40; pointer-events:none; }
     .report-overlay-item.is-dragging { opacity: .92; }
     .certificate-resize-handle { position:absolute; width:10px; height:10px; right:1px; bottom:1px; border:2px solid #7c3aed; background:#fff; border-radius:2px; cursor:nwse-resize; visibility:hidden; box-sizing:border-box; }
     .report-overlay-item.is-selected > .certificate-resize-handle { visibility:visible; }

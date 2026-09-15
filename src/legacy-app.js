@@ -733,6 +733,7 @@ export function initApp(config = {}) {
 
             ${renderEditableOverlay("contact", escapeHtml(data.centreContact), layout.contact)}
             ${renderEditableOverlay("address", escapeHtml(data.address).replace(/\n/g, "<br>"), layout.address)}
+            <div class="template-bottom-left-band" aria-hidden="true"></div>
             ${renderCustomCertificateLayers(layout)}
           </div>
           ${renderEditableQr(layout.layers.find(layer => layer.id === "qr"))}

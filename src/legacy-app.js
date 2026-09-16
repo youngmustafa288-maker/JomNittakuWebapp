@@ -87,7 +87,9 @@ export function initApp(config = {}) {
       "contact-title-art": { left: 35.6, top: 77, width: 29.5, height: 2.5 },
       "address-title-art": { left: 42.5, top: 82.5, width: 15, height: 2.6 },
       "decor-bottom-left": { left: 1.8, top: 84, width: 23, height: 14 },
-      "footer-bar-art": { left: 0, top: 89, width: 100, height: 11 },
+      // Let the template's own footer color show through instead of stacking
+      // another opaque navy band on top of it.
+      "footer-bar-art": { left: 0, top: 89, width: 100, height: 11, opacity: 0.58 },
       "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
     };
     const DEFAULT_LAYER_GEOMETRY = {

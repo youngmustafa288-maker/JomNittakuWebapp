@@ -1613,36 +1613,47 @@
     .template-art-slice { position:absolute; overflow:hidden; box-sizing:border-box; }
     .template-art-slice[data-overlay-id="footer-bar-art"] { background:transparent; }
     .template-art-slice img { display:block; width:100%; height:100%; object-fit:fill; pointer-events:none; }
-    .template-art-slice[data-overlay-id="footer-bar-art"] img { filter:none; }
+    .template-art-slice[data-overlay-id="footer-bar-art"] img { display:none; }
     .template-footer-art { overflow: hidden; }
     .template-footer-brand {
       position: absolute;
       left: 0;
       top: 0;
       width: 100%;
-      height: 88%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 0.7cqw;
-      background: transparent;
+      gap: 0.45cqw;
+      background: #111a3b;
       color: #ffffff;
       font-family: Arial, "Helvetica Neue", sans-serif;
       text-align: center;
       line-height: 1;
     }
     .template-footer-brand strong {
-      font-size: 4.5cqw;
+      font-size: 3.5cqw;
       font-weight: 800;
       letter-spacing: 0;
     }
     .template-footer-brand small {
-      font-size: 2cqw;
+      font-size: 1.45cqw;
       font-style: italic;
       font-weight: 400;
       letter-spacing: 0;
     }
+    .template-footer-brand::before,
+    .template-footer-brand::after {
+      content: "";
+      position: absolute;
+      top: 43%;
+      width: 13%;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .template-footer-brand::before { left: 17%; }
+    .template-footer-brand::after { right: 17%; }
     .template-art-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:2%; box-sizing:border-box; overflow:hidden; color:inherit; font:inherit; line-height:1.1; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; background:rgba(255,255,255,.78); outline:1px dashed rgba(124,58,237,.5); }
     .template-art-text[contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; background:rgba(255,255,255,.94); }
     .report-overlay-item[data-overlay-text="true"][contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; outline-offset:1px; background:rgba(255,255,255,.9); }

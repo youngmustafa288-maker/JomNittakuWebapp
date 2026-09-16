@@ -89,7 +89,7 @@ export function initApp(config = {}) {
       "decor-bottom-left": { left: 1.8, top: 84, width: 23, height: 14 },
       // Let the template's own footer color show through instead of stacking
       // another opaque navy band on top of it.
-      "footer-bar-art": { left: 0, top: 89, width: 100, height: 11, opacity: 0.58 },
+      "footer-bar-art": { left: 0, top: 89, width: 100, height: 11, opacity: 1, locked: true },
       "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
     };
     const DEFAULT_LAYER_GEOMETRY = {
@@ -277,12 +277,21 @@ export function initApp(config = {}) {
     function normalizeReportLayout(saved = {}) {
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
       const layers = Array.isArray(saved?.layers)
-        ? DEFAULT_CERTIFICATE_LAYERS.map((defaultLayer, index) => ({
-            ...defaultLayer,
-            ...(saved.layers.find(layer => layer.id === defaultLayer.id) || {}),
-            visible: saved.layers.find(layer => layer.id === defaultLayer.id)?.visible !== false,
-            zIndex: Number(saved.layers.find(layer => layer.id === defaultLayer.id)?.zIndex) || index + 2
-          })).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id) && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)))
+        ? DEFAULT_CERTIFICATE_LAYERS.map((defaultLayer, index) => {
+            const savedLayer = saved.layers.find(layer => layer.id === defaultLayer.id) || {};
+            // The footer is part of the fixed certificate frame. Do not let a
+            // prior drag move its opaque strip over the report content.
+            const fixedFooter = defaultLayer.id === "footer-bar-art" ? {
+              left: 0, top: 89, width: 100, height: 11, opacity: 1, locked: true
+            } : {};
+            return {
+              ...defaultLayer,
+              ...savedLayer,
+              ...fixedFooter,
+              visible: savedLayer.visible !== false,
+              zIndex: defaultLayer.id === "footer-bar-art" ? 1 : (Number(savedLayer.zIndex) || index + 2)
+            };
+          }).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id) && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)))
         : DEFAULT_CERTIFICATE_LAYERS.map(layer => ({ ...layer }));
       return { ...keyed, layers };
     }

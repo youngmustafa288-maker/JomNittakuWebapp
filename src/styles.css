@@ -1617,28 +1617,28 @@
     .template-footer-art { overflow: hidden; }
     .template-footer-brand {
       position: absolute;
-      left: 25%;
-      top: 7%;
-      width: 50%;
+      left: 0;
+      top: 0;
+      width: 100%;
       height: 88%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 0.5cqw;
-      background: #111a3b;
+      gap: 0.7cqw;
+      background: transparent;
       color: #ffffff;
       font-family: Arial, "Helvetica Neue", sans-serif;
       text-align: center;
       line-height: 1;
     }
     .template-footer-brand strong {
-      font-size: 4.2cqw;
+      font-size: 4.5cqw;
       font-weight: 800;
       letter-spacing: 0;
     }
     .template-footer-brand small {
-      font-size: 1.65cqw;
+      font-size: 2cqw;
       font-style: italic;
       font-weight: 400;
       letter-spacing: 0;

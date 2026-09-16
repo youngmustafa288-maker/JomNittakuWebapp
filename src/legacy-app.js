@@ -6,7 +6,7 @@ const CENTRE_PROFILE_KEY = "centre_profile";
 export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
-    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate%20Template.jpg?v=2";
+    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate%20Template.jpg?v=3";
     const REPORT_TEMPLATE_LAYER_ROOT = config.reportTemplateLayerRoot || "/certificate-layers";
     const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
       month: "long",

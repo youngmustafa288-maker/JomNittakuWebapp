@@ -16,5 +16,5 @@ initApp({
   // Keep the cache key in sync with the current public/Image 1.jpg asset.
   reportTemplateSrc: "/Image%201.jpg?v=1",
   reportTemplateLayerRoot: "/certificate-layers",
-  footerOverlaySrc: "/footer-jomnittaku-overlay.png?v=1"
+  footerOverlaySrc: "/footer-jomnittaku-overlay.svg?v=1"
 });

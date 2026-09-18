@@ -8,7 +8,7 @@ export function initApp(config = {}) {
     const SUPABASE_KEY = config.supabaseKey || "";
     const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Image%201.jpg?v=1";
     const REPORT_TEMPLATE_LAYER_ROOT = config.reportTemplateLayerRoot || "/certificate-layers";
-    const FOOTER_OVERLAY_SRC = config.footerOverlaySrc || "/footer-jomnittaku-overlay.png?v=1";
+    const FOOTER_OVERLAY_SRC = config.footerOverlaySrc || "/footer-jomnittaku-overlay.svg?v=1";
     const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
       month: "long",
       year: "numeric"

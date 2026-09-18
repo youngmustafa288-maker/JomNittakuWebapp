@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 435 85" role="img" aria-label="JOMNITTAKU Passion Focus Excellent">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff1d2"/>
+      <stop offset="0.45" stop-color="#cba77e"/>
+      <stop offset="1" stop-color="#8d5f43"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="1.4" stdDeviation="1.2" flood-color="#050817" flood-opacity="0.8"/>
+    </filter>
+  </defs>
+  <g fill="none" stroke="#d8c5a6" stroke-width="1.6" stroke-linecap="round" opacity="0.8">
+    <path d="M36 25h61"/>
+    <path d="M338 25h61"/>
+  </g>
+  <text x="217.5" y="35" text-anchor="middle" fill="url(#gold)" filter="url(#shadow)" font-family="Arial, Helvetica, sans-serif" font-size="28" font-style="italic" font-weight="800" letter-spacing="0.8">JOMNITTAKU</text>
+  <text x="217.5" y="60" text-anchor="middle" fill="#b7a08b" font-family="Arial, Helvetica, sans-serif" font-size="12" font-style="italic" letter-spacing="0.3">Passion · Focus · Excellent</text>
+</svg>

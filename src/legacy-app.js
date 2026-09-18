@@ -2099,6 +2099,11 @@ export function initApp(config = {}) {
           const startTop = Number(layout.top) || 0;
           const startWidth = Number(layout.width) || 10;
           const startHeight = Number(layout.height) || 8;
+          const linkedIds = selectedReportOverlay === "contact-frame" ? ["contact", "address"] : [];
+          const linkedStarts = linkedIds.map(id => {
+            const linkedLayout = fullLayout[id];
+            return linkedLayout ? { id, layout: linkedLayout, left: Number(linkedLayout.left) || 0, top: Number(linkedLayout.top) || 0 } : null;
+          }).filter(Boolean);
           const resizing = Boolean(event.target.closest(".certificate-resize-handle"));
           const rect = preview.getBoundingClientRect();
           reportOverlayDragged = false;
@@ -2117,6 +2122,15 @@ export function initApp(config = {}) {
             } else {
               layout.left = Math.max(0, Math.min(100 - startWidth, startLeft + dx));
               layout.top = Math.max(0, Math.min(100 - startHeight, startTop + dy));
+              linkedStarts.forEach(({ id, layout: linkedLayout, left, top }) => {
+                linkedLayout.left = Math.max(0, Math.min(100 - (Number(linkedLayout.width) || 10), left + dx));
+                linkedLayout.top = Math.max(0, Math.min(100 - (Number(linkedLayout.height) || 8), top + dy));
+                const linkedItem = preview.querySelector(`[data-overlay-id="${id}"]`);
+                if (linkedItem) {
+                  linkedItem.style.left = `${linkedLayout.left}%`;
+                  linkedItem.style.top = `${linkedLayout.top}%`;
+                }
+              });
             }
             item.style.left = `${layout.left}%`;
             item.style.top = `${layout.top}%`;

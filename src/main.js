@@ -13,8 +13,7 @@ const runtimeConfig = window.__APP_CONFIG__ || {
 initApp({
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL || runtimeConfig.supabaseUrl,
   supabaseKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || runtimeConfig.supabaseKey,
-  // Keep the cache key in sync with the current public/Image 1.jpg asset.
-  reportTemplateSrc: "/Image%201.jpg?v=1",
-  reportTemplateLayerRoot: "/certificate-layers",
-  footerOverlaySrc: "/footer-jomnittaku-overlay.svg?v=1"
+  // Keep the cache key in sync with the current Certificate Template.jpg asset.
+  reportTemplateSrc: "/Certificate%20Template.jpg?v=4",
+  reportTemplateLayerRoot: "/certificate-layers"
 });

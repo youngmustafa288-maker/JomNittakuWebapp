@@ -6,9 +6,8 @@ const CENTRE_PROFILE_KEY = "centre_profile";
 export function initApp(config = {}) {
     const SUPABASE_URL = config.supabaseUrl || "";
     const SUPABASE_KEY = config.supabaseKey || "";
-    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Image%201.jpg?v=1";
+    const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate%20Template.jpg?v=4";
     const REPORT_TEMPLATE_LAYER_ROOT = config.reportTemplateLayerRoot || "/certificate-layers";
-    const FOOTER_OVERLAY_SRC = config.footerOverlaySrc || "/footer-jomnittaku-overlay.svg?v=1";
     const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
       month: "long",
       year: "numeric"
@@ -91,7 +90,6 @@ export function initApp(config = {}) {
       // Let the template's own footer color show through instead of stacking
       // another opaque navy band on top of it.
       "footer-bar-art": { left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true },
-      "footer-jomnittaku-overlay": { left: 27, top: 91.55, width: 46, height: 7.15, opacity: 1, locked: true },
       "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
     };
     const DEFAULT_LAYER_GEOMETRY = {
@@ -102,7 +100,7 @@ export function initApp(config = {}) {
     };
     // The supplied certificate artwork already provides the border treatment;
     // keep the legacy ornamental corner flourishes out of new and saved layouts.
-    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-left", "footer-bar-art"]);
+    const REMOVED_CERTIFICATE_LAYER_IDS = new Set(["decor-top-left", "decor-top-right", "decor-bottom-left", "footer-bar-art", "footer-jomnittaku-overlay"]);
     const DEFAULT_CERTIFICATE_LAYERS = [
       ...Object.keys(ARTWORK_SLICES).filter(id => !REMOVED_CERTIFICATE_LAYER_IDS.has(id)).map(id => [id, id.split("-").map(word => word[0].toUpperCase() + word.slice(1)).join(" "), "image"]),
       ["date", "Date value", "dynamic-text"],
@@ -827,9 +825,7 @@ export function initApp(config = {}) {
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
           const height = Number(layer.height ?? slice.height) || slice.height;
-          const source = layer.id === "footer-jomnittaku-overlay"
-            ? FOOTER_OVERLAY_SRC
-            : `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=1`;
+          const source = `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=1`;
           // Keep the footer decoration behind all editable text, even when a
           // previously saved layout assigned it a higher stacking order.
           const zIndex = layer.id === "footer-bar-art" ? 1 : (Number(layer.zIndex) || 2);

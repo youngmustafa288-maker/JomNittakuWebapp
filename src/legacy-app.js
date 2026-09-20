@@ -106,7 +106,7 @@ export function initApp(config = {}) {
         fontSize: 2.2,
         color: "#ffffff",
         fontWeight: 400,
-        fill: "#111a3b",
+        fill: "transparent",
         text: "JOMNITTAKU\nPassion · Focus · Exilent",
         zIndex: 30
       }

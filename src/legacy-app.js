@@ -104,7 +104,7 @@ export function initApp(config = {}) {
         height: 7.15,
         fontFamily: "Arial",
         fontSize: 2.2,
-        color: "#ffffff",
+        color: "#d8b477",
         fontWeight: 400,
         fill: "transparent",
         text: "JOMNITTAKU\nPassion · Focus · Exilent",

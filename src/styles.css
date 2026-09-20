@@ -1627,7 +1627,7 @@
       gap:.45cqw;
       padding:1.2% 4%;
       background:transparent !important;
-      color:#d8b477;
+      color:#d8b477 !important;
       text-align:center;
       line-height:1;
     }
@@ -1638,7 +1638,7 @@
       top:43%;
       width:13%;
       height:1px;
-      background:rgba(255,255,255,.72);
+      background:rgba(216,180,119,.8);
     }
     .template-footer-text::before { left:17%; }
     .template-footer-text::after { right:17%; }

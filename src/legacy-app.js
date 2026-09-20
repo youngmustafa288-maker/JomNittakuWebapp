@@ -180,7 +180,7 @@ export function initApp(config = {}) {
     let reportExportKey = "";
     let reportLayoutEditing = false;
     let selectedReportOverlay = "date";
-    let certificateEditorTool = "layers";
+    let certificateEditorTool = "text";
     let reportOverlayDragged = false;
 
     async function getQrCodeLib() {
@@ -1568,13 +1568,15 @@ export function initApp(config = {}) {
     }
 
     function renderCertificateToolStrip() {
+      const visibleTools = [["text", "T", "Text"], ["uploads", "+", "Uploads"]];
+      return `<nav class="certificate-tool-strip" aria-label="Certificate editor tools">${visibleTools.map(([id, icon, label]) => `<button type="button" class="certificate-tool-button ${certificateEditorTool === id ? "is-active" : ""}" data-certificate-tool="${id}" aria-pressed="${certificateEditorTool === id}"><span aria-hidden="true">${icon}</span><small>${label}</small></button>`).join("")}</nav>`;
       const tools = [["elements", "□", "Elements"], ["text", "T", "Text"], ["uploads", "+", "Uploads"], ["layers", "≡", "Layers"], ["position", "↕", "Position"]];
       return `<nav class="certificate-tool-strip" aria-label="Certificate editor tools">${tools.map(([id, icon, label]) => `<button type="button" class="certificate-tool-button ${certificateEditorTool === id ? "is-active" : ""}" data-certificate-tool="${id}" aria-pressed="${certificateEditorTool === id}"><span aria-hidden="true">${icon}</span><small>${label}</small></button>`).join("")}</nav>`;
     }
 
     function renderCertificateToolPanel(coach) {
       if (certificateEditorTool === "elements") return `<div class="certificate-tool-panel"><strong>Elements</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-shape"><span aria-hidden="true">□</span>Add shape</button></div>`;
-      if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add text</button></div>`;
+      if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add Text Box</button></div>`;
       if (certificateEditorTool === "uploads") return `<div class="certificate-tool-panel"><strong>Uploads</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-image"><span aria-hidden="true">+</span>Upload image</button></div>`;
       if (certificateEditorTool === "position") return `<div class="certificate-tool-panel"><strong>Position</strong><button type="button" class="certificate-panel-action" data-action="raise-certificate-layer">Bring forward</button><button type="button" class="certificate-panel-action" data-action="lower-certificate-layer">Send backward</button><button type="button" class="certificate-panel-action" data-action="toggle-certificate-lock">Lock or unlock</button></div>`;
       return renderCertificateLayerPanel(coach);
@@ -2301,6 +2303,7 @@ export function initApp(config = {}) {
           if (!editor.isConnected) item.append(editor);
         }
         editor.contentEditable = "true";
+        editor.classList.add("is-text-editing");
         editor.setAttribute("role", "textbox");
         editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
         editor.focus();
@@ -2318,6 +2321,7 @@ export function initApp(config = {}) {
           if (layer?.type === "text") layer.text = value;
           else layout.textOverride = value;
           editor.contentEditable = "false";
+          editor.classList.remove("is-text-editing");
           coach.reportLayout = fullLayout;
           saveReportLayout(coach);
         };

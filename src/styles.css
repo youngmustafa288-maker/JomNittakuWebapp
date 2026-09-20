@@ -947,6 +947,8 @@
     .certificate-design-page .toolbar-font select { width:112px; }
     .certificate-design-page .toolbar-number input { width:58px; }
     .certificate-design-page .toolbar-meta-field { display:none; }
+    .certificate-design-page .certificate-icon-action,
+    .certificate-design-page .report-layout-toolbar > .toolbar-divider { display:none; }
     .certificate-design-page .toolbar-font-stepper { display:inline-flex; align-items:center; height:34px; border:1px solid #d5d8df; border-radius:8px; overflow:hidden; background:#fff; }
     .certificate-design-page .toolbar-font-stepper button { width:30px; height:100%; border:0; background:#fff; color:#4b5563; font-size:1rem; cursor:pointer; }
     .certificate-design-page .toolbar-font-stepper button:hover { background:#f2f3f6; }
@@ -1674,6 +1676,7 @@
     .template-art-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:2%; box-sizing:border-box; overflow:hidden; color:inherit; font:inherit; line-height:1.1; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; background:rgba(255,255,255,.78); outline:1px dashed rgba(124,58,237,.5); }
     .template-art-text[contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; background:rgba(255,255,255,.94); }
     .report-overlay-item[data-overlay-text="true"][contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; outline-offset:1px; background:rgba(255,255,255,.9); }
+    .report-overlay-item.is-text-editing { cursor:text !important; user-select:text; caret-color:#7c3aed; }
     .template-art-slice[data-overlay-id="certification-badge"] img { clip-path:inset(0 0 0 14%); }
     .report-overlay-item.is-dragging { opacity: .92; }
     .certificate-resize-handle { position:absolute; width:10px; height:10px; right:1px; bottom:1px; border:2px solid #7c3aed; background:#fff; border-radius:2px; cursor:nwse-resize; visibility:hidden; box-sizing:border-box; }

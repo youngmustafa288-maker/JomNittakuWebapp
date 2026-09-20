@@ -946,6 +946,18 @@
     .certificate-design-page .report-layout-toolbar .toolbar-layer-text input { width:180px; }
     .certificate-design-page .toolbar-font select { width:112px; }
     .certificate-design-page .toolbar-number input { width:58px; }
+    .certificate-design-page .toolbar-meta-field { display:none; }
+    .certificate-design-page .toolbar-font-stepper { display:inline-flex; align-items:center; height:34px; border:1px solid #d5d8df; border-radius:8px; overflow:hidden; background:#fff; }
+    .certificate-design-page .toolbar-font-stepper button { width:30px; height:100%; border:0; background:#fff; color:#4b5563; font-size:1rem; cursor:pointer; }
+    .certificate-design-page .toolbar-font-stepper button:hover { background:#f2f3f6; }
+    .certificate-design-page .toolbar-font-stepper input { width:48px; min-height:32px; height:32px; border:0; border-left:1px solid #e5e7eb; border-right:1px solid #e5e7eb; border-radius:0; padding:5px 4px; text-align:center; }
+    .certificate-design-page .toolbar-colour { position:relative; width:34px; height:34px; display:grid !important; place-items:center; border:1px solid #d5d8df; border-radius:8px; background:#fff; overflow:hidden; }
+    .certificate-design-page .toolbar-colour-letter { color:#1f2937; font-size:1.05rem; font-weight:700; text-decoration:underline; text-decoration-color:#111827; pointer-events:none; }
+    .certificate-design-page .toolbar-colour input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+    .certificate-design-page .toolbar-format-group { display:inline-flex; align-items:center; gap:2px; height:34px; padding:2px; border:1px solid #d5d8df; border-radius:8px; background:#fff; }
+    .certificate-design-page .toolbar-format-button { width:30px; height:28px; border:0; border-radius:6px; background:transparent; color:#20232a; font:700 1rem Georgia, serif; cursor:pointer; }
+    .certificate-design-page .toolbar-format-button:hover { background:#f2f3f6; }
+    .certificate-design-page .toolbar-format-button.is-active { background:#e9ddff; color:#4c288f; }
     .certificate-design-page .toolbar-colour input { width:36px; padding:3px; }
     .certificate-design-page .toolbar-coordinate input { width:58px; }
     .certificate-design-page .toolbar-opacity input { width:62px; }

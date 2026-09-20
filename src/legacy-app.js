@@ -314,7 +314,7 @@ export function initApp(config = {}) {
     }
 
     function overlayStyle(layout, extra = "") {
-      return `left:${layout.left}%;top:${layout.top}%;width:${layout.width}%;${layout.height ? `height:${layout.height}%;` : ""}font-size:${layout.fontSize}cqw;font-family:${escapeHtml(layout.fontFamily)};color:${escapeHtml(layout.color)};font-weight:${layout.fontWeight};opacity:${layout.opacity ?? 1};z-index:${layout.zIndex ?? 20};${extra}`;
+      return `left:${layout.left}%;top:${layout.top}%;width:${layout.width}%;${layout.height ? `height:${layout.height}%;` : ""}font-size:${layout.fontSize}cqw;font-family:${escapeHtml(layout.fontFamily)};color:${escapeHtml(layout.color)};font-weight:${layout.fontWeight};font-style:${escapeHtml(layout.fontStyle || "normal")};text-decoration:${escapeHtml(layout.textDecoration || "none")};opacity:${layout.opacity ?? 1};z-index:${layout.zIndex ?? 20};${extra}`;
     }
 
     function slugify(value) {
@@ -845,7 +845,7 @@ export function initApp(config = {}) {
           return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${source}" alt="">${layer.textOverride ? `<span class="template-art-text">${escapeHtml(layer.textOverride)}</span>` : ""}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
-        const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};background:${escapeHtml(layer.fill || "transparent")};`;
+        const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};font-style:${escapeHtml(layer.fontStyle || "normal")};text-decoration:${escapeHtml(layer.textDecoration || "none")};background:${escapeHtml(layer.fill || "transparent")};`;
         const content = layer.type === "image" || layer.type === "photo"
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
           : isFooterText
@@ -2330,6 +2330,22 @@ export function initApp(config = {}) {
       document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
       document.querySelector("[data-layout-size]")?.addEventListener("change", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
       document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
+      document.querySelectorAll("[data-font-step]").forEach(button => button.addEventListener("click", () => {
+        const input = document.querySelector("[data-layout-size]");
+        if (!input) return;
+        const nextSize = Math.max(0.6, Math.min(8, (Number(input.value) || 1) + Number(button.dataset.fontStep || 0)));
+        updateSelectedReportLayout({ fontSize: Number(nextSize.toFixed(1)) });
+      }));
+      document.querySelectorAll("[data-text-format]").forEach(button => button.addEventListener("click", () => {
+        const format = button.dataset.textFormat;
+        if (format === "bold") {
+          const coach = getCurrentCoach();
+          const layout = getReportLayout(coach)[selectedReportOverlay] || (getReportLayout(coach).layers || []).find(layer => layer.id === selectedReportOverlay);
+          updateSelectedReportLayout({ fontWeight: Number(layout?.fontWeight) >= 600 ? 400 : 700 });
+        }
+        if (format === "italic") updateSelectedReportLayout({ fontStyle: button.classList.contains("is-active") ? "normal" : "italic" });
+        if (format === "underline") updateSelectedReportLayout({ textDecoration: button.classList.contains("is-active") ? "none" : "underline" });
+      }));
       document.querySelector("[data-layout-left]")?.addEventListener("change", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
       document.querySelector("[data-layout-top]")?.addEventListener("change", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
       document.querySelector("[data-layout-width]")?.addEventListener("change", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
@@ -2681,9 +2697,9 @@ export function initApp(config = {}) {
       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
       const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image");
       return `<div class="report-layout-toolbar">
-        <label class="toolbar-text"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
-        ${isTextLayer ? `<label class="toolbar-text toolbar-layer-text"><span>Text</span><input type="text" data-layout-text value="${escapeHtml(selectedLayer?.text || layout.textOverride || "")}" aria-label="Element text" maxlength="500"></label>` : ""}
-        ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><label class="toolbar-number"><span class="sr-only">Font size</span><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"></label><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label>` : ""}
+        <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
+        ${isTextLayer ? `<label class="toolbar-text toolbar-layer-text toolbar-meta-field"><span>Text</span><input type="text" data-layout-text value="${escapeHtml(selectedLayer?.text || layout.textOverride || "")}" aria-label="Element text" maxlength="500"></label>` : ""}
+        ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${layout.fontStyle === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${layout.textDecoration === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
         <label class="toolbar-coordinate"><span>X</span><input type="number" step="0.1" data-layout-left value="${layout.left}" aria-label="Horizontal position"></label>
         <label class="toolbar-coordinate"><span>Y</span><input type="number" step="0.1" data-layout-top value="${layout.top}" aria-label="Vertical position"></label>

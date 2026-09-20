@@ -2106,6 +2106,7 @@ export function initApp(config = {}) {
           const preview = document.querySelector("#reportTemplatePreview");
           if (!item || !preview) return;
           if (event.target.closest('[contenteditable="true"]')) return;
+          if (event.detail > 1 && event.target.closest('[data-overlay-text="true"]')) return;
           selectedReportOverlay = item.dataset.overlayId;
           const coach = getCurrentCoach();
           const fullLayout = getReportLayout(coach);
@@ -2287,6 +2288,7 @@ export function initApp(config = {}) {
       }));
       document.querySelectorAll('[data-overlay-text="true"][data-overlay-id]').forEach(item => item.addEventListener("dblclick", event => {
         event.stopPropagation();
+        event.preventDefault();
         const coach = getCurrentCoach();
         const fullLayout = getReportLayout(coach);
         const layer = (fullLayout.layers || []).find(entry => entry.id === item.dataset.overlayId);

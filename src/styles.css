@@ -1619,6 +1619,41 @@
     .template-report-overlay .report-overlay-item.is-editing:hover { outline: 1px dashed rgba(37,99,235,.55); outline-offset: 2px; }
     .template-report-overlay .report-overlay-item.is-selected { outline: 2px solid #7c3aed; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(124,58,237,.12); }
     .template-custom-layer { position:absolute; box-sizing:border-box; min-width:2%; min-height:2%; white-space:pre-wrap; overflow:hidden; }
+    .template-footer-text {
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:.45cqw;
+      padding:1.2% 4%;
+      color:#fff;
+      text-align:center;
+      line-height:1;
+    }
+    .template-footer-text::before,
+    .template-footer-text::after {
+      content:"";
+      position:absolute;
+      top:43%;
+      width:13%;
+      height:1px;
+      background:rgba(255,255,255,.72);
+    }
+    .template-footer-text::before { left:17%; }
+    .template-footer-text::after { right:17%; }
+    .template-footer-title {
+      display:block;
+      font-size:3.5cqw;
+      font-weight:800;
+      line-height:1;
+    }
+    .template-footer-subtitle {
+      display:block;
+      font-size:1.45cqw;
+      font-style:italic;
+      font-weight:400;
+      line-height:1;
+    }
     .template-bullet-group { position:absolute; box-sizing:border-box; }
     .template-bullet-group .template-bullet { position:absolute; font-family:inherit; font-size:inherit; font-weight:inherit; color:inherit; }
     .template-art-slice { position:absolute; overflow:hidden; box-sizing:border-box; }

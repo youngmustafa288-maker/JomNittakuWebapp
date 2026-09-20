@@ -96,7 +96,20 @@ export function initApp(config = {}) {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
-      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 }
+      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 },
+      "footer-text-overlay": {
+        left: 27,
+        top: 91.55,
+        width: 46,
+        height: 7.15,
+        fontFamily: "Arial",
+        fontSize: 2.2,
+        color: "#ffffff",
+        fontWeight: 400,
+        fill: "#111a3b",
+        text: "JOMNITTAKU\nPassion · Focus · Exilent",
+        zIndex: 30
+      }
     };
     // The supplied certificate artwork already provides the border treatment;
     // keep the legacy ornamental corner flourishes out of new and saved layouts.
@@ -110,7 +123,7 @@ export function initApp(config = {}) {
       ["beforeCoaching", "Before coaching", "dynamic-text"], ["afterTraining", "After training", "dynamic-text"],
       ["nextLesson", "Next lesson", "dynamic-text"], ["remarks", "Coach remarks", "dynamic-text"],
       ["contact", "Centre contact", "dynamic-text"], ["address", "Address", "dynamic-text"],
-      ["qr", "QR code", "image"]
+      ["qr", "QR code", "image"], ["footer-text-overlay", "Footer text", "text"]
     ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2, ...(DEFAULT_LAYER_GEOMETRY[id] || {}) }));
     const RETIRED_CERTIFICATE_LAYER_IDS = new Set([
       "art-brand", "art-session", "art-summary", "art-remarks", "art-badge", "art-contact", "art-footer",
@@ -831,11 +844,17 @@ export function initApp(config = {}) {
           const zIndex = layer.id === "footer-bar-art" ? 1 : (Number(layer.zIndex) || 2);
           return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${source}" alt="">${layer.textOverride ? `<span class="template-art-text">${escapeHtml(layer.textOverride)}</span>` : ""}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
+        const isFooterText = layer.id === "footer-text-overlay";
         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};background:${escapeHtml(layer.fill || "transparent")};`;
         const content = layer.type === "image" || layer.type === "photo"
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
+          : isFooterText
+            ? (() => {
+              const [title = "", ...subtitleParts] = String(layer.text || "").split(/\n+/);
+              return `<span class="template-footer-title">${escapeHtml(title)}</span><span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>`;
+            })()
           : escapeHtml(layer.text || "");
-        return `<div class="template-custom-layer report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${layer.type === "text" ? 'data-overlay-text="true"' : ""} style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+        return `<div class="template-custom-layer ${isFooterText ? "template-footer-text" : ""} report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${layer.type === "text" ? 'data-overlay-text="true"' : ""} style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
       }).join("");
     }
 
@@ -2287,7 +2306,7 @@ export function initApp(config = {}) {
         const finish = () => {
           const value = item.classList.contains("template-bullet-group")
             ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
-            : editor.textContent.trim().slice(0, 500);
+            : (editor.innerText || editor.textContent).trim().slice(0, 500);
           if (layer?.type === "text") layer.text = value;
           else layout.textOverride = value;
           editor.contentEditable = "false";

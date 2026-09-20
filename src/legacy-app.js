@@ -2304,7 +2304,13 @@ export function initApp(config = {}) {
         editor.setAttribute("role", "textbox");
         editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
         editor.focus();
-        document.execCommand?.("selectAll", false, null);
+        const selection = window.getSelection();
+        if (selection) {
+          const range = document.createRange();
+          range.selectNodeContents(editor);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
         const finish = () => {
           const value = item.classList.contains("template-bullet-group")
             ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
@@ -2701,11 +2707,6 @@ export function initApp(config = {}) {
         ${isTextLayer ? `<label class="toolbar-text toolbar-layer-text toolbar-meta-field"><span>Text</span><input type="text" data-layout-text value="${escapeHtml(selectedLayer?.text || layout.textOverride || "")}" aria-label="Element text" maxlength="500"></label>` : ""}
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${layout.fontStyle === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${layout.textDecoration === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
-        <label class="toolbar-coordinate"><span>X</span><input type="number" step="0.1" data-layout-left value="${layout.left}" aria-label="Horizontal position"></label>
-        <label class="toolbar-coordinate"><span>Y</span><input type="number" step="0.1" data-layout-top value="${layout.top}" aria-label="Vertical position"></label>
-        <label class="toolbar-coordinate"><span>W</span><input type="number" min="1" max="100" step="0.1" data-layout-width value="${layout.width}" aria-label="Width"></label>
-        <label class="toolbar-coordinate"><span>H</span><input type="number" min="0.5" max="100" step="0.1" data-layout-height value="${layout.height ?? 4}" aria-label="Height"></label>
-        <label class="toolbar-opacity"><span>Opacity</span><input type="number" min="0" max="1" step="0.05" data-layout-opacity value="${layout.opacity ?? 1}" aria-label="Opacity"></label>
         <span class="toolbar-divider" aria-hidden="true"></span>
         <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
         <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>

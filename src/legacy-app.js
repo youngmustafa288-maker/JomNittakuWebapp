@@ -438,6 +438,25 @@ export function initApp(config = {}) {
       return localProfile;
     }
 
+    async function invokePrivileged(functionName, body) {
+      if (!supabase) throw new Error("Supabase is not configured.");
+      const { data, error } = await supabase.functions.invoke(functionName, { body });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    }
+
+    async function refreshPrivilegedState() {
+      if (!supabase) return;
+      if (state.auth.role === "dev") {
+        const data = await invokePrivileged("dev-console", { action: "list" });
+        state.devCentres = data.centres || [];
+      } else if (state.auth.role === "centre_admin" && state.auth.centreId) {
+        const { data } = await supabase.from("drive_connections").select("*").eq("centre_id", state.auth.centreId).maybeSingle();
+        state.driveConnection = data || null;
+      }
+    }
+
     async function refreshCoachesFromSupabase() {
       if (!supabase || !state.auth.userId) return;
       const query = supabase.from("coaches").select("*").order("created_at", { ascending: true });
@@ -567,10 +586,12 @@ export function initApp(config = {}) {
     function createInitialState() {
       return {
         dataVersion: 3,
-        auth: { role: null, coachId: null, userId: null },
+        auth: { role: null, coachId: null, userId: null, centreId: null, email: "" },
         ui: { page: "overview", avatarMenuOpen: false, reportViewId: null, adminToast: "" },
         adminProfile: { fullName: "JomNittaku Admin", photo: "" },
         centreProfile: { links: [] },
+        driveConnection: null,
+        devCentres: [],
         coaches: [],
         students: [],
         reports: [],
@@ -812,6 +833,7 @@ export function initApp(config = {}) {
       }
       state = await loadState();
       await applyAuthUser(data.user);
+      await refreshPrivilegedState().catch(() => {});
       state.ui.page = "overview";
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
@@ -879,11 +901,12 @@ export function initApp(config = {}) {
 
     async function applyAuthUser(user) {
       if (!user) {
-        state.auth = { role: null, coachId: null, userId: null };
+        state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
         return;
       }
       const appRole = user.app_metadata?.role;
       const coachId = user.app_metadata?.coach_id;
+      const centreId = user.app_metadata?.centre_id || null;
       let coach = state.coaches.find(item => item.id === coachId)
         || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
       if (!coach && supabase) {
@@ -916,9 +939,11 @@ export function initApp(config = {}) {
         state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
       }
       state.auth = {
-        role: appRole === "admin" ? "admin" : coach ? "coach" : null,
+        role: ["dev", "centre_admin", "admin"].includes(appRole) ? appRole : coach ? "coach" : null,
         coachId: coach?.id || null,
-        userId: user.id
+        userId: user.id,
+        centreId,
+        email: user.email || ""
       };
       if (!state.auth.role) {
         await supabase.auth.signOut();
@@ -941,7 +966,7 @@ export function initApp(config = {}) {
 
     async function logout() {
       if (supabase) await supabase.auth.signOut();
-      state.auth = { role: null, coachId: null, userId: null };
+      state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
       loginError = "";
       state.ui.page = "overview";
       state.ui.avatarMenuOpen = false;
@@ -1080,7 +1105,9 @@ export function initApp(config = {}) {
 
     function renderSidebar() {
       const role = state.auth.role;
-      const items = role === "admin"
+      const items = role === "dev"
+        ? [["centre-settings", "⚙", "Licensing Console"]]
+        : role === "admin"
         ? [
             ["overview", "⌂", "Overview"],
             ["reports", "▦", "Reports"],
@@ -1817,7 +1844,7 @@ export function initApp(config = {}) {
             ["students", "Students"],
             ["certificate-design", "Certificate Design"]
           ];
-      navItems.push(["centre-settings", "Centre Links"]);
+      navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Centre Links"]);
       const pageContent = state.ui.page === "reports"
         ? renderReportsPage()
         : state.ui.page === "coaches"
@@ -1891,10 +1918,18 @@ export function initApp(config = {}) {
     }
 
     function renderCentreSettingsPage() {
+      if (state.auth.role === "dev") return renderDevConsolePage();
+      const centreName = state.auth.centreId ? `Centre ${state.auth.centreId.slice(0, 8)}` : "Your centre";
       const isCoach = state.auth.role === "coach";
       const links = isCoach ? (getCurrentCoach().links || []) : (state.centreProfile.links || []);
+      const drive = state.driveConnection || {};
       return `
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
+          ${state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card" style="margin-bottom:16px;">
+            <div class="section-title"><h2>Google Drive</h2><p>Centre-owned report and asset storage for ${escapeHtml(centreName)}.</p></div>
+            ${drive.status === "connected" ? `<div class="review-card"><div class="review-row"><strong>Connected account</strong><span>${escapeHtml(drive.google_account_email || "Connected")}</span></div><div class="review-row"><strong>Root folder</strong><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(drive.root_folder_name || "Open Drive folder")}</a></div><div class="review-row"><strong>Last successful sync</strong><span>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString()) : "Not yet"}</span></div></div>
+              <div class="profile-actions"><button class="secondary-btn" data-action="retry-drive-sync">Retry failed sync</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect the centre Google account to create the report folder structure and sync exports.</p><button class="primary-btn" data-action="connect-drive">Connect Google Drive</button>`}
+          </div>` : ""}
           <div class="profile-card centre-settings-card">
             <div class="section-title"><h2>${isCoach ? "Coach Links" : "Centre Links"}</h2></div>
             <div class="centre-links-editor">
@@ -1913,6 +1948,19 @@ export function initApp(config = {}) {
           </div>
         </section>
       `;
+    }
+
+    function renderDevConsolePage() {
+      const centres = Array.isArray(state.devCentres) ? state.devCentres : [];
+      return `<section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
+        <div class="profile-card centre-settings-card">
+          <div class="section-title"><h2>Dev licensing console</h2><p>Internal support access is logged and never uses a centre's Drive connection.</p></div>
+          <div class="profile-actions"><input id="newCentreName" class="text-input" placeholder="New centre name" aria-label="New centre name"><button class="primary-btn" data-action="create-centre">Create centre & issue key</button></div>
+          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Status</th><th>Licence expiry</th><th>Drive</th><th>Actions</th></tr></thead><tbody>
+            ${centres.length ? centres.map(centre => { const licence = (centre.centre_licences || []).sort((a,b) => String(b.expires_at).localeCompare(String(a.expires_at)))[0]; const drive = centre.drive_connections?.[0]; return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Drive">${escapeHtml(drive?.status || "Not connected")}</td><td><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="ghost-btn" data-action="suspend-centre" data-centre-id="${centre.id}">Suspend</button><button class="ghost-btn" data-action="support-centre" data-centre-id="${centre.id}">Support access</button></td></tr>`; }).join("") : `<tr><td colspan="5" class="muted">No centres yet.</td></tr>`}
+          </tbody></table></div>
+        </div>
+      </section>`;
     }
 
     function renderCentrePage() {
@@ -2403,6 +2451,11 @@ export function initApp(config = {}) {
 
     function handleAction(event) {
       const action = event.currentTarget.dataset.action;
+      if (action === "create-centre") return (async () => { try { const name = document.getElementById("newCentreName")?.value.trim(); const result = await invokePrivileged("dev-console", { action: "create-centre", name }); alert(`Activation key: ${result.activation_key}`); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to create centre."); } })();
+      if (action === "renew-centre" || action === "suspend-centre") return (async () => { try { await invokePrivileged("dev-console", { action: action === "renew-centre" ? "renew-licence" : "suspend-centre", centre_id: event.currentTarget.dataset.centreId }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update centre."); } })();
+      if (action === "support-centre") return (async () => { try { await invokePrivileged("dev-console", { action: "support-access", centre_id: event.currentTarget.dataset.centreId }); alert("Support access recorded in the audit log."); } catch (error) { alert(error.message || "Unable to start support access."); } })();
+      if (action === "connect-drive") return (async () => { try { const result = await invokePrivileged("google-drive-oauth", { action: "connect" }); if (result.authorization_url) window.location.assign(result.authorization_url); } catch (error) { alert(error.message || "Unable to start Google Drive connection."); } })();
+      if (action === "disconnect-drive" || action === "retry-drive-sync") return (async () => { try { await invokePrivileged("google-drive-oauth", { action: action === "disconnect-drive" ? "disconnect" : "retry" }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update Drive sync."); } })();
       if (action === "sign-in") return signIn();
       if (action === "logout") return logout();
       if (action === "toggle-avatar-menu") {
@@ -3479,6 +3532,7 @@ export function initApp(config = {}) {
             await refreshCoachesFromSupabase();
             await refreshStudentsFromSupabase();
             await refreshCoachAccountCount();
+            await refreshPrivilegedState().catch(() => {});
             state.centreProfile = await loadPublicCentreProfile();
           } else {
             state.centreProfile = normalizeCentreProfile(state.centreProfile);

@@ -792,6 +792,21 @@
       gap: 18px;
     }
 
+    .dev-centre-stats {
+      margin-bottom: 18px;
+    }
+
+    .centre-create-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .centre-create-fields .field:last-child {
+      grid-column: 1 / -1;
+    }
+
     .stat-card {
       padding: 22px;
       background: var(--white);
@@ -1594,6 +1609,16 @@
       overflow: hidden;
       border-radius: 24px;
       isolation: isolate;
+    }
+
+    @media (max-width: 760px) {
+      .centre-create-fields {
+        grid-template-columns: 1fr;
+      }
+
+      .centre-create-fields .field:last-child {
+        grid-column: auto;
+      }
     }
 
     .template-report-shell::after {

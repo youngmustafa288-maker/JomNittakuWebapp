@@ -158,6 +158,8 @@ export function initApp(config = {}) {
     let onboardingModal = null;
     let studentEditModal = null;
     let loginError = "";
+    let requestedCentre = null;
+    let centreRouteUnavailable = false;
     let isSigningIn = false;
     let authReady = !supabase;
     let authInitializing = Boolean(supabase);
@@ -229,7 +231,7 @@ export function initApp(config = {}) {
       state.centreProfile = normalizeCentreProfile(state.centreProfile);
       localStorage.setItem(CENTRE_PROFILE_KEY, JSON.stringify(state.centreProfile));
       persist();
-      if (supabase) {
+      if (supabase && !isCentreAccount()) {
         const { error } = await supabase
           .from("centre_links")
           .upsert({ id: "centre", links: state.centreProfile.links }, { onConflict: "id" })
@@ -405,7 +407,17 @@ export function initApp(config = {}) {
       return Boolean(SUPABASE_URL && SUPABASE_KEY);
     }
 
-    async function loadState() {
+    function dashboardStateId() {
+      return state.auth.centreId && ["centre_admin", "coach"].includes(state.auth.role)
+        ? `centre:${state.auth.centreId}`
+        : "dashboard";
+    }
+
+    function isCentreAccount() {
+      return Boolean(state.auth.centreId && ["centre_admin", "coach"].includes(state.auth.role));
+    }
+
+    async function loadState(id = dashboardStateId()) {
       if (!hasSupabaseConfig()) {
         return normalizeState(createInitialState());
       }
@@ -413,7 +425,7 @@ export function initApp(config = {}) {
         const { data, error } = await supabase
           .from("dashboard_state")
           .select("payload")
-          .eq("id", "dashboard")
+          .eq("id", id)
           .single();
         if (!error && data?.payload && data.payload.dataVersion >= 2) {
           return normalizeState(data.payload);
@@ -423,6 +435,7 @@ export function initApp(config = {}) {
     }
 
     async function loadPublicCentreProfile() {
+      if (isCentreAccount()) return normalizeCentreProfile(state.centreProfile);
       const localProfile = getCentreProfile();
       if (!supabase) return localProfile;
       try {
@@ -460,7 +473,7 @@ export function initApp(config = {}) {
     async function refreshCoachesFromSupabase() {
       if (!supabase || !state.auth.userId) return;
       const query = supabase.from("coaches").select("*").order("created_at", { ascending: true });
-      const { data, error } = state.auth.role === "admin"
+      const { data, error } = state.auth.role === "admin" || state.auth.role === "centre_admin"
         ? await query
         : await query.eq("id", state.auth.userId);
       if (error || !Array.isArray(data)) return;
@@ -470,7 +483,7 @@ export function initApp(config = {}) {
     async function refreshStudentsFromSupabase() {
       if (!supabase || !state.auth.userId) return;
       const query = supabase.from("students").select("*").order("created_at", { ascending: true });
-      const { data, error } = state.auth.role === "admin"
+      const { data, error } = state.auth.role === "admin" || state.auth.role === "centre_admin"
         ? await query
         : await query.eq("coach_id", state.auth.userId);
       if (error || !Array.isArray(data)) return;
@@ -489,10 +502,10 @@ export function initApp(config = {}) {
       if (!hasSupabaseConfig() || isApplyingRemoteState) {
         return;
       }
-      const payload = { ...state, auth: { role: null, coachId: null, userId: null } };
+      const payload = { ...state, auth: { role: null, coachId: null, userId: null, centreId: null, email: "" } };
       await supabase
         .from("dashboard_state")
-        .upsert({ id: "dashboard", payload }, { onConflict: "id" });
+        .upsert({ id: dashboardStateId(), payload }, { onConflict: "id" });
     }
 
     function persist() {
@@ -547,10 +560,10 @@ export function initApp(config = {}) {
         .channel("dashboard-state-live")
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "dashboard_state" },
+          { event: "*", schema: "public", table: "dashboard_state", filter: `id=eq.${dashboardStateId()}` },
           payload => {
             const nextPayload = payload.new?.payload;
-            if (payload.new?.id === "dashboard" && nextPayload) {
+            if (payload.new?.id === dashboardStateId() && nextPayload) {
               applyRemoteState(nextPayload);
             }
           }
@@ -831,8 +844,22 @@ export function initApp(config = {}) {
         loginError = error.message || "Unable to sign in.";
         return render();
       }
-      state = await loadState();
       await applyAuthUser(data.user);
+      if (requestedCentre && (!state.auth.centreId || state.auth.centreId !== requestedCentre.id)) {
+        await supabase.auth.signOut();
+        state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+        loginError = `This account does not belong to ${requestedCentre.name}.`;
+        return render();
+      }
+      const targetId = dashboardStateId();
+      state = await loadState(targetId);
+      await applyAuthUser(data.user);
+      if (requestedCentre && state.auth.centreId !== requestedCentre.id) {
+        await supabase.auth.signOut();
+        state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+        loginError = `This account does not belong to ${requestedCentre.name}.`;
+        return render();
+      }
       await refreshPrivilegedState().catch(() => {});
       state.ui.page = "overview";
       state.ui.avatarMenuOpen = false;
@@ -881,6 +908,10 @@ export function initApp(config = {}) {
     }
 
     async function signInWithGoogle() {
+      if (requestedCentre) {
+        loginError = "Use the email and password provided by your centre administrator.";
+        return render();
+      }
       if (!supabase) {
         loginError = "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.";
         return render();
@@ -906,7 +937,19 @@ export function initApp(config = {}) {
       }
       const appRole = user.app_metadata?.role;
       const coachId = user.app_metadata?.coach_id;
-      const centreId = user.app_metadata?.centre_id || null;
+      const metadataCentreId = user.app_metadata?.centre_id || null;
+      let centreId = metadataCentreId;
+      let centreMembership = null;
+      if (supabase && metadataCentreId) {
+        const { data } = await supabase
+          .from("centre_memberships")
+          .select("centre_id, role")
+          .eq("centre_id", metadataCentreId)
+          .eq("user_id", user.id)
+          .maybeSingle();
+        centreMembership = data || null;
+        if (!centreMembership) centreId = null;
+      }
       let coach = state.coaches.find(item => item.id === coachId)
         || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
       if (!coach && supabase) {
@@ -921,6 +964,16 @@ export function initApp(config = {}) {
             await new Promise(resolve => window.setTimeout(resolve, 300));
           }
         }
+      }
+      if (!coach && centreId) {
+        coach = normalizeCoach({
+          id: user.id,
+          name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Coach",
+          email: user.email || "",
+          branch: requestedCentre?.name || "Centre",
+          branchAddress: requestedCentre?.name || "Centre"
+        });
+        state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
       }
       const isGoogleUser = user.app_metadata?.provider === "google"
         || user.identities?.some(identity => identity.provider === "google");
@@ -939,7 +992,9 @@ export function initApp(config = {}) {
         state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
       }
       state.auth = {
-        role: ["dev", "centre_admin", "admin"].includes(appRole) ? appRole : coach ? "coach" : null,
+        role: appRole === "dev" || appRole === "admin"
+          ? appRole
+          : centreMembership?.role === "centre_admin" ? "centre_admin" : centreId && coach ? "coach" : null,
         coachId: coach?.id || null,
         userId: user.id,
         centreId,
@@ -994,13 +1049,13 @@ export function initApp(config = {}) {
     }
 
     function getVisibleCoaches() {
-      return state.auth.role === "admin"
+      return state.auth.role === "admin" || state.auth.role === "centre_admin"
         ? state.coaches
         : state.coaches.filter(coach => coach.id === getCurrentCoach().id);
     }
 
     function getVisibleStudents() {
-      return state.auth.role === "admin"
+      return state.auth.role === "admin" || state.auth.role === "centre_admin"
         ? state.students
         : state.students.filter(student => student.coachId === getCurrentCoach().id);
     }
@@ -1052,7 +1107,7 @@ export function initApp(config = {}) {
     }
 
     function getVisibleReports() {
-      const reports = state.auth.role === "admin"
+      const reports = state.auth.role === "admin" || state.auth.role === "centre_admin"
         ? state.reports
         : state.reports.filter(report => report.coachId === getCurrentCoach().id);
       return sortReportsDesc(reports);
@@ -1068,7 +1123,7 @@ export function initApp(config = {}) {
               </div>
               <p class="brand-system-title">Coach Training Reporting System</p>
               <div class="brand-copy">
-                <h1>JomNittaku</h1>
+                <h1>${escapeHtml(requestedCentre?.name || "JomNittaku")}</h1>
               </div>
             </div>
             <form class="login-form">
@@ -1082,11 +1137,11 @@ export function initApp(config = {}) {
               </div>
               ${loginError ? `<p class="form-error" role="alert">${escapeHtml(loginError)}</p>` : ""}
               <button class="primary-btn" type="submit" ${isSigningIn ? "disabled" : ""}>${isSigningIn ? "Signing in..." : "Sign in"}</button>
-              <div class="login-divider"><span>or</span></div>
+              ${requestedCentre ? "" : `<div class="login-divider"><span>or</span></div>
               <button class="google-btn" type="button" data-action="sign-in-google" ${isSigningIn ? "disabled" : ""}>
                 <span class="google-mark" aria-hidden="true">G</span>
                 Continue with Google
-              </button>
+              </button>`}
             </form>
           </div>
         </section>
@@ -1879,7 +1934,7 @@ export function initApp(config = {}) {
             <header class="page-header">
               <div class="header-copy">
                 <h1>Academy Overview 🏓</h1>
-                <p>JomNittaku Coach Reporting System · ${MONTH_LABEL}</p>
+              <p>${escapeHtml(requestedCentre?.name || "JomNittaku")} Coach Reporting System · ${MONTH_LABEL}</p>
               </div>
             </header>
             ${pageContent}
@@ -1957,12 +2012,25 @@ export function initApp(config = {}) {
 
     function renderDevConsolePage() {
       const centres = Array.isArray(state.devCentres) ? state.devCentres : [];
+      const activeCentres = centres.filter(centre => centre.status === "active").length;
+      const suspendedCentres = centres.filter(centre => centre.status === "suspended").length;
       return `<section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
+        <section class="stats-grid dev-centre-stats" aria-label="Centre summary">
+          <article class="stat-card"><h3>Total centres</h3><div class="value">${centres.length}</div></article>
+          <article class="stat-card"><h3>Active centres</h3><div class="value">${activeCentres}</div></article>
+          <article class="stat-card"><h3>Suspended centres</h3><div class="value">${suspendedCentres}</div></article>
+        </section>
         <div class="profile-card centre-settings-card">
           <div class="section-title"><h2>Dev licensing console</h2><p>Internal support access is logged and never uses a centre's Drive connection.</p></div>
-          <div class="profile-actions"><input id="newCentreName" class="text-input" placeholder="New centre name" aria-label="New centre name"><button class="primary-btn" data-action="create-centre">Create centre & issue key</button></div>
-          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Status</th><th>Licence expiry</th><th>Drive</th><th>Actions</th></tr></thead><tbody>
-            ${centres.length ? centres.map(centre => { const licence = (centre.centre_licences || []).sort((a,b) => String(b.expires_at).localeCompare(String(a.expires_at)))[0]; const drive = centre.drive_connections?.[0]; return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Drive">${escapeHtml(drive?.status || "Not connected")}</td><td><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="ghost-btn" data-action="suspend-centre" data-centre-id="${centre.id}">Suspend</button><button class="ghost-btn" data-action="support-centre" data-centre-id="${centre.id}">Support access</button></td></tr>`; }).join("") : `<tr><td colspan="5" class="muted">No centres yet.</td></tr>`}
+          <div class="centre-create-fields">
+            <div class="field"><label for="newCentreName">Centre name</label><input id="newCentreName" class="text-input" autocomplete="organization" required></div>
+            <div class="field"><label for="newCentreCoach">First coach name</label><input id="newCentreCoach" class="text-input" autocomplete="name" required></div>
+            <div class="field"><label for="newCentreEmail">Login email</label><input id="newCentreEmail" class="text-input" type="email" autocomplete="email" required></div>
+            <div class="field"><label for="newCentrePassword">Temporary password</label><input id="newCentrePassword" class="text-input" type="password" autocomplete="new-password" minlength="8" required></div>
+          </div>
+          <div class="profile-actions"><button class="primary-btn" data-action="create-centre">Create centre login</button></div>
+          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Coach login</th><th>Status</th><th>Licence expiry</th><th>Drive</th><th>Actions</th></tr></thead><tbody>
+            ${centres.length ? centres.map(centre => { const licence = (centre.centre_licences || []).sort((a,b) => String(b.expires_at).localeCompare(String(a.expires_at)))[0]; const drive = centre.drive_connections?.[0]; const loginUrl = `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`; return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Coach login"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">${escapeHtml(loginUrl)}</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Drive">${escapeHtml(drive?.status || "Not connected")}</td><td><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="ghost-btn" data-action="suspend-centre" data-centre-id="${centre.id}">Suspend</button><button class="ghost-btn" data-action="support-centre" data-centre-id="${centre.id}">Support access</button></td></tr>`; }).join("") : `<tr><td colspan="6" class="muted">No centres yet.</td></tr>`}
           </tbody></table></div>
         </div>
       </section>`;
@@ -2040,7 +2108,16 @@ export function initApp(config = {}) {
         : null;
       const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
       const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
-      if (/^\/centre\/?$/i.test(window.location.pathname)) {
+      if (centreRouteUnavailable) {
+        app.innerHTML = '<main class="login-screen"><div class="login-panel"><div class="brand-copy"><h1>Centre login unavailable</h1><p class="muted">This centre link is invalid, inactive, or temporarily unavailable.</p></div></div></main>';
+        return;
+      }
+      if (requestedCentre && !state.auth.role) {
+        app.innerHTML = renderLogin();
+        attachEvents();
+        return;
+      }
+      if (!requestedCentre && /^\/centre\/?$/i.test(window.location.pathname)) {
         app.innerHTML = renderCentrePage();
         return;
       }
@@ -2456,7 +2533,7 @@ export function initApp(config = {}) {
 
     function handleAction(event) {
       const action = event.currentTarget.dataset.action;
-      if (action === "create-centre") return (async () => { try { const name = document.getElementById("newCentreName")?.value.trim(); const result = await invokePrivileged("dev-console", { action: "create-centre", name }); alert(`Activation key: ${result.activation_key}`); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to create centre."); } })();
+      if (action === "create-centre") return (async () => { try { const email = document.getElementById("newCentreEmail")?.value.trim(); const result = await invokePrivileged("dev-console", { action: "create-centre", name: document.getElementById("newCentreName")?.value.trim(), coach_name: document.getElementById("newCentreCoach")?.value.trim(), email, password: document.getElementById("newCentrePassword")?.value || "" }); alert(`Centre login created.\n\nLogin link: ${result.login_url}\nEmail: ${email}\nActivation key: ${result.activation_key}`); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to create centre."); } })();
       if (action === "renew-centre" || action === "suspend-centre") return (async () => { try { await invokePrivileged("dev-console", { action: action === "renew-centre" ? "renew-licence" : "suspend-centre", centre_id: event.currentTarget.dataset.centreId }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update centre."); } })();
       if (action === "support-centre") return (async () => { try { await invokePrivileged("dev-console", { action: "support-access", centre_id: event.currentTarget.dataset.centreId }); alert("Support access recorded in the audit log."); } catch (error) { alert(error.message || "Unable to start support access."); } })();
       if (action === "connect-drive") return (async () => { try { const result = await invokePrivileged("google-drive-oauth", { action: "connect" }); if (result.authorization_url) window.location.assign(result.authorization_url); } catch (error) { alert(error.message || "Unable to start Google Drive connection."); } })();
@@ -3314,6 +3391,7 @@ export function initApp(config = {}) {
         .upsert({
           id: student.id,
           coach_id: student.coachId,
+          centre_id: state.auth.centreId || null,
           name: student.name,
           lessons: Number(student.lessons) || 0,
           parent_hp: student.parentHp || "",
@@ -3435,6 +3513,7 @@ export function initApp(config = {}) {
     }
 
     function resolveCoachIdForStudent(centre) {
+      if (state.auth.role === "centre_admin" || state.auth.role === "coach") return getCurrentCoach().id;
       const matchingCoach = state.coaches.find(coach => coach.branch.toLowerCase() === centre.toLowerCase());
       if (matchingCoach) return matchingCoach.id;
       return state.auth.role === "coach" ? getCurrentCoach().id : state.coaches[0].id;
@@ -3465,6 +3544,7 @@ export function initApp(config = {}) {
         id: crypto.randomUUID(),
         name,
         coachId,
+        centreId: state.auth.centreId || null,
         lessons: 1,
         parentHp: values.phone || "—",
         photo: "",
@@ -3504,12 +3584,22 @@ export function initApp(config = {}) {
 
     (async function bootstrap() {
       let callbackError = "";
+      const centrePath = window.location.pathname.match(/^\/centre\/([^/]+)\/?$/i);
+      if (centrePath && supabase) {
+        let slug = "";
+        try { slug = decodeURIComponent(centrePath[1]); } catch { slug = ""; }
+        const { data, error } = await supabase.from("centres").select("id,name,slug,status").eq("slug", slug).maybeSingle();
+        if (!error && data?.status === "active") requestedCentre = data;
+        else centreRouteUnavailable = true;
+      } else if (centrePath) {
+        centreRouteUnavailable = true;
+      }
       if (supabase && window.location.pathname === "/auth/callback") {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         window.history.replaceState({}, document.title, "/");
       }
-      if (/^\/centre\/?$/i.test(window.location.pathname)) {
+      if (!requestedCentre && /^\/centre\/?$/i.test(window.location.pathname)) {
         authReady = true;
         authInitializing = false;
         render();
@@ -3520,7 +3610,7 @@ export function initApp(config = {}) {
       const initialSessionPromise = supabase
         ? (bindAuthStateListener(), supabase.auth.getSession())
         : Promise.resolve({ data: { session: null }, error: null });
-      loadState()
+      loadState("dashboard")
         .then(async nextState => {
           // loadState() returns a fresh state whose auth is blank, so the
           // session resolved above has to be carried over. Otherwise a
@@ -3534,6 +3624,12 @@ export function initApp(config = {}) {
             const { data, error } = await initialSessionPromise;
             if (error && !callbackError) callbackError = error.message;
             await applyAuthUser(data.session?.user || null);
+            if (state.auth.centreId) {
+              const tenantState = await loadState(`centre:${state.auth.centreId}`);
+              const liveAuth = state.auth;
+              state = tenantState;
+              state.auth = liveAuth;
+            }
             await refreshCoachesFromSupabase();
             await refreshStudentsFromSupabase();
             await refreshCoachAccountCount();

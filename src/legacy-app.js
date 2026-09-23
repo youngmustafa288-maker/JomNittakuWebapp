@@ -945,6 +945,9 @@ export function initApp(config = {}) {
         centreId,
         email: user.email || ""
       };
+      if (state.auth.role === "dev") {
+        state.ui.page = "centre-settings";
+      }
       if (!state.auth.role) {
         await supabase.auth.signOut();
         loginError = "This account is not assigned as an admin or coach.";
@@ -977,7 +980,7 @@ export function initApp(config = {}) {
     }
 
     function navigate(page) {
-      if (page === "centre-settings" && !["admin", "coach"].includes(state.auth.role)) {
+      if (page === "centre-settings" && !["admin", "coach", "centre_admin", "dev"].includes(state.auth.role)) {
         state.ui.page = "overview";
         return scheduleRender();
       }
@@ -1831,7 +1834,9 @@ export function initApp(config = {}) {
     }
 
     function renderDashboard() {
-      const navItems = state.auth.role === "admin"
+      const navItems = state.auth.role === "dev"
+        ? []
+        : state.auth.role === "admin"
         ? [
             ["overview", "Overview"],
             ["reports", "Reports"],

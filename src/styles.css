@@ -1458,6 +1458,15 @@
       word-break: break-word;
     }
 
+    .centre-onboarding-result .review-row a,
+    .centre-onboarding-result .review-row code {
+      max-width: 68%;
+      text-align: right;
+      overflow-wrap: anywhere;
+      color: var(--navy-900);
+      font-weight: 600;
+    }
+
     .student-pick-list {
       display: grid;
       gap: 12px;

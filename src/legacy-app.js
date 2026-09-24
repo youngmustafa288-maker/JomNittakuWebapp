@@ -156,10 +156,12 @@ export function initApp(config = {}) {
     state.centreProfile = getCentreProfile();
     let wizardDraftId = null;
     let onboardingModal = null;
+    let centreOnboardingModal = null;
     let studentEditModal = null;
     let loginError = "";
     let requestedCentre = null;
     let centreRouteUnavailable = false;
+    let devConsoleTab = "centres";
     let isSigningIn = false;
     let authReady = !supabase;
     let authInitializing = Boolean(supabase);
@@ -1888,9 +1890,48 @@ export function initApp(config = {}) {
       `;
     }
 
+    function renderCentreOnboardingModal() {
+      if (!centreOnboardingModal) return "";
+      const values = centreOnboardingModal.values;
+      const result = centreOnboardingModal.result;
+      const step = centreOnboardingModal.step;
+      const stepTitle = step === 1 ? "Choose sport" : step === 2 ? "Centre details" : "Centre created";
+      return `
+        <div class="onboarding-backdrop open">
+          <div class="onboarding-modal centre-onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="centre-onboarding-title">
+            <div class="onboarding-head">
+              <div class="section-title"><h2 id="centre-onboarding-title">${stepTitle}</h2><p>${step === 1 ? "Start by selecting the sport for this centre." : step === 2 ? "Add the centre name and its first administrator login." : "Save these access details for the centre administrator."}</p></div>
+              ${step === 3 ? "" : `<button class="close-btn" data-action="close-centre-onboarding" aria-label="Close modal">×</button>`}
+            </div>
+            <div class="step-dots" aria-label="Centre setup progress"><span class="step-dot ${step === 1 ? "active" : ""}"></span><span class="step-dot ${step === 2 ? "active" : ""}"></span><span class="step-dot ${step === 3 ? "active" : ""}"></span></div>
+            ${step === 1 ? `
+              <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-sport">Sport</label><select id="centre-onboarding-sport" class="text-input"><option value="">Select sport</option>${["Badminton", "Football", "Table tennis", "Tennis", "Basketball", "Other"].map(sport => `<option ${values.sport === sport ? "selected" : ""}>${sport}</option>`).join("")}</select></div></div>
+              <div class="onboarding-actions end"><button class="primary-btn" data-action="centre-onboarding-continue">Continue →</button></div>
+            ` : step === 2 ? `
+              <div class="onboarding-grid">
+                <div class="field"><label for="centre-onboarding-name">Centre name</label><input id="centre-onboarding-name" class="text-input" autocomplete="organization" value="${escapeHtml(values.name)}" required></div>
+                <div class="field"><label for="centre-onboarding-coach">First coach name</label><input id="centre-onboarding-coach" class="text-input" autocomplete="name" value="${escapeHtml(values.coachName)}" required></div>
+                <div class="field"><label for="centre-onboarding-email">Login email</label><input id="centre-onboarding-email" class="text-input" type="email" autocomplete="email" value="${escapeHtml(values.email)}" required></div>
+                <div class="field"><label for="centre-onboarding-password">Temporary password</label><input id="centre-onboarding-password" class="text-input" type="password" autocomplete="new-password" minlength="8" value="${escapeHtml(values.password)}" required></div>
+              </div>
+              <div class="onboarding-actions"><button class="ghost-btn" data-action="centre-onboarding-back">← Back</button><button class="primary-btn" data-action="centre-onboarding-submit">Create centre</button></div>
+            ` : `
+              <div class="review-card centre-onboarding-result">
+                <div class="review-row"><strong>Centre</strong><span>${escapeHtml(result?.centre?.name || values.name)}</span></div>
+                <div class="review-row"><strong>Sport</strong><span>${escapeHtml(result?.centre?.sport || values.sport)}</span></div>
+                <div class="review-row"><strong>Centre login link</strong><a href="${escapeHtml(result?.login_url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(result?.login_url || "")}</a></div>
+                <div class="review-row"><strong>1-year licence key</strong><code>${escapeHtml(result?.activation_key || "")}</code></div>
+              </div>
+              <div class="onboarding-actions end"><button class="primary-btn" data-action="close-centre-onboarding">Done</button></div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
     function renderDashboard() {
       const navItems = state.auth.role === "dev"
-        ? []
+        ? [["centre-settings", "Centres"], ["centre-coaches", "Centre coaches"]]
         : state.auth.role === "admin"
         ? [
             ["overview", "Overview"],
@@ -1913,6 +1954,8 @@ export function initApp(config = {}) {
             ? renderStudentsPage()
               : state.ui.page === "centre-settings"
                 ? renderCentreSettingsPage()
+              : state.ui.page === "centre-coaches"
+                ? renderDevCentreCoachesPage()
               : state.ui.page === "settings"
               ? renderAdminProfilePage()
               : state.ui.page === "profile"
@@ -1942,6 +1985,7 @@ export function initApp(config = {}) {
         </div>
         ${renderReportWizard()}
         ${renderOnboardingModal()}
+        ${state.auth.role === "dev" ? renderCentreOnboardingModal() : ""}
         ${renderStudentEditModal()}
         <input id="hiddenStudentUpload" type="file" accept="image/*" class="hidden">
         <input id="hiddenProfileUpload" type="file" accept="image/*" class="hidden">
@@ -2022,18 +2066,18 @@ export function initApp(config = {}) {
         </section>
         <div class="profile-card centre-settings-card">
           <div class="section-title"><h2>Dev licensing console</h2><p>Internal support access is logged and never uses a centre's Drive connection.</p></div>
-          <div class="centre-create-fields">
-            <div class="field"><label for="newCentreName">Centre name</label><input id="newCentreName" class="text-input" autocomplete="organization" required></div>
-            <div class="field"><label for="newCentreCoach">First coach name</label><input id="newCentreCoach" class="text-input" autocomplete="name" required></div>
-            <div class="field"><label for="newCentreEmail">Login email</label><input id="newCentreEmail" class="text-input" type="email" autocomplete="email" required></div>
-            <div class="field"><label for="newCentrePassword">Temporary password</label><input id="newCentrePassword" class="text-input" type="password" autocomplete="new-password" minlength="8" required></div>
-          </div>
-          <div class="profile-actions"><button class="primary-btn" data-action="create-centre">Create centre login</button></div>
-          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Coach login</th><th>Status</th><th>Licence expiry</th><th>Drive</th><th>Actions</th></tr></thead><tbody>
-            ${centres.length ? centres.map(centre => { const licence = (centre.centre_licences || []).sort((a,b) => String(b.expires_at).localeCompare(String(a.expires_at)))[0]; const drive = centre.drive_connections?.[0]; const loginUrl = `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`; return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Coach login"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">${escapeHtml(loginUrl)}</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Drive">${escapeHtml(drive?.status || "Not connected")}</td><td><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="ghost-btn" data-action="suspend-centre" data-centre-id="${centre.id}">Suspend</button><button class="ghost-btn" data-action="support-centre" data-centre-id="${centre.id}">Support access</button></td></tr>`; }).join("") : `<tr><td colspan="6" class="muted">No centres yet.</td></tr>`}
+          <div class="profile-actions"><button class="primary-btn" data-action="open-centre-onboarding">Create centre</button></div>
+          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Sport</th><th>Centre link</th><th>Status</th><th>Licence expiry</th><th>Actions</th></tr></thead><tbody>
+            ${centres.length ? centres.map(centre => { const licence = (centre.centre_licences || []).sort((a,b) => String(b.expires_at).localeCompare(String(a.expires_at)))[0]; const loginUrl = `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`; return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${escapeHtml(centre.sport || "Not set")}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="ghost-btn" data-action="suspend-centre" data-centre-id="${centre.id}">Suspend</button></td></tr>`; }).join("") : `<tr><td colspan="6" class="muted">No centres yet.</td></tr>`}
           </tbody></table></div>
         </div>
       </section>`;
+    }
+
+    function renderDevCentreCoachesPage() {
+      const centres = Array.isArray(state.devCentres) ? state.devCentres : [];
+      const memberships = centres.flatMap(centre => (centre.centre_memberships || []).map(member => ({ ...member, centre })));
+      return `<section class="page ${state.ui.page === "centre-coaches" ? "active" : ""}"><div class="profile-card centre-settings-card"><div class="section-title"><h2>Centre coaches</h2><p>Manage coach access and promote a coach to centre admin.</p></div><div class="table-wrap"><table><thead><tr><th>Coach</th><th>Email</th><th>Centre</th><th>Role</th><th>Action</th></tr></thead><tbody>${memberships.length ? memberships.map(member => `<tr><td data-label="Coach"><strong>${escapeHtml(member.name)}</strong></td><td data-label="Email">${escapeHtml(member.email)}</td><td data-label="Centre">${escapeHtml(member.centre.name)}</td><td data-label="Role">${escapeHtml(member.role)}</td><td>${member.role === "centre_admin" ? `<button class="ghost-btn" data-action="set-centre-coach" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make coach</button>` : `<button class="secondary-btn" data-action="set-centre-admin" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make centre admin</button>`}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No centre coaches yet.</td></tr>`}</tbody></table></div></div></section>`;
     }
 
     function renderCentrePage() {
@@ -2533,7 +2577,12 @@ export function initApp(config = {}) {
 
     function handleAction(event) {
       const action = event.currentTarget.dataset.action;
-      if (action === "create-centre") return (async () => { try { const email = document.getElementById("newCentreEmail")?.value.trim(); const result = await invokePrivileged("dev-console", { action: "create-centre", name: document.getElementById("newCentreName")?.value.trim(), coach_name: document.getElementById("newCentreCoach")?.value.trim(), email, password: document.getElementById("newCentrePassword")?.value || "" }); alert(`Centre login created.\n\nLogin link: ${result.login_url}\nEmail: ${email}\nActivation key: ${result.activation_key}`); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to create centre."); } })();
+      if (action === "open-centre-onboarding") return openCentreOnboarding();
+      if (action === "close-centre-onboarding") return closeCentreOnboarding();
+      if (action === "centre-onboarding-continue") return continueCentreOnboarding();
+      if (action === "centre-onboarding-back") { if (centreOnboardingModal) { centreOnboardingModal.step = 1; render(); } return; }
+      if (action === "centre-onboarding-submit") return submitCentreOnboarding();
+      if (action === "set-centre-admin" || action === "set-centre-coach") return (async () => { try { await invokePrivileged("dev-console", { action: "update-member-role", centre_id: event.currentTarget.dataset.centreId, user_id: event.currentTarget.dataset.userId, role: action === "set-centre-admin" ? "centre_admin" : "coach" }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update centre role."); } })();
       if (action === "renew-centre" || action === "suspend-centre") return (async () => { try { await invokePrivileged("dev-console", { action: action === "renew-centre" ? "renew-licence" : "suspend-centre", centre_id: event.currentTarget.dataset.centreId }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update centre."); } })();
       if (action === "support-centre") return (async () => { try { await invokePrivileged("dev-console", { action: "support-access", centre_id: event.currentTarget.dataset.centreId }); alert("Support access recorded in the audit log."); } catch (error) { alert(error.message || "Unable to start support access."); } })();
       if (action === "connect-drive") return (async () => { try { const result = await invokePrivileged("google-drive-oauth", { action: "connect" }); if (result.authorization_url) window.location.assign(result.authorization_url); } catch (error) { alert(error.message || "Unable to start Google Drive connection."); } })();
@@ -3476,6 +3525,50 @@ export function initApp(config = {}) {
         values: { firstName: "", lastName: "", phone: "", email: "", centre: "", age: "" }
       };
       render();
+    }
+
+    function openCentreOnboarding() {
+      centreOnboardingModal = { step: 1, values: { sport: "", name: "", coachName: "", email: "", password: "" }, result: null };
+      render();
+    }
+
+    function closeCentreOnboarding() {
+      centreOnboardingModal = null;
+      render();
+    }
+
+    function readCentreOnboardingInputs() {
+      if (!centreOnboardingModal) return;
+      const ids = { sport: "centre-onboarding-sport", name: "centre-onboarding-name", coachName: "centre-onboarding-coach", email: "centre-onboarding-email", password: "centre-onboarding-password" };
+      Object.entries(ids).forEach(([key, id]) => {
+        const input = document.getElementById(id);
+        if (input) centreOnboardingModal.values[key] = input.value.trim();
+      });
+    }
+
+    function continueCentreOnboarding() {
+      if (!centreOnboardingModal) return;
+      readCentreOnboardingInputs();
+      if (!centreOnboardingModal.values.sport) return alert("Select a sport to continue.");
+      centreOnboardingModal.step = 2;
+      render();
+    }
+
+    async function submitCentreOnboarding() {
+      if (!centreOnboardingModal) return;
+      readCentreOnboardingInputs();
+      const values = centreOnboardingModal.values;
+      if (!values.name || !values.coachName || !values.email || !values.password) return alert("Complete all centre details before creating the centre.");
+      if (values.password.length < 8) return alert("Temporary password must be at least 8 characters.");
+      try {
+        const result = await invokePrivileged("dev-console", { action: "create-centre", name: values.name, sport: values.sport, coach_name: values.coachName, email: values.email, password: values.password });
+        centreOnboardingModal.result = result;
+        centreOnboardingModal.step = 3;
+        await refreshPrivilegedState();
+        render();
+      } catch (error) {
+        alert(error.message || "Unable to create centre.");
+      }
     }
 
     function openCoachOnboarding() {

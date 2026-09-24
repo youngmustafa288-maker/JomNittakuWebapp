@@ -1908,12 +1908,7 @@ export function initApp(config = {}) {
               <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-sport">Sport</label><select id="centre-onboarding-sport" class="text-input"><option value="">Select sport</option>${["Badminton", "Football", "Table tennis", "Tennis", "Basketball", "Other"].map(sport => `<option ${values.sport === sport ? "selected" : ""}>${sport}</option>`).join("")}</select></div></div>
               <div class="onboarding-actions end"><button class="primary-btn" data-action="centre-onboarding-continue">Continue →</button></div>
             ` : step === 2 ? `
-              <div class="onboarding-grid">
-                <div class="field"><label for="centre-onboarding-name">Centre name</label><input id="centre-onboarding-name" class="text-input" autocomplete="organization" value="${escapeHtml(values.name)}" required></div>
-                <div class="field"><label for="centre-onboarding-coach">First coach name</label><input id="centre-onboarding-coach" class="text-input" autocomplete="name" value="${escapeHtml(values.coachName)}" required></div>
-                <div class="field"><label for="centre-onboarding-email">Login email</label><input id="centre-onboarding-email" class="text-input" type="email" autocomplete="email" value="${escapeHtml(values.email)}" required></div>
-                <div class="field"><label for="centre-onboarding-password">Temporary password</label><input id="centre-onboarding-password" class="text-input" type="password" autocomplete="new-password" minlength="8" value="${escapeHtml(values.password)}" required></div>
-              </div>
+              <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-name">Centre name</label><input id="centre-onboarding-name" class="text-input" autocomplete="organization" value="${escapeHtml(values.name)}" required></div></div>
               <div class="onboarding-actions"><button class="ghost-btn" data-action="centre-onboarding-back">← Back</button><button class="primary-btn" data-action="centre-onboarding-submit">Create centre</button></div>
             ` : `
               <div class="review-card centre-onboarding-result">
@@ -3558,10 +3553,17 @@ export function initApp(config = {}) {
       if (!centreOnboardingModal) return;
       readCentreOnboardingInputs();
       const values = centreOnboardingModal.values;
-      if (!values.name || !values.coachName || !values.email || !values.password) return alert("Complete all centre details before creating the centre.");
-      if (values.password.length < 8) return alert("Temporary password must be at least 8 characters.");
+      if (!values.name) return alert("Enter a centre name before creating the centre.");
       try {
-        const result = await invokePrivileged("dev-console", { action: "create-centre", name: values.name, sport: values.sport, coach_name: values.coachName, email: values.email, password: values.password });
+        const slug = values.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "centre";
+        const result = await invokePrivileged("dev-console", {
+          action: "create-centre",
+          name: values.name,
+          sport: values.sport,
+          coach_name: `${values.name} Coach`,
+          email: `centre-${slug}-${Date.now()}@accounts.jomnittaku.app`,
+          password: `${crypto.randomUUID()}${crypto.randomUUID()}`
+        });
         centreOnboardingModal.result = result;
         centreOnboardingModal.step = 3;
         await refreshPrivilegedState();

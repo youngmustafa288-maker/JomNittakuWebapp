@@ -1900,7 +1900,7 @@ export function initApp(config = {}) {
         <div class="onboarding-backdrop open">
           <div class="onboarding-modal centre-onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="centre-onboarding-title">
             <div class="onboarding-head">
-              <div class="section-title"><h2 id="centre-onboarding-title">${stepTitle}</h2><p>${step === 1 ? "Start by selecting the sport for this centre." : step === 2 ? "Add the centre name and its first administrator login." : "Save these access details for the centre administrator."}</p></div>
+              <div class="section-title"><h2 id="centre-onboarding-title">${stepTitle}</h2><p>${step === 1 ? "Start by selecting the sport for this centre." : step === 2 ? "Add the centre name to create its login entry." : "Save these access details for the centre administrator."}</p></div>
               ${step === 3 ? "" : `<button class="close-btn" data-action="close-centre-onboarding" aria-label="Close modal">×</button>`}
             </div>
             <div class="step-dots" aria-label="Centre setup progress"><span class="step-dot ${step === 1 ? "active" : ""}"></span><span class="step-dot ${step === 2 ? "active" : ""}"></span><span class="step-dot ${step === 3 ? "active" : ""}"></span></div>

@@ -6,9 +6,15 @@ const admin = createClient(
   { auth: { persistSession: false } },
 );
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-retry-count",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+};
+
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
-  headers: { "content-type": "application/json", "cache-control": "no-store" },
+  headers: { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" },
 });
 
 async function caller(request: Request) {
@@ -42,6 +48,7 @@ async function hash(value: string) {
 }
 
 Deno.serve(async (request) => {
+  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const user = await caller(request);
   if (!user) return json({ error: "Dev role required" }, 403);
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
@@ -50,14 +57,24 @@ Deno.serve(async (request) => {
   if (action === "list") {
     const { data, error } = await admin.from("centres").select("*, centre_licences(*), drive_connections(*), centre_memberships(user_id, role)").order("created_at", { ascending: false });
     if (error) return json({ error: error.message }, 500);
-    return json({ centres: data });
+    const users = await admin.auth.admin.listUsers({ perPage: 1000 });
+    const userMap = new Map((users.data.users || []).map((item) => [item.id, item]));
+    return json({ centres: (data || []).map((item) => ({
+      ...item,
+      centre_memberships: (item.centre_memberships || []).map((membership) => ({
+        ...membership,
+        email: userMap.get(membership.user_id)?.email || "",
+        name: userMap.get(membership.user_id)?.user_metadata?.full_name || userMap.get(membership.user_id)?.email || "Coach",
+      })),
+    })) });
   }
   if (action === "create-centre") {
     const name = String(body.name || "").trim();
+    const sport = String(body.sport || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
     const coachName = String(body.coach_name || "").trim();
-    if (!name || !email || !password || !coachName) return json({ error: "Centre name, coach name, email, and password are required" }, 400);
+    if (!name || !sport || !email || !password || !coachName) return json({ error: "Centre name, sport, coach name, email, and password are required" }, 400);
     if (password.length < 8) return json({ error: "Password must be at least 8 characters" }, 400);
     const baseSlug = slugify(name);
     let centre: any = null;
@@ -68,7 +85,7 @@ Deno.serve(async (request) => {
       const taken = new Set((matchingCentres || []).map((item) => item.slug));
       let slug = baseSlug;
       for (let suffix = 2; taken.has(slug); suffix += 1) slug = `${baseSlug}-${suffix}`;
-      const result = await admin.from("centres").insert({ name, slug }).select().single();
+      const result = await admin.from("centres").insert({ name, sport, slug }).select().single();
       centre = result.data;
       error = result.error;
       if (error && !/duplicate key|unique constraint/i.test(error.message || "")) break;
@@ -105,8 +122,15 @@ Deno.serve(async (request) => {
       await admin.from("centres").delete().eq("id", centre.id);
       return json({ error: coachError.message }, 500);
     }
+    const { error: licenceError } = await admin.from("centre_licences").insert({ centre_id: centre.id, status: "active", starts_at: new Date().toISOString(), expires_at: new Date(Date.now() + 365 * 86400000).toISOString(), created_by: user.id });
+    if (licenceError) {
+      await admin.from("centre_memberships").delete().eq("centre_id", centre.id).eq("user_id", account.user.id);
+      await admin.auth.admin.deleteUser(account.user.id);
+      await admin.from("centres").delete().eq("id", centre.id);
+      return json({ error: licenceError.message }, 500);
+    }
     const key = randomKey();
-    const { error: keyError } = await admin.from("activation_keys").insert({ centre_id: centre.id, key_hash: await hash(key), generated_by: user.id, expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString() });
+    const { error: keyError } = await admin.from("activation_keys").insert({ centre_id: centre.id, key_hash: await hash(key), generated_by: user.id, expires_at: new Date(Date.now() + 365 * 86400000).toISOString() });
     if (keyError) {
       await admin.from("centre_memberships").delete().eq("centre_id", centre.id).eq("user_id", account.user.id);
       await admin.auth.admin.deleteUser(account.user.id);
@@ -115,6 +139,21 @@ Deno.serve(async (request) => {
     }
     await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centre.id, action: "licence.issued", metadata: { reason: "centre-created" } });
     return json({ centre, activation_key: key, login_url: `${appUrl()}/centre/${centre.slug}` });
+  }
+  if (action === "update-member-role") {
+    const centreId = String(body.centre_id || "");
+    const userId = String(body.user_id || "");
+    const role = body.role === "centre_admin" ? "centre_admin" : "coach";
+    if (!centreId || !userId) return json({ error: "centre_id and user_id are required" }, 400);
+    const { data: membership, error: membershipError } = await admin.from("centre_memberships").update({ role }).eq("centre_id", centreId).eq("user_id", userId).select().maybeSingle();
+    if (membershipError || !membership) return json({ error: membershipError?.message || "Centre membership not found" }, 400);
+    const { data: target } = await admin.auth.admin.getUserById(userId);
+    if (!target.user) return json({ error: "User not found" }, 404);
+    const appMetadata = { ...(target.user.app_metadata || {}), role, centre_id: centreId };
+    const { error: userError } = await admin.auth.admin.updateUserById(userId, { app_metadata: appMetadata });
+    if (userError) return json({ error: userError.message }, 500);
+    await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "membership.role-updated", metadata: { user_id: userId, role } });
+    return json({ ok: true, role });
   }
   if (["suspend-centre", "renew-licence", "revoke-licence"].includes(action)) {
     const centreId = String(body.centre_id || "");

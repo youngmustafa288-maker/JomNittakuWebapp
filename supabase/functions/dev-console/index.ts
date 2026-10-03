@@ -79,7 +79,7 @@ Deno.serve(async (request) => {
     if (error) return json({ error: error.message }, 500);
     const users = await admin.auth.admin.listUsers({ perPage: 1000 });
     const userMap = new Map((users.data.users || []).map((item) => [item.id, item]));
-    const { data: coaches } = await admin.from("coaches").select("id,name,photo,photo_url,slug,status,centre_id");
+    const { data: coaches } = await admin.from("coaches").select("id,name,photo,slug,status,centre_id");
     const coachMap = new Map((coaches || []).map((coach) => [coach.id, coach]));
     return json({ centres: (data || []).map((item) => ({
       ...item,

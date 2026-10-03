@@ -54,12 +54,17 @@ Deno.serve(async (request) => {
   const action = body.action || "list";
 
   if (action === "list") {
-    const { data, error } = await admin.from("centres").select("*, centre_licences(*), drive_connections(*), centre_memberships(user_id, role)").order("created_at", { ascending: false });
+    const { data, error } = await admin.from("centres").select("*, centre_licences(*), drive_connections(*), centre_memberships(user_id, role), activation_keys(id, centre_id, generated_by, generated_at, redeemed_by, redeemed_at, expires_at, revoked_at)").order("created_at", { ascending: false });
     if (error) return json({ error: error.message }, 500);
     const users = await admin.auth.admin.listUsers({ perPage: 1000 });
     const userMap = new Map((users.data.users || []).map((item) => [item.id, item]));
     return json({ centres: (data || []).map((item) => ({
       ...item,
+      login_url: `${appUrl()}/centre/${encodeURIComponent(item.slug || "")}`,
+      activation_keys: (item.activation_keys || []).map((key) => ({
+        ...key,
+        redeemed_by_email: userMap.get(key.redeemed_by)?.email || "",
+      })),
       centre_memberships: (item.centre_memberships || []).map((membership) => ({
         ...membership,
         email: userMap.get(membership.user_id)?.email || "",

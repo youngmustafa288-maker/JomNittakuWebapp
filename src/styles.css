@@ -904,6 +904,25 @@
       align-items: center;
     }
 
+    .centre-coaches-filter .filter-select {
+      width: min(280px, 100%);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-active { color: #166534; background: #dcfce7; }
+    .status-pending { color: #92400e; background: #fef3c7; }
+    .status-muted { color: var(--slate-500); background: var(--slate-100); }
+
     .field,
     .field textarea,
     .field input,
@@ -1456,6 +1475,18 @@
       color: var(--navy-900);
       font-weight: 500;
       word-break: break-word;
+    }
+
+    .dev-centre-detail-modal {
+      width: min(680px, 100%);
+    }
+
+    .dev-centre-detail-grid .review-row a {
+      max-width: 68%;
+      text-align: right;
+      overflow-wrap: anywhere;
+      color: var(--navy-900);
+      font-weight: 600;
     }
 
     .centre-onboarding-result .review-row a,

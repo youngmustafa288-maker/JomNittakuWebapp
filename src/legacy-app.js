@@ -162,6 +162,8 @@ export function initApp(config = {}) {
     let requestedCentre = null;
     let centreRouteUnavailable = false;
     let devConsoleTab = "centres";
+    let devCentreCoachFilter = "";
+    let devCentreDetailModal = null;
     let isSigningIn = false;
     let authReady = !supabase;
     let authInitializing = Boolean(supabase);
@@ -1981,6 +1983,7 @@ export function initApp(config = {}) {
         ${renderReportWizard()}
         ${renderOnboardingModal()}
         ${state.auth.role === "dev" ? renderCentreOnboardingModal() : ""}
+        ${state.auth.role === "dev" ? renderDevCentreDetailModal() : ""}
         ${renderStudentEditModal()}
         <input id="hiddenStudentUpload" type="file" accept="image/*" class="hidden">
         <input id="hiddenProfileUpload" type="file" accept="image/*" class="hidden">
@@ -2062,17 +2065,71 @@ export function initApp(config = {}) {
         <div class="profile-card centre-settings-card">
           <div class="section-title"><h2>Dev licensing console</h2><p>Internal support access is logged and never uses a centre's Drive connection.</p></div>
           <div class="profile-actions"><button class="primary-btn" data-action="open-centre-onboarding">Create centre</button></div>
-          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Sport</th><th>Centre link</th><th>Status</th><th>Licence expiry</th><th>Actions</th></tr></thead><tbody>
-            ${centres.length ? centres.map(centre => { const licence = (centre.centre_licences || []).sort((a,b) => String(b.expires_at).localeCompare(String(a.expires_at)))[0]; const loginUrl = `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`; return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${escapeHtml(centre.sport || "Not set")}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="ghost-btn" data-action="suspend-centre" data-centre-id="${centre.id}">Suspend</button></td></tr>`; }).join("") : `<tr><td colspan="6" class="muted">No centres yet.</td></tr>`}
+          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Sport</th><th>Centre link</th><th>Status</th><th>Licence expiry</th><th>Activation key</th><th>Actions</th></tr></thead><tbody>
+            ${centres.length ? centres.map(centre => {
+              const licence = getLatestCentreLicence(centre);
+              const key = getLatestActivationKey(centre);
+              const loginUrl = centre.login_url || `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`;
+              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${escapeHtml(centre.sport || "Not set")}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation key"><span class="status-pill ${activationKeyStatusClass(key)}">${escapeHtml(getActivationKeyStatus(key))}</span></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="ghost-btn" data-action="suspend-centre" data-centre-id="${centre.id}">Suspend</button></td></tr>`;
+            }).join("") : `<tr><td colspan="7" class="muted">No centres yet.</td></tr>`}
           </tbody></table></div>
         </div>
       </section>`;
     }
 
+    function getLatestCentreLicence(centre) {
+      return (centre?.centre_licences || []).slice().sort((a, b) => String(b.expires_at || "").localeCompare(String(a.expires_at || "")))[0] || null;
+    }
+
+    function getLatestActivationKey(centre) {
+      return (centre?.activation_keys || []).slice().sort((a, b) => String(b.generated_at || "").localeCompare(String(a.generated_at || "")))[0] || null;
+    }
+
+    function getActivationKeyStatus(key) {
+      if (!key) return "No key";
+      if (key.revoked_at) return "Revoked";
+      if (key.redeemed_at) return "Activated";
+      if (key.expires_at && new Date(key.expires_at).getTime() <= Date.now()) return "Expired";
+      return "Not activated";
+    }
+
+    function activationKeyStatusClass(key) {
+      const status = getActivationKeyStatus(key);
+      return status === "Activated" ? "status-active" : status === "Not activated" ? "status-pending" : "status-muted";
+    }
+
+    function renderDevCentreDetailModal() {
+      if (!devCentreDetailModal) return "";
+      const centre = (state.devCentres || []).find(item => item.id === devCentreDetailModal.centreId);
+      if (!centre) return "";
+      const licence = getLatestCentreLicence(centre);
+      const key = getLatestActivationKey(centre);
+      const loginUrl = centre.login_url || `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`;
+      const members = centre.centre_memberships || [];
+      return `<div class="onboarding-backdrop open"><div class="onboarding-modal dev-centre-detail-modal" role="dialog" aria-modal="true" aria-labelledby="dev-centre-detail-title">
+        <div class="onboarding-head"><div class="section-title"><h2 id="dev-centre-detail-title">${escapeHtml(centre.name)} details</h2><p>Review centre access, licensing, and activation state.</p></div><button class="close-btn" data-action="close-centre-details" aria-label="Close details">X</button></div>
+        <div class="review-card dev-centre-detail-grid">
+          <div class="review-row"><strong>Sport</strong><span>${escapeHtml(centre.sport || "Not set")}</span></div>
+          <div class="review-row"><strong>Centre link</strong><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">${escapeHtml(loginUrl)}</a></div>
+          <div class="review-row"><strong>Centre status</strong><span>${escapeHtml(centre.status || "Unknown")}</span></div>
+          <div class="review-row"><strong>Centre created</strong><span>${centre.created_at ? escapeHtml(new Date(centre.created_at).toLocaleString()) : "Not available"}</span></div>
+          <div class="review-row"><strong>Licence</strong><span>${licence?.status ? escapeHtml(licence.status) : "No licence"}${licence?.expires_at ? ` · expires ${escapeHtml(new Date(licence.expires_at).toLocaleDateString())}` : ""}</span></div>
+          <div class="review-row"><strong>Activation key</strong><span class="status-pill ${activationKeyStatusClass(key)}">${escapeHtml(getActivationKeyStatus(key))}</span></div>
+          ${key?.generated_at ? `<div class="review-row"><strong>Key generated</strong><span>${escapeHtml(new Date(key.generated_at).toLocaleString())}</span></div>` : ""}
+          ${key?.redeemed_at ? `<div class="review-row"><strong>Key activated</strong><span>${escapeHtml(new Date(key.redeemed_at).toLocaleString())}</span></div>` : ""}
+          ${key?.redeemed_by_email ? `<div class="review-row"><strong>Activated by</strong><span>${escapeHtml(key.redeemed_by_email)}</span></div>` : ""}
+          <div class="review-row"><strong>Centre accounts</strong><span>${members.length}</span></div>
+        </div>
+        <div class="onboarding-actions end"><button class="secondary-btn" data-action="support-centre" data-centre-id="${centre.id}">Record support access</button><button class="primary-btn" data-action="close-centre-details">Done</button></div>
+      </div></div>`;
+    }
+
     function renderDevCentreCoachesPage() {
       const centres = Array.isArray(state.devCentres) ? state.devCentres : [];
       const memberships = centres.flatMap(centre => (centre.centre_memberships || []).map(member => ({ ...member, centre })));
-      return `<section class="page ${state.ui.page === "centre-coaches" ? "active" : ""}"><div class="profile-card centre-settings-card"><div class="section-title"><h2>Centre coaches</h2><p>Manage coach access and promote a coach to centre admin.</p></div><div class="table-wrap"><table><thead><tr><th>Coach</th><th>Email</th><th>Centre</th><th>Role</th><th>Action</th></tr></thead><tbody>${memberships.length ? memberships.map(member => `<tr><td data-label="Coach"><strong>${escapeHtml(member.name)}</strong></td><td data-label="Email">${escapeHtml(member.email)}</td><td data-label="Centre">${escapeHtml(member.centre.name)}</td><td data-label="Role">${escapeHtml(member.role)}</td><td>${member.role === "centre_admin" ? `<button class="ghost-btn" data-action="set-centre-coach" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make coach</button>` : `<button class="secondary-btn" data-action="set-centre-admin" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make centre admin</button>`}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No centre coaches yet.</td></tr>`}</tbody></table></div></div></section>`;
+      const filteredMemberships = devCentreCoachFilter ? memberships.filter(member => member.centre.id === devCentreCoachFilter) : memberships;
+      const sortedCentres = centres.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      return `<section class="page ${state.ui.page === "centre-coaches" ? "active" : ""}"><div class="profile-card centre-settings-card"><div class="section-title"><h2>Centre coaches</h2><p>Every centre account starts as a coach. Promote an account to centre admin when needed.</p></div><div class="filters-row centre-coaches-filter"><label class="sr-only" for="dev-centre-coach-filter">Filter by centre</label><select id="dev-centre-coach-filter" class="filter-select" data-dev-centre-filter><option value="">All centres</option>${sortedCentres.map(centre => `<option value="${escapeHtml(centre.id)}" ${devCentreCoachFilter === centre.id ? "selected" : ""}>${escapeHtml(centre.name)}</option>`).join("")}</select><span class="muted">${filteredMemberships.length} account${filteredMemberships.length === 1 ? "" : "s"}</span></div><div class="table-wrap"><table><thead><tr><th>Coach</th><th>Email</th><th>Centre</th><th>Role</th><th>Action</th></tr></thead><tbody>${filteredMemberships.length ? filteredMemberships.map(member => `<tr><td data-label="Coach"><strong>${escapeHtml(member.name)}</strong></td><td data-label="Email">${escapeHtml(member.email)}</td><td data-label="Centre">${escapeHtml(member.centre.name)}</td><td data-label="Role">${escapeHtml(member.role === "centre_admin" ? "Admin" : "Coach")}</td><td>${member.role === "centre_admin" ? `<span class="muted">Current admin</span>` : `<button class="secondary-btn" data-action="set-centre-admin" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make admin</button>`}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No centre coaches match this filter.</td></tr>`}</tbody></table></div></div></section>`;
     }
 
     function renderCentrePage() {
@@ -2271,6 +2328,12 @@ export function initApp(config = {}) {
             event.preventDefault();
             navigate(navButton.dataset.nav);
           }
+        });
+        app.addEventListener("change", event => {
+          const filter = event.target.closest("[data-dev-centre-filter]");
+          if (!filter) return;
+          devCentreCoachFilter = filter.value;
+          render();
         });
         app.addEventListener("pointerdown", event => {
           const item = event.target.closest(".report-overlay-item.is-editing");
@@ -2577,6 +2640,8 @@ export function initApp(config = {}) {
       if (action === "centre-onboarding-continue") return continueCentreOnboarding();
       if (action === "centre-onboarding-back") { if (centreOnboardingModal) { centreOnboardingModal.step = 1; render(); } return; }
       if (action === "centre-onboarding-submit") return submitCentreOnboarding();
+      if (action === "view-centre-details") { devCentreDetailModal = { centreId: event.currentTarget.dataset.centreId }; return render(); }
+      if (action === "close-centre-details") { devCentreDetailModal = null; return render(); }
       if (action === "set-centre-admin" || action === "set-centre-coach") return (async () => { try { await invokePrivileged("dev-console", { action: "update-member-role", centre_id: event.currentTarget.dataset.centreId, user_id: event.currentTarget.dataset.userId, role: action === "set-centre-admin" ? "centre_admin" : "coach" }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update centre role."); } })();
       if (action === "renew-centre" || action === "suspend-centre") return (async () => { try { await invokePrivileged("dev-console", { action: action === "renew-centre" ? "renew-licence" : "suspend-centre", centre_id: event.currentTarget.dataset.centreId }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update centre."); } })();
       if (action === "support-centre") return (async () => { try { await invokePrivileged("dev-console", { action: "support-access", centre_id: event.currentTarget.dataset.centreId }); alert("Support access recorded in the audit log."); } catch (error) { alert(error.message || "Unable to start support access."); } })();

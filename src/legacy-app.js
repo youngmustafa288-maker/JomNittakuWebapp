@@ -2005,25 +2005,30 @@ export function initApp(config = {}) {
             ["certificate-design", "Certificate Design"]
           ];
       navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Centre Links"]);
-      const pageContent = state.auth.role === "dev" && state.ui.page === "centre-coaches"
-        ? renderDevCentreCoachesPage()
-        : state.ui.page === "reports"
-        ? renderReportsPage()
-        : state.ui.page === "coaches"
-          ? (state.auth.role === "admin" ? renderCoachesPage() : renderOverviewPage())
-          : state.ui.page === "students"
-            ? renderStudentsPage()
-              : state.ui.page === "centre-settings"
-                ? renderCentreSettingsPage()
-              : state.ui.page === "settings"
-              ? renderAdminProfilePage()
-              : state.ui.page === "profile"
-                ? renderCoachProfilePage()
-          : state.ui.page === "report-view"
-                  ? renderReportViewPage()
-                  : state.ui.page === "certificate-design"
-                    ? renderCertificateDesignPage()
-                  : renderOverviewPage();
+      // Resolve the active page explicitly. The dev coach view is a separate
+      // console surface and must never fall through to the dashboard overview.
+      let pageContent;
+      if (state.auth.role === "dev" && state.ui.page === "centre-coaches") {
+        pageContent = renderDevCentreCoachesPage();
+      } else if (state.ui.page === "reports") {
+        pageContent = renderReportsPage();
+      } else if (state.ui.page === "coaches") {
+        pageContent = state.auth.role === "admin" ? renderCoachesPage() : renderOverviewPage();
+      } else if (state.ui.page === "students") {
+        pageContent = renderStudentsPage();
+      } else if (state.ui.page === "centre-settings") {
+        pageContent = renderCentreSettingsPage();
+      } else if (state.ui.page === "settings") {
+        pageContent = renderAdminProfilePage();
+      } else if (state.ui.page === "profile") {
+        pageContent = renderCoachProfilePage();
+      } else if (state.ui.page === "report-view") {
+        pageContent = renderReportViewPage();
+      } else if (state.ui.page === "certificate-design") {
+        pageContent = renderCertificateDesignPage();
+      } else {
+        pageContent = renderOverviewPage();
+      }
       return `
         <div class="dashboard">
           <aside class="sidebar">

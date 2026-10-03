@@ -99,14 +99,14 @@ Deno.serve(async (request) => {
       email,
       password,
       email_confirm: true,
-      app_metadata: { role: "centre_admin", centre_id: centre.id },
+      app_metadata: { role: "coach", centre_id: centre.id },
       user_metadata: { full_name: coachName },
     });
     if (accountError || !account.user) {
       await admin.from("centres").delete().eq("id", centre.id);
       return json({ error: accountError?.message || "Unable to create centre login" }, 400);
     }
-    const { error: membershipError } = await admin.from("centre_memberships").insert({ centre_id: centre.id, user_id: account.user.id, role: "centre_admin" });
+    const { error: membershipError } = await admin.from("centre_memberships").insert({ centre_id: centre.id, user_id: account.user.id, role: "coach" });
     if (membershipError) {
       await admin.auth.admin.deleteUser(account.user.id);
       await admin.from("centres").delete().eq("id", centre.id);

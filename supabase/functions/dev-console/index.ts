@@ -54,7 +54,7 @@ Deno.serve(async (request) => {
   const action = body.action || "list";
 
   if (action === "list") {
-    const { data, error } = await admin.from("centres").select("*, centre_licences(*), drive_connections(*), centre_memberships(user_id, role), activation_keys(id, centre_id, generated_by, generated_at, redeemed_by, redeemed_at, expires_at, revoked_at)").order("created_at", { ascending: false });
+    const { data, error } = await admin.from("centres").select("*, centre_licences(*), drive_connections(*), centre_memberships(user_id, role), activation_keys(id, centre_id, key_value, generated_by, generated_at, redeemed_by, redeemed_at, expires_at, revoked_at)").order("created_at", { ascending: false });
     if (error) return json({ error: error.message }, 500);
     const users = await admin.auth.admin.listUsers({ perPage: 1000 });
     const userMap = new Map((users.data.users || []).map((item) => [item.id, item]));
@@ -134,7 +134,7 @@ Deno.serve(async (request) => {
       return json({ error: licenceError.message }, 500);
     }
     const key = randomKey();
-    const { error: keyError } = await admin.from("activation_keys").insert({ centre_id: centre.id, key_hash: await hash(key), generated_by: user.id, expires_at: new Date(Date.now() + 365 * 86400000).toISOString() });
+    const { error: keyError } = await admin.from("activation_keys").insert({ centre_id: centre.id, key_value: key, key_hash: await hash(key), generated_by: user.id, expires_at: new Date(Date.now() + 365 * 86400000).toISOString() });
     if (keyError) {
       await admin.from("centre_memberships").delete().eq("centre_id", centre.id).eq("user_id", account.user.id);
       await admin.auth.admin.deleteUser(account.user.id);
@@ -143,6 +143,15 @@ Deno.serve(async (request) => {
     }
     await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centre.id, action: "licence.issued", metadata: { reason: "centre-created" } });
     return json({ centre, activation_key: key, login_url: `${appUrl()}/centre/${centre.slug}` });
+  }
+  if (action === "update-centre-logo") {
+    const centreId = String(body.centre_id || "");
+    const logoUrl = String(body.logo_url || "").trim();
+    if (!centreId || !logoUrl) return json({ error: "centre_id and logo_url are required" }, 400);
+    const { error } = await admin.from("centres").update({ logo_url: logoUrl, updated_at: new Date().toISOString() }).eq("id", centreId);
+    if (error) return json({ error: error.message }, 500);
+    await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "centre.logo-updated", metadata: {} });
+    return json({ ok: true, logo_url: logoUrl });
   }
   if (action === "update-member-role") {
     const centreId = String(body.centre_id || "");

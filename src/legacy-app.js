@@ -165,6 +165,8 @@ export function initApp(config = {}) {
     let devCentreCoachFilter = "";
     let devCentreDetailModal = null;
     let isSigningIn = false;
+    let isActivatingCentre = false;
+    let activationError = "";
     let authReady = !supabase;
     let authInitializing = Boolean(supabase);
     let draftProfileUploadContext = null;
@@ -933,6 +935,24 @@ export function initApp(config = {}) {
       }
     }
 
+    async function submitCentreActivation() {
+      const code = document.getElementById("centreActivationCode")?.value.trim().toUpperCase();
+      if (!code || !requestedCentre?.id) return;
+      isActivatingCentre = true;
+      activationError = "";
+      render();
+      try {
+        await invokePrivileged("dev-console", { action: "redeem-activation", centre_id: requestedCentre.id, code });
+        requestedCentre = { ...requestedCentre, activated_at: new Date().toISOString() };
+        isActivatingCentre = false;
+        render();
+      } catch (error) {
+        isActivatingCentre = false;
+        activationError = error.message || "Unable to activate this centre.";
+        render();
+      }
+    }
+
     async function applyAuthUser(user) {
       if (!user) {
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
@@ -1151,6 +1171,11 @@ export function initApp(config = {}) {
           </div>
         </section>
       `;
+    }
+
+    function renderCentreActivationGate() {
+      const logo = requestedCentre?.logo_url || "/Logo_with_Changes_made.png";
+      return `<section class="login-screen"><div class="login-panel"><div class="brand-lockup"><div class="brand-logo-crop"><img class="brand-logo" src="${escapeHtml(logo)}" alt="${escapeHtml(requestedCentre?.name || "Centre")} logo"></div><p class="brand-system-title">Centre activation required</p><div class="brand-copy"><h1>${escapeHtml(requestedCentre?.name || "Centre")}</h1><p class="muted">Enter the activation code provided by your administrator to unlock this centre.</p></div></div><form class="login-form" data-centre-activation-form><div class="field"><label for="centreActivationCode">Activation code</label><input id="centreActivationCode" class="text-input" autocomplete="one-time-code" autocapitalize="characters" required></div>${activationError ? `<p class="form-error" role="alert">${escapeHtml(activationError)}</p>` : ""}<button class="primary-btn" type="submit" ${isActivatingCentre ? "disabled" : ""}>${isActivatingCentre ? "Activating..." : "Activate centre"}</button><button class="ghost-btn" type="button" data-action="centre-activation-logout">Sign out</button></form></div></section>`;
     }
 
     function renderEditablePhoto(id, photo, label, layer) {
@@ -2221,6 +2246,11 @@ export function initApp(config = {}) {
         attachEvents();
         return;
       }
+      if (isMatchingCentreSession && !requestedCentre.activated_at) {
+        app.innerHTML = renderCentreActivationGate();
+        attachEvents();
+        return;
+      }
       if (!requestedCentre && /^\/centre\/?$/i.test(window.location.pathname)) {
         app.innerHTML = renderCentrePage();
         return;
@@ -2442,6 +2472,7 @@ export function initApp(config = {}) {
       const loginForm = document.querySelector(".login-form");
       loginForm?.addEventListener("submit", event => {
         event.preventDefault();
+        if (loginForm.hasAttribute("data-centre-activation-form")) return submitCentreActivation();
         signIn();
       });
       document.querySelector('[data-action="sign-in-google"]')?.addEventListener("click", signInWithGoogle);
@@ -2665,6 +2696,7 @@ export function initApp(config = {}) {
       if (action === "centre-onboarding-submit") return submitCentreOnboarding();
       if (action === "view-centre-details") { devCentreDetailModal = { centreId: event.currentTarget.dataset.centreId }; return render(); }
       if (action === "close-centre-details") { devCentreDetailModal = null; return render(); }
+      if (action === "centre-activation-logout") return logout();
       if (action === "upload-centre-logo") {
         const input = document.getElementById("hiddenCentreLogoUpload");
         if (input) { input.dataset.centreId = event.currentTarget.dataset.centreId; input.click(); }
@@ -3775,7 +3807,7 @@ export function initApp(config = {}) {
       if (centrePath && supabase) {
         let slug = "";
         try { slug = decodeURIComponent(centrePath[1]); } catch { slug = ""; }
-        const { data, error } = await supabase.from("centres").select("id,name,slug,status,logo_url").eq("slug", slug).maybeSingle();
+        const { data, error } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", slug).maybeSingle();
         if (!error && data?.status === "active") requestedCentre = data;
         else centreRouteUnavailable = true;
       } else if (centrePath) {
@@ -3786,7 +3818,7 @@ export function initApp(config = {}) {
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         const callbackCentreSlug = callbackParams.get("centre");
         if (callbackCentreSlug) {
-          const { data } = await supabase.from("centres").select("id,name,slug,status,logo_url").eq("slug", callbackCentreSlug).maybeSingle();
+          const { data } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
           if (data?.status === "active") {
             requestedCentre = data;
             window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(data.slug)}`);

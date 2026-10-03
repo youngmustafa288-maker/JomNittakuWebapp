@@ -137,7 +137,7 @@ The migrations define and evolve these main areas:
 - `drive_sync_jobs`
 - `audit_logs`
 
-`centres.logo_url` stores the public centre branding asset URL. `activation_keys` stores both the redemption hash and the generated code needed by the privileged dev console; the code is only returned through the service-role-backed dev function.
+`centres.logo_url` stores the public centre branding asset URL and `centres.activated_at` records the first successful activation. `activation_keys` stores both the redemption hash and the generated code needed by the privileged dev console; the code is only returned through the service-role-backed dev function.
 
 ### `dashboard_state` JSON
 
@@ -205,8 +205,9 @@ Google client secrets, encryption keys, and service-role credentials must remain
 
 1. Bootstrap restores a Supabase session.
 2. `applyAuthUser()` resolves the role and centre membership.
-3. Coaches, students, centre state, and privileged state are refreshed.
-4. The dashboard is rendered according to role.
+3. A centre route checks `centres.activated_at`; authenticated centre members without activation see the activation-code gate.
+4. The code is redeemed through the privileged Edge Function, which hashes and verifies it, records the redeemer, and sets `activated_at`.
+5. Coaches, students, centre state, and privileged state are refreshed and the dashboard is rendered according to role.
 
 ### Student management
 

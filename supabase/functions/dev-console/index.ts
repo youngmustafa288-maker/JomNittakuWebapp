@@ -21,7 +21,6 @@ async function caller(request: Request) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return null;
   const { data } = await admin.auth.getUser(token);
-  if (data.user?.app_metadata?.role !== "dev") return null;
   const payload = token.split(".")[1];
   try { JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))); } catch { return null; }
   return data.user;
@@ -48,10 +47,32 @@ async function hash(value: string) {
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  const user = await caller(request);
-  if (!user) return json({ error: "Dev role required" }, 403);
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
   const action = body.action || "list";
+  const user = await caller(request);
+  if (!user) return json({ error: "Authentication required" }, 401);
+  if (action !== "redeem-activation" && user.app_metadata?.role !== "dev") return json({ error: "Dev role required" }, 403);
+
+  if (action === "redeem-activation") {
+    const centreId = String(body.centre_id || "");
+    const code = String(body.code || "").trim().toUpperCase();
+    if (!centreId || !code) return json({ error: "Centre and activation code are required" }, 400);
+    const { data: membership } = await admin.from("centre_memberships").select("centre_id").eq("centre_id", centreId).eq("user_id", user.id).maybeSingle();
+    if (!membership) return json({ error: "This account is not assigned to that centre" }, 403);
+    const { data: centre } = await admin.from("centres").select("id,status,activated_at").eq("id", centreId).maybeSingle();
+    if (!centre || centre.status !== "active") return json({ error: "This centre is unavailable" }, 400);
+    if (centre.activated_at) return json({ ok: true, activated_at: centre.activated_at });
+    const { data: keys } = await admin.from("activation_keys").select("id,key_hash,expires_at,revoked_at").eq("centre_id", centreId).is("redeemed_at", null).is("revoked_at", null).order("generated_at", { ascending: false });
+    const codeHash = await hash(code);
+    const matchingKey = (keys || []).find((key) => (!key.expires_at || new Date(key.expires_at).getTime() > Date.now()) && key.key_hash === codeHash);
+    if (!matchingKey) return json({ error: "Invalid or expired activation code" }, 400);
+    const activatedAt = new Date().toISOString();
+    const { error: keyError } = await admin.from("activation_keys").update({ redeemed_by: user.id, redeemed_at: activatedAt }).eq("id", matchingKey.id);
+    if (keyError) return json({ error: keyError.message }, 500);
+    const { error: centreError } = await admin.from("centres").update({ activated_at: activatedAt, updated_at: activatedAt }).eq("id", centreId);
+    if (centreError) return json({ error: centreError.message }, 500);
+    return json({ ok: true, activated_at: activatedAt });
+  }
 
   if (action === "list") {
     const { data, error } = await admin.from("centres").select("*, centre_licences(*), drive_connections(*), centre_memberships(user_id, role), activation_keys(id, centre_id, key_value, generated_by, generated_at, redeemed_by, redeemed_at, expires_at, revoked_at)").order("created_at", { ascending: false });

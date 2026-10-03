@@ -2190,16 +2190,28 @@ export function initApp(config = {}) {
     }
 
     function renderDevCentreCoachesPage() {
-      const centres = Array.isArray(state.devCentres) ? state.devCentres : [];
-      const memberships = centres.flatMap(centre => (centre.centre_memberships || []).map(member => ({ ...member, centre })));
-      const filteredMemberships = devCentreCoachFilter ? memberships.filter(member => member.centre.id === devCentreCoachFilter) : memberships;
-      const sortedCentres = centres.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
-      const normalizedMemberships = filteredMemberships.map(member => ({
-        ...member,
-        name: String(member.name || member.email || "Coach"),
-        email: String(member.email || "No email"),
-        centre: member.centre || { id: "", name: "Unassigned centre" }
-      }));
+      const centres = (Array.isArray(state.devCentres) ? state.devCentres : [])
+        .filter(Boolean)
+        .map(centre => ({
+          ...centre,
+          id: String(centre.id || ""),
+          name: String(centre.name || "Unnamed centre"),
+          centre_memberships: Array.isArray(centre.centre_memberships) ? centre.centre_memberships : []
+        }));
+      const memberships = centres.flatMap(centre => centre.centre_memberships
+        .filter(Boolean)
+        .map(member => ({
+          ...member,
+          user_id: String(member.user_id || member.id || ""),
+          name: String(member.name || member.email || "Coach"),
+          email: String(member.email || "No email"),
+          centre
+        })));
+      const filteredMemberships = devCentreCoachFilter
+        ? memberships.filter(member => member.centre.id === String(devCentreCoachFilter))
+        : memberships;
+      const sortedCentres = centres.slice().sort((a, b) => a.name.localeCompare(b.name));
+      const normalizedMemberships = filteredMemberships;
       const searchedMemberships = normalizedMemberships.filter(member => [member.name, member.email, member.centre.name].join(" ").toLowerCase().includes(devCentreCoachSearch));
       return `<section class="page ${state.ui.page === "centre-coaches" ? "active" : ""}><div class="table-card"><div class="table-topline"><div class="section-title"><h2>Centre coaches</h2><p>${searchedMemberships.length} centre account${searchedMemberships.length === 1 ? "" : "s"} · Promote a coach to centre admin when needed.</p></div></div><div class="students-filter-bar"><input id="devCentreCoachSearch" class="search-input" type="search" placeholder="Search coach, email or centre" value="${escapeHtml(devCentreCoachSearch)}"><select id="dev-centre-coach-filter" class="filter-select" data-dev-centre-filter><option value="">All centres</option>${sortedCentres.map(centre => `<option value="${escapeHtml(centre.id)}" ${devCentreCoachFilter === centre.id ? "selected" : ""}>${escapeHtml(centre.name)}</option>`).join("")}</select></div><div class="table-wrap" style="margin-top:18px;"><table id="devCentreCoachesTable"><thead><tr><th>COACH</th><th>EMAIL</th><th>CENTRE</th><th>ROLE</th><th>ACTION</th></tr></thead><tbody>${searchedMemberships.length ? searchedMemberships.map(member => { const photo = member.photo || member.photo_url || ""; const roleLabel = member.role === "centre_admin" ? "Admin" : "Coach"; return `<tr><td data-label="Coach"><div class="person-cell">${avatarMarkup(member.name, photo)}<strong>${escapeHtml(member.name)}</strong></div></td><td data-label="Email">${escapeHtml(member.email)}</td><td data-label="Centre">${escapeHtml(member.centre.name)}</td><td data-label="Role"><span class="badge ${member.role === "centre_admin" ? "green" : "grey"}">${roleLabel}</span></td><td>${member.role === "centre_admin" ? `<button class="secondary-btn" data-action="set-centre-coach" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make coach</button>` : `<button class="secondary-btn" data-action="set-centre-admin" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make admin</button>`}</td></tr>`; }).join("") : `<tr><td colspan="5" class="muted">No centre accounts match this filter.</td></tr>`}</tbody></table></div></div></section>`;
     }

@@ -79,6 +79,8 @@ Deno.serve(async (request) => {
     if (error) return json({ error: error.message }, 500);
     const users = await admin.auth.admin.listUsers({ perPage: 1000 });
     const userMap = new Map((users.data.users || []).map((item) => [item.id, item]));
+    const { data: coaches } = await admin.from("coaches").select("id,name,photo,photo_url,slug,status,centre_id");
+    const coachMap = new Map((coaches || []).map((coach) => [coach.id, coach]));
     return json({ centres: (data || []).map((item) => ({
       ...item,
       login_url: `${appUrl()}/centre/${encodeURIComponent(item.slug || "")}`,
@@ -88,6 +90,7 @@ Deno.serve(async (request) => {
       })),
       centre_memberships: (item.centre_memberships || []).map((membership) => ({
         ...membership,
+        ...(coachMap.get(membership.user_id) || {}),
         email: userMap.get(membership.user_id)?.email || "",
         name: userMap.get(membership.user_id)?.user_metadata?.full_name || userMap.get(membership.user_id)?.email || "Coach",
       })),

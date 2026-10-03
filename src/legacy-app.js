@@ -163,6 +163,7 @@ export function initApp(config = {}) {
     let centreRouteUnavailable = false;
     let devConsoleTab = "centres";
     let devCentreCoachFilter = "";
+    let devCentreCoachSearch = "";
     let devCentreDetailModal = null;
     let isSigningIn = false;
     let isActivatingCentre = false;
@@ -2161,7 +2162,8 @@ export function initApp(config = {}) {
       const memberships = centres.flatMap(centre => (centre.centre_memberships || []).map(member => ({ ...member, centre })));
       const filteredMemberships = devCentreCoachFilter ? memberships.filter(member => member.centre.id === devCentreCoachFilter) : memberships;
       const sortedCentres = centres.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
-      return `<section class="page ${state.ui.page === "centre-coaches" ? "active" : ""}"><div class="profile-card centre-settings-card"><div class="section-title"><h2>Centre coaches</h2><p>Only accounts assigned to a centre are listed here. New centre accounts start as coaches and can be promoted to admin.</p></div><div class="filters-row centre-coaches-filter"><label class="sr-only" for="dev-centre-coach-filter">Filter by centre</label><select id="dev-centre-coach-filter" class="filter-select" data-dev-centre-filter><option value="">All centres</option>${sortedCentres.map(centre => `<option value="${escapeHtml(centre.id)}" ${devCentreCoachFilter === centre.id ? "selected" : ""}>${escapeHtml(centre.name)}</option>`).join("")}</select><span class="muted">${filteredMemberships.length} account${filteredMemberships.length === 1 ? "" : "s"}</span></div><div class="table-wrap"><table><thead><tr><th>Coach</th><th>Email</th><th>Centre</th><th>Role</th><th>Action</th></tr></thead><tbody>${filteredMemberships.length ? filteredMemberships.map(member => `<tr><td data-label="Coach"><strong>${escapeHtml(member.name)}</strong></td><td data-label="Email">${escapeHtml(member.email)}</td><td data-label="Centre">${escapeHtml(member.centre.name)}</td><td data-label="Role">${escapeHtml(member.role === "centre_admin" ? "Admin" : "Coach")}</td><td>${member.role === "centre_admin" ? `<span class="muted">Current admin</span>` : `<button class="secondary-btn" data-action="set-centre-admin" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make admin</button>`}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">No centre accounts match this filter.</td></tr>`}</tbody></table></div></div></section>`;
+      const searchedMemberships = filteredMemberships.filter(member => [member.name, member.email, member.centre.name].join(" ").toLowerCase().includes(devCentreCoachSearch));
+      return `<section class="page ${state.ui.page === "centre-coaches" ? "active" : ""}><div class="table-card"><div class="table-topline"><div class="section-title"><h2>Centre coaches</h2><p>${searchedMemberships.length} centre account${searchedMemberships.length === 1 ? "" : "s"} · Promote a coach to centre admin when needed.</p></div></div><div class="students-filter-bar"><input id="devCentreCoachSearch" class="search-input" type="search" placeholder="Search coach, email or centre" value="${escapeHtml(devCentreCoachSearch)}"><select id="dev-centre-coach-filter" class="filter-select" data-dev-centre-filter><option value="">All centres</option>${sortedCentres.map(centre => `<option value="${escapeHtml(centre.id)}" ${devCentreCoachFilter === centre.id ? "selected" : ""}>${escapeHtml(centre.name)}</option>`).join("")}</select></div><div class="table-wrap" style="margin-top:18px;"><table id="devCentreCoachesTable"><thead><tr><th>COACH</th><th>EMAIL</th><th>CENTRE</th><th>ROLE</th><th>ACTION</th></tr></thead><tbody>${searchedMemberships.length ? searchedMemberships.map(member => { const photo = member.photo || member.photo_url || ""; const roleLabel = member.role === "centre_admin" ? "Admin" : "Coach"; return `<tr><td data-label="Coach"><div class="person-cell">${avatarMarkup(member.name, photo)}<strong>${escapeHtml(member.name)}</strong></div></td><td data-label="Email">${escapeHtml(member.email)}</td><td data-label="Centre">${escapeHtml(member.centre.name)}</td><td data-label="Role"><span class="badge ${member.role === "centre_admin" ? "green" : "grey"}">${roleLabel}</span></td><td>${member.role === "centre_admin" ? `<button class="secondary-btn" data-action="set-centre-coach" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make coach</button>` : `<button class="secondary-btn" data-action="set-centre-admin" data-centre-id="${member.centre.id}" data-user-id="${member.user_id}">Make admin</button>`}</td></tr>`; }).join("") : `<tr><td colspan="5" class="muted">No centre accounts match this filter.</td></tr>`}</tbody></table></div></div></section>`;
     }
 
     function renderCentrePage() {
@@ -2375,6 +2377,18 @@ export function initApp(config = {}) {
           if (!filter) return;
           devCentreCoachFilter = filter.value;
           render();
+        });
+        app.addEventListener("input", event => {
+          if (event.target.id !== "devCentreCoachSearch") return;
+          devCentreCoachSearch = event.target.value.trim().toLowerCase();
+          const selectionStart = event.target.selectionStart;
+          render();
+          requestAnimationFrame(() => {
+            const search = document.getElementById("devCentreCoachSearch");
+            if (!search) return;
+            search.focus();
+            search.setSelectionRange(selectionStart, selectionStart);
+          });
         });
         app.addEventListener("pointerdown", event => {
           const item = event.target.closest(".report-overlay-item.is-editing");

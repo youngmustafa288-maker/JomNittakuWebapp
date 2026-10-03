@@ -2208,7 +2208,10 @@ export function initApp(config = {}) {
         app.innerHTML = '<main class="login-screen"><div class="login-panel"><div class="brand-copy"><h1>Centre login unavailable</h1><p class="muted">This centre link is invalid, inactive, or temporarily unavailable.</p></div></div></main>';
         return;
       }
-      if (requestedCentre && !state.auth.role) {
+      const isMatchingCentreSession = requestedCentre
+        && state.auth.centreId === requestedCentre.id
+        && ["centre_admin", "coach"].includes(state.auth.role);
+      if (requestedCentre && !isMatchingCentreSession) {
         app.innerHTML = renderLogin();
         attachEvents();
         return;

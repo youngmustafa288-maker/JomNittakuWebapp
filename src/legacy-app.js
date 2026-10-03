@@ -2005,7 +2005,9 @@ export function initApp(config = {}) {
             ["certificate-design", "Certificate Design"]
           ];
       navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Centre Links"]);
-      const pageContent = state.ui.page === "reports"
+      const pageContent = state.auth.role === "dev" && state.ui.page === "centre-coaches"
+        ? renderDevCentreCoachesPage()
+        : state.ui.page === "reports"
         ? renderReportsPage()
         : state.ui.page === "coaches"
           ? (state.auth.role === "admin" ? renderCoachesPage() : renderOverviewPage())
@@ -2013,8 +2015,6 @@ export function initApp(config = {}) {
             ? renderStudentsPage()
               : state.ui.page === "centre-settings"
                 ? renderCentreSettingsPage()
-              : state.ui.page === "centre-coaches"
-                ? renderDevCentreCoachesPage()
               : state.ui.page === "settings"
               ? renderAdminProfilePage()
               : state.ui.page === "profile"

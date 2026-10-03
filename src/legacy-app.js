@@ -927,6 +927,7 @@ export function initApp(config = {}) {
       const callbackPath = requestedCentre?.slug
         ? `/auth/callback?centre=${encodeURIComponent(requestedCentre.slug)}`
         : "/auth/callback";
+      if (requestedCentre?.slug) sessionStorage.setItem("pendingCentreSlug", requestedCentre.slug);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo: `${window.location.origin}${callbackPath}` }
@@ -975,6 +976,15 @@ export function initApp(config = {}) {
           .maybeSingle();
         centreMembership = data || null;
         if (!centreMembership) centreId = null;
+      }
+      if (supabase && !centreMembership) {
+        const { data } = await supabase
+          .from("centre_memberships")
+          .select("centre_id, role")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        centreMembership = data || null;
+        if (centreMembership) centreId = centreMembership.centre_id;
       }
       let coach = state.coaches.find(item => item.id === coachId)
         || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
@@ -1179,6 +1189,11 @@ export function initApp(config = {}) {
     function renderCentreActivationGate() {
       const logo = requestedCentre?.logo_url || "/Logo_with_Changes_made.png";
       return `<section class="login-screen"><div class="login-panel"><div class="brand-lockup"><div class="brand-logo-crop"><img class="brand-logo" src="${escapeHtml(logo)}" alt="${escapeHtml(requestedCentre?.name || "Centre")} logo"></div><p class="brand-system-title">Centre activation required</p><div class="brand-copy"><h1>${escapeHtml(requestedCentre?.name || "Centre")}</h1><p class="muted">Enter the activation code provided by your administrator to unlock this centre.</p></div></div><form class="login-form" data-centre-activation-form><div class="field"><label for="centreActivationCode">Activation code</label><input id="centreActivationCode" class="text-input" autocomplete="one-time-code" autocapitalize="characters" required></div>${activationError ? `<p class="form-error" role="alert">${escapeHtml(activationError)}</p>` : ""}<button class="primary-btn" type="submit" ${isActivatingCentre ? "disabled" : ""}>${isActivatingCentre ? "Activating..." : "Activate centre"}</button><button class="ghost-btn" type="button" data-action="centre-activation-logout">Sign out</button></form></div></section>`;
+    }
+
+    function renderCentreActivationOverlay() {
+      const logo = requestedCentre?.logo_url || "/Logo_with_Changes_made.png";
+      return `<div class="centre-lock-overlay"><div class="centre-lock-modal" role="dialog" aria-modal="true" aria-labelledby="centre-lock-title"><div class="brand-logo-crop centre-lock-logo"><img class="brand-logo" src="${escapeHtml(logo)}" alt="${escapeHtml(requestedCentre?.name || "Centre")} logo"></div><p class="brand-system-title">Centre activation required</p><h2 id="centre-lock-title">Unlock ${escapeHtml(requestedCentre?.name || "your centre")}</h2><p class="muted">You are signed in. Enter the activation key provided by your administrator to unlock the dashboard.</p><form class="login-form" data-centre-activation-form><div class="field"><label for="centreActivationCode">Activation key</label><input id="centreActivationCode" class="text-input" autocomplete="one-time-code" autocapitalize="characters" required></div>${activationError ? `<p class="form-error" role="alert">${escapeHtml(activationError)}</p>` : ""}<button class="primary-btn" type="submit" ${isActivatingCentre ? "disabled" : ""}>${isActivatingCentre ? "Activating..." : "Unlock dashboard"}</button><button class="ghost-btn" type="button" data-action="centre-activation-logout">Sign out</button></form></div></div>`;
     }
 
     function renderEditablePhoto(id, photo, label, layer) {
@@ -2258,7 +2273,7 @@ export function initApp(config = {}) {
         return;
       }
       if (isMatchingCentreSession && !requestedCentre.activated_at) {
-        app.innerHTML = renderCentreActivationGate();
+        app.innerHTML = `${renderDashboard()}${renderCentreActivationOverlay()}`;
         attachEvents();
         return;
       }
@@ -3900,11 +3915,12 @@ export function initApp(config = {}) {
       if (supabase && window.location.pathname === "/auth/callback") {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
-        const callbackCentreSlug = callbackParams.get("centre");
+        const callbackCentreSlug = callbackParams.get("centre") || sessionStorage.getItem("pendingCentreSlug");
         if (callbackCentreSlug) {
           const { data } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
           if (data?.status === "active") {
             requestedCentre = data;
+            sessionStorage.removeItem("pendingCentreSlug");
             window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(data.slug)}`);
           } else {
             centreRouteUnavailable = true;

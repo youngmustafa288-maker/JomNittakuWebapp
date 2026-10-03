@@ -912,10 +912,6 @@ export function initApp(config = {}) {
     }
 
     async function signInWithGoogle() {
-      if (requestedCentre) {
-        loginError = "Use the email and password provided by your centre administrator.";
-        return render();
-      }
       if (!supabase) {
         loginError = "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.";
         return render();
@@ -923,9 +919,12 @@ export function initApp(config = {}) {
       isSigningIn = true;
       loginError = "";
       render();
+      const callbackPath = requestedCentre?.slug
+        ? `/auth/callback?centre=${encodeURIComponent(requestedCentre.slug)}`
+        : "/auth/callback";
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` }
+        options: { redirectTo: `${window.location.origin}${callbackPath}` }
       });
       if (error) {
         isSigningIn = false;
@@ -1141,11 +1140,11 @@ export function initApp(config = {}) {
               </div>
               ${loginError ? `<p class="form-error" role="alert">${escapeHtml(loginError)}</p>` : ""}
               <button class="primary-btn" type="submit" ${isSigningIn ? "disabled" : ""}>${isSigningIn ? "Signing in..." : "Sign in"}</button>
-              ${requestedCentre ? "" : `<div class="login-divider"><span>or</span></div>
+              <div class="login-divider"><span>or</span></div>
               <button class="google-btn" type="button" data-action="sign-in-google" ${isSigningIn ? "disabled" : ""}>
                 <span class="google-mark" aria-hidden="true">G</span>
                 Continue with Google
-              </button>`}
+              </button>
             </form>
           </div>
         </section>
@@ -3760,7 +3759,19 @@ export function initApp(config = {}) {
       if (supabase && window.location.pathname === "/auth/callback") {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
-        window.history.replaceState({}, document.title, "/");
+        const callbackCentreSlug = callbackParams.get("centre");
+        if (callbackCentreSlug) {
+          const { data } = await supabase.from("centres").select("id,name,slug,status").eq("slug", callbackCentreSlug).maybeSingle();
+          if (data?.status === "active") {
+            requestedCentre = data;
+            window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(data.slug)}`);
+          } else {
+            centreRouteUnavailable = true;
+            window.history.replaceState({}, document.title, "/");
+          }
+        } else {
+          window.history.replaceState({}, document.title, "/");
+        }
       }
       if (!requestedCentre && /^\/centre\/?$/i.test(window.location.pathname)) {
         authReady = true;

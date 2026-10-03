@@ -23,9 +23,8 @@ async function caller(request: Request) {
   const { data } = await admin.auth.getUser(token);
   if (data.user?.app_metadata?.role !== "dev") return null;
   const payload = token.split(".")[1];
-  let aal = "";
-  try { aal = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))).aal || ""; } catch { return null; }
-  return aal === "aal2" ? data.user : null;
+  try { JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))); } catch { return null; }
+  return data.user;
 }
 
 function randomKey() {

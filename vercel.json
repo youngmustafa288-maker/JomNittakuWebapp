@@ -4,6 +4,7 @@
     { "source": "/auth/callback", "destination": "/index.html" },
     { "source": "/centre", "destination": "/index.html" },
     { "source": "/centre/", "destination": "/index.html" },
+    { "source": "/centre/:slug", "destination": "/index.html" },
     { "source": "/coach/:slug", "destination": "/index.html" }
   ]
 }

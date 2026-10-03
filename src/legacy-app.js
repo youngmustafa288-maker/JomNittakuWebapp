@@ -965,6 +965,8 @@ export function initApp(config = {}) {
       const appRole = user.app_metadata?.role;
       const coachId = user.app_metadata?.coach_id;
       const metadataCentreId = user.app_metadata?.centre_id || null;
+      const isGoogleUser = user.app_metadata?.provider === "google"
+        || user.identities?.some(identity => identity.provider === "google");
       let centreId = metadataCentreId;
       let centreMembership = null;
       if (supabase && metadataCentreId) {
@@ -985,6 +987,15 @@ export function initApp(config = {}) {
           .maybeSingle();
         centreMembership = data || null;
         if (centreMembership) centreId = centreMembership.centre_id;
+      }
+      if (supabase && requestedCentre && isGoogleUser && !centreMembership) {
+        try {
+          const result = await invokePrivileged("dev-console", { action: "provision-google-member", centre_id: requestedCentre.id });
+          centreMembership = result.membership || null;
+          if (centreMembership) centreId = centreMembership.centre_id;
+        } catch (error) {
+          console.warn("Unable to provision Google centre membership", error);
+        }
       }
       let coach = state.coaches.find(item => item.id === coachId)
         || state.coaches.find(item => item.email?.toLowerCase() === user.email?.toLowerCase());
@@ -1011,8 +1022,6 @@ export function initApp(config = {}) {
         });
         state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
       }
-      const isGoogleUser = user.app_metadata?.provider === "google"
-        || user.identities?.some(identity => identity.provider === "google");
       if (!coach && isGoogleUser) {
         // A trigger can provision the row after the first session (or an
         // existing Google user may predate that trigger). Keep the session

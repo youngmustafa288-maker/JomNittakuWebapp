@@ -51,7 +51,38 @@ Deno.serve(async (request) => {
   const action = body.action || "list";
   const user = await caller(request);
   if (!user) return json({ error: "Authentication required" }, 401);
-  if (action !== "redeem-activation" && user.app_metadata?.role !== "dev") return json({ error: "Dev role required" }, 403);
+  const isGoogleUser = user.app_metadata?.provider === "google"
+    || user.identities?.some((identity) => identity.provider === "google");
+  if (action !== "redeem-activation" && action !== "provision-google-member" && user.app_metadata?.role !== "dev") return json({ error: "Dev role required" }, 403);
+
+  if (action === "provision-google-member") {
+    if (!isGoogleUser) return json({ error: "Google sign-in is required" }, 403);
+    const centreId = String(body.centre_id || "");
+    if (!centreId) return json({ error: "centre_id is required" }, 400);
+    const { data: centre } = await admin.from("centres").select("id,name,status").eq("id", centreId).maybeSingle();
+    if (!centre || centre.status !== "active") return json({ error: "This centre is unavailable" }, 400);
+    const { data: existing } = await admin.from("centre_memberships").select("centre_id, user_id, role").eq("centre_id", centreId).eq("user_id", user.id).maybeSingle();
+    if (existing) return json({ membership: existing });
+    const { error: membershipError } = await admin.from("centre_memberships").insert({ centre_id: centreId, user_id: user.id, role: "coach" });
+    if (membershipError) return json({ error: membershipError.message }, 500);
+    const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Coach";
+    const { error: coachError } = await admin.from("coaches").upsert({
+      id: user.id,
+      name,
+      branch: centre.name,
+      branch_address: centre.name,
+      email: user.email || "",
+      centre_id: centreId,
+    }, { onConflict: "id" });
+    if (coachError) {
+      await admin.from("centre_memberships").delete().eq("centre_id", centreId).eq("user_id", user.id);
+      return json({ error: coachError.message }, 500);
+    }
+    const { error: metadataError } = await admin.auth.admin.updateUserById(user.id, { app_metadata: { ...(user.app_metadata || {}), role: "coach", centre_id: centreId } });
+    if (metadataError) return json({ error: metadataError.message }, 500);
+    await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "membership.google-provisioned", metadata: {} });
+    return json({ membership: { centre_id: centreId, user_id: user.id, role: "coach" } });
+  }
 
   if (action === "redeem-activation") {
     const centreId = String(body.centre_id || "");

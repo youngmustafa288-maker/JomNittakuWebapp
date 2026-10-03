@@ -227,6 +227,8 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 - `jsPDF` wraps the canvas in a PDF.
 - The browser downloads PNG or PDF blobs locally.
 - `qrcode` generates coach and centre QR images.
+- Report view can open a WhatsApp share composer with report metadata and the reports route.
+- Certificate design uploads can replace the `brand-logo-art` layer; the uploaded logo URL and fit settings are persisted in the coach's `report_layout`.
 
 ## Database and Security Rules
 

@@ -170,6 +170,7 @@ export function initApp(config = {}) {
     let authReady = !supabase;
     let authInitializing = Boolean(supabase);
     let draftProfileUploadContext = null;
+    let certificateLogoUploadTarget = null;
     let persistTimer = null;
     let isApplyingRemoteState = false;
     let realtimeChannel = null;
@@ -893,11 +894,12 @@ export function initApp(config = {}) {
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
           const height = Number(layer.height ?? slice.height) || slice.height;
-          const source = `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=1`;
+          const source = layer.source || `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=1`;
           // Keep the footer decoration behind all editable text, even when a
           // previously saved layout assigned it a higher stacking order.
           const zIndex = layer.id === "footer-bar-art" ? 1 : (Number(layer.zIndex) || 2);
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${source}" alt="">${layer.textOverride ? `<span class="template-art-text">${escapeHtml(layer.textOverride)}</span>` : ""}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+          const objectFit = layer.objectFit || (layer.source ? "contain" : "fill");
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${escapeHtml(source)}" alt="" style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${layer.source ? "hidden" : ""}>${escapeHtml(layer.textOverride || "")}</span>${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};font-style:${escapeHtml(layer.fontStyle || "normal")};text-decoration:${escapeHtml(layer.textDecoration || "none")};background:${escapeHtml(layer.fill || "transparent")};`;
@@ -1560,6 +1562,7 @@ export function initApp(config = {}) {
                   ${state.auth.role === "coach" ? `<button class="secondary-btn" data-action="toggle-report-layout">${reportLayoutEditing ? "Done Editing" : "Edit Layout"}</button>` : ""}
                   <button class="primary-btn" data-action="download-report-pdf">Download PDF</button>
                   <button class="secondary-btn" data-action="download-report-png">Export PNG</button>
+                  <button class="secondary-btn whatsapp-share-btn" data-action="share-report-whatsapp" aria-label="Share report to WhatsApp">Share to WhatsApp</button>
                 </div>
               </div>
               ${reportLayoutEditing ? renderReportLayoutToolbar(coach) : ""}
@@ -1692,7 +1695,7 @@ export function initApp(config = {}) {
     function renderCertificateToolPanel(coach) {
       if (certificateEditorTool === "elements") return `<div class="certificate-tool-panel"><strong>Elements</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-shape"><span aria-hidden="true">□</span>Add shape</button></div>`;
       if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add Text Box</button></div>`;
-      if (certificateEditorTool === "uploads") return `<div class="certificate-tool-panel"><strong>Uploads</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-image"><span aria-hidden="true">+</span>Upload image</button></div>`;
+      if (certificateEditorTool === "uploads") return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Drop a logo here or choose a logo file"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Replace logo</b><small>Drop an image here or choose a file</small></span></div><button type="button" class="certificate-panel-action" data-action="replace-certificate-logo"><span aria-hidden="true">+</span>Choose logo</button><button type="button" class="certificate-panel-action" data-action="add-certificate-image"><span aria-hidden="true">+</span>Upload image</button></div>`;
       if (certificateEditorTool === "position") return `<div class="certificate-tool-panel"><strong>Position</strong><button type="button" class="certificate-panel-action" data-action="raise-certificate-layer">Bring forward</button><button type="button" class="certificate-panel-action" data-action="lower-certificate-layer">Send backward</button><button type="button" class="certificate-panel-action" data-action="toggle-certificate-lock">Lock or unlock</button></div>`;
       return renderCertificateLayerPanel(coach);
     }
@@ -2635,6 +2638,12 @@ export function initApp(config = {}) {
       document.getElementById("hiddenCertificateUpload")?.addEventListener("change", event => {
         const [file] = event.target.files || [];
         if (!file) return;
+        if (certificateLogoUploadTarget) {
+          const target = certificateLogoUploadTarget;
+          certificateLogoUploadTarget = null;
+          event.target.value = "";
+          return replaceCertificateLogo(file, target);
+        }
         uploadProfileImage(file, "certificate", getCurrentCoach().id).then(url => {
           const coach = getCurrentCoach();
           const layout = getReportLayout(coach);
@@ -2645,6 +2654,24 @@ export function initApp(config = {}) {
           return saveReportLayout(coach);
         }).catch(error => alert(error.message || "Unable to upload certificate image."));
       });
+      const logoDropzone = document.querySelector("[data-logo-dropzone]");
+      if (logoDropzone) {
+        logoDropzone.addEventListener("click", () => triggerCertificateLogoUpload());
+        logoDropzone.addEventListener("dragover", event => { event.preventDefault(); logoDropzone.classList.add("is-dragging"); });
+        logoDropzone.addEventListener("dragleave", () => logoDropzone.classList.remove("is-dragging"));
+        logoDropzone.addEventListener("drop", event => {
+          event.preventDefault();
+          logoDropzone.classList.remove("is-dragging");
+          const file = [...(event.dataTransfer?.files || [])].find(item => item.type.startsWith("image/"));
+          if (file) replaceCertificateLogo(file);
+        });
+        logoDropzone.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            triggerCertificateLogoUpload();
+          }
+        });
+      }
     }
 
     function updateSelectedReportLayout(changes) {
@@ -2731,6 +2758,8 @@ export function initApp(config = {}) {
       if (action === "close-report-view") return navigate("reports");
       if (action === "download-report-pdf") return downloadReportPdf();
       if (action === "download-report-png") return downloadReportPng();
+      if (action === "share-report-whatsapp") return shareReportToWhatsApp();
+      if (action === "replace-certificate-logo") return triggerCertificateLogoUpload();
       if (action === "save-report-layout") {
         const coach = getCurrentCoach();
         if (!coach) return;
@@ -3510,6 +3539,41 @@ export function initApp(config = {}) {
     function triggerProfileUpload(context) {
       draftProfileUploadContext = context;
       document.getElementById("hiddenProfileUpload")?.click();
+    }
+
+    function triggerCertificateLogoUpload() {
+      certificateLogoUploadTarget = "brand-logo-art";
+      document.getElementById("hiddenCertificateUpload")?.click();
+    }
+
+    async function replaceCertificateLogo(file, targetId = "brand-logo-art") {
+      const coach = getCurrentCoach();
+      if (!coach) return;
+      try {
+        const url = await uploadProfileImage(file, "certificate", coach.id);
+        const layout = getReportLayout(coach);
+        const layer = (layout.layers || []).find(entry => entry.id === targetId);
+        if (!layer) throw new Error("The logo layer is unavailable.");
+        layer.source = url;
+        layer.objectFit = "contain";
+        layer.objectPosition = "center";
+        layer.textOverride = "";
+        selectedReportOverlay = targetId;
+        coach.reportLayout = layout;
+        await saveReportLayout(coach);
+        render();
+      } catch (error) {
+        alert(error.message || "Unable to replace logo.");
+      }
+    }
+
+    function shareReportToWhatsApp() {
+      const report = state.reports.find(item => item.id === state.ui.reportViewId);
+      if (!report) return;
+      const student = getStudentById(report.studentId);
+      const coach = getCoachById(report.coachId);
+      const text = `Training report ${report.ref || report.id}\nStudent: ${student?.name || "Student"}\nLesson ${report.lessonNumber} · ${formatDate(report.date)}\nCoach: ${coach?.name || "Coach"}\n${window.location.origin}/reports`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
     }
 
     async function uploadProfileImage(file, kind, recordId) {

@@ -1566,6 +1566,29 @@
       flex-wrap: wrap;
     }
 
+    .whatsapp-share-btn { border-color: #25d366; color: #118c3b; }
+    .whatsapp-share-btn:hover { background: #eafbf0; border-color: #1fbd5b; }
+
+    .certificate-logo-dropzone {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 62px;
+      padding: 10px;
+      border: 1px dashed #b8c2d1;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #1f2937;
+      cursor: pointer;
+    }
+    .certificate-logo-dropzone:hover,
+    .certificate-logo-dropzone:focus-visible,
+    .certificate-logo-dropzone.is-dragging { border-color: #7c3aed; background: #f5f3ff; outline: none; }
+    .certificate-logo-dropzone-icon { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #c4b5fd; border-radius: 50%; color: #6d28d9; font-size: 1.15rem; }
+    .certificate-logo-dropzone b,
+    .certificate-logo-dropzone small { display: block; }
+    .certificate-logo-dropzone small { margin-top: 3px; color: #64748b; font-size: .72rem; }
+
     .remarks-box {
       margin: 18px 0 0;
       margin-bottom: 0;

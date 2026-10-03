@@ -93,9 +93,9 @@ Deno.serve(async (request) => {
     const { data: centre } = await admin.from("centres").select("id,status,activated_at").eq("id", centreId).maybeSingle();
     if (!centre || centre.status !== "active") return json({ error: "This centre is unavailable" }, 400);
     if (centre.activated_at) return json({ ok: true, activated_at: centre.activated_at });
-    const { data: keys } = await admin.from("activation_keys").select("id,key_hash,expires_at,revoked_at").eq("centre_id", centreId).is("redeemed_at", null).is("revoked_at", null).order("generated_at", { ascending: false });
+    const { data: keys } = await admin.from("activation_keys").select("id,key_hash,key_value,expires_at,revoked_at").eq("centre_id", centreId).is("redeemed_at", null).is("revoked_at", null).order("generated_at", { ascending: false });
     const codeHash = await hash(code);
-    const matchingKey = (keys || []).find((key) => (!key.expires_at || new Date(key.expires_at).getTime() > Date.now()) && key.key_hash === codeHash);
+    const matchingKey = (keys || []).find((key) => (!key.expires_at || new Date(key.expires_at).getTime() > Date.now()) && (key.key_hash === codeHash || key.key_value === code));
     if (!matchingKey) return json({ error: "Invalid or expired activation code" }, 400);
     const activatedAt = new Date().toISOString();
     const { error: keyError } = await admin.from("activation_keys").update({ redeemed_by: user.id, redeemed_at: activatedAt }).eq("id", matchingKey.id);

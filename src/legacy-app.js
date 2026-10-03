@@ -462,7 +462,15 @@ export function initApp(config = {}) {
     async function invokePrivileged(functionName, body) {
       if (!supabase) throw new Error("Supabase is not configured.");
       const { data, error } = await supabase.functions.invoke(functionName, { body });
-      if (error) throw error;
+      if (error) {
+        let detail = "";
+        try {
+          const response = error.context;
+          const payload = response && typeof response.json === "function" ? await response.json() : null;
+          detail = payload?.error || "";
+        } catch (parseError) {}
+        throw new Error(detail || error.message || "The server rejected this request.");
+      }
       if (data?.error) throw new Error(data.error);
       return data;
     }

@@ -29,12 +29,27 @@ Deno.serve(async (request) => {
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }) });
     const tokens = await tokenResponse.json();
     if (!tokenResponse.ok || !tokens.refresh_token) return json({ error: "Google token exchange failed" }, 502);
+    const { data: centre } = await admin.from("centres").select("name").eq("id", centreId).maybeSingle();
+    const folderName = String(centre?.name || "Centre").trim() || "Centre";
+    let rootFolderId = "";
+    let rootFolderUrl = "https://drive.google.com";
+    if (tokens.access_token) {
+      const folderResponse = await fetch("https://www.googleapis.com/drive/v3/files", {
+        method: "POST",
+        headers: { authorization: `Bearer ${tokens.access_token}`, "content-type": "application/json" },
+        body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" }),
+      });
+      const folder = await folderResponse.json();
+      if (!folderResponse.ok || !folder.id) return json({ error: "Google Drive folder creation failed" }, 502);
+      rootFolderId = folder.id;
+      rootFolderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(folder.id)}`;
+    }
     const keyBytes = Uint8Array.from(atob(encryptionKey), (character) => character.charCodeAt(0));
     const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["encrypt"]);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, new TextEncoder().encode(tokens.refresh_token));
     const sealed = `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...new Uint8Array(encrypted)))}`;
-    await admin.from("drive_connections").upsert({ centre_id: centreId, google_account_email: String(body.google_account_email || "Connected Google account"), root_folder_id: String(body.root_folder_id || "pending"), root_folder_name: String(body.root_folder_name || "Dao Sports Method"), root_folder_url: String(body.root_folder_url || "https://drive.google.com"), encrypted_refresh_token: sealed, status: "connected", token_expires_at: tokens.expires_in ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString() : null });
+    await admin.from("drive_connections").upsert({ centre_id: centreId, google_account_email: String(body.google_account_email || "Connected Google account"), root_folder_id: rootFolderId || String(body.root_folder_id || "pending"), root_folder_name: folderName, root_folder_url: rootFolderUrl, encrypted_refresh_token: sealed, status: "connected", token_expires_at: tokens.expires_in ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString() : null });
     await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "drive.connected", metadata: { token_stored: true } });
     return json({ ok: true });
   }
@@ -59,6 +74,7 @@ Deno.serve(async (request) => {
   authorizationUrl.searchParams.set("access_type", "offline");
   authorizationUrl.searchParams.set("prompt", "consent");
   authorizationUrl.searchParams.set("scope", "https://www.googleapis.com/auth/drive.file");
-  authorizationUrl.searchParams.set("state", crypto.randomUUID());
+  const { data: centre } = await admin.from("centres").select("slug").eq("id", centreId).maybeSingle();
+  authorizationUrl.searchParams.set("state", `${centreId}|${centre?.slug || ""}|${crypto.randomUUID()}`);
   return json({ authorization_url: authorizationUrl.toString() });
 });

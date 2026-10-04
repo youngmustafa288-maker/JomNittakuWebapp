@@ -3977,7 +3977,8 @@ export function initApp(config = {}) {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         driveOAuthCode = callbackParams.get("code") || "";
-        const callbackCentreSlug = callbackParams.get("centre") || sessionStorage.getItem("pendingCentreSlug");
+        const oauthState = callbackParams.get("state") || "";
+        const callbackCentreSlug = callbackParams.get("centre") || oauthState.split("|")[1] || sessionStorage.getItem("pendingCentreSlug");
         if (callbackCentreSlug) {
           const { data } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
           if (data?.status === "active") {
@@ -4029,7 +4030,7 @@ export function initApp(config = {}) {
             await refreshPrivilegedState().catch(() => {});
             if (driveOAuthCode && state.auth.role === "centre_admin" && state.auth.centreId) {
               try {
-                await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode });
+                await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: oauthState });
                 await refreshPrivilegedState();
                 if (requestedCentre?.slug) window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(requestedCentre.slug)}`);
               } catch (error) {

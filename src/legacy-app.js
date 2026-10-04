@@ -3961,6 +3961,7 @@ export function initApp(config = {}) {
 
     (async function bootstrap() {
       let callbackError = "";
+      let driveOAuthCode = "";
       const centrePath = window.location.pathname.match(/^\/centre\/([^/]+)\/?$/i);
       if (centrePath && supabase) {
         let slug = "";
@@ -3974,13 +3975,14 @@ export function initApp(config = {}) {
       if (supabase && window.location.pathname === "/auth/callback") {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
+        driveOAuthCode = callbackParams.get("code") || "";
         const callbackCentreSlug = callbackParams.get("centre") || sessionStorage.getItem("pendingCentreSlug");
         if (callbackCentreSlug) {
           const { data } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
           if (data?.status === "active") {
             requestedCentre = data;
             sessionStorage.removeItem("pendingCentreSlug");
-            window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(data.slug)}`);
+            if (!driveOAuthCode) window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(data.slug)}`);
           } else {
             centreRouteUnavailable = true;
             window.history.replaceState({}, document.title, "/");
@@ -4024,6 +4026,15 @@ export function initApp(config = {}) {
             await refreshStudentsFromSupabase();
             await refreshCoachAccountCount();
             await refreshPrivilegedState().catch(() => {});
+            if (driveOAuthCode && state.auth.role === "centre_admin" && state.auth.centreId) {
+              try {
+                await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode });
+                await refreshPrivilegedState();
+                if (requestedCentre?.slug) window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(requestedCentre.slug)}`);
+              } catch (error) {
+                callbackError = error.message || "Unable to connect Google Drive.";
+              }
+            }
             state.centreProfile = await loadPublicCentreProfile();
           } else {
             state.centreProfile = normalizeCentreProfile(state.centreProfile);

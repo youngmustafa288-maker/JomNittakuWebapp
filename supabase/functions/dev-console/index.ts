@@ -40,6 +40,13 @@ function appUrl() {
   return (Deno.env.get("APP_URL") || "https://jom-nittaku-webapp.vercel.app").trim().replace(/\/+$/, "");
 }
 
+function displayEmail(value: unknown) {
+  const email = String(value || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
+  if (email.toLowerCase().endsWith("@accounts.jomnittaku.app")) return "";
+  return email;
+}
+
 async function hash(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -128,7 +135,7 @@ Deno.serve(async (request) => {
       ].map((membership) => ({
         ...membership,
         ...(coachMap.get(membership.user_id) || {}),
-        email: userMap.get(membership.user_id)?.email || "",
+        email: displayEmail(userMap.get(membership.user_id)?.email),
         name: userMap.get(membership.user_id)?.user_metadata?.full_name || userMap.get(membership.user_id)?.email || "Coach",
       })),
     })) });

@@ -2138,7 +2138,7 @@ export function initApp(config = {}) {
               const licence = getLatestCentreLicence(centre);
               const key = getLatestActivationKey(centre);
               const loginUrl = centre.login_url || `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`;
-              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${escapeHtml(centre.sport || "Not set")}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button></td></tr>`;
+              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${escapeHtml(centre.sport || "Not set")}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="icon-btn" data-action="delete-centre" data-centre-id="${centre.id}" title="Delete centre" aria-label="Delete ${escapeHtml(centre.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`;
             }).join("") : `<tr><td colspan="7" class="muted">No centres yet.</td></tr>`}
           </tbody></table></div>
         </div>
@@ -2792,6 +2792,18 @@ export function initApp(config = {}) {
       if (action === "centre-onboarding-submit") return submitCentreOnboarding();
       if (action === "view-centre-details") { devCentreDetailModal = { centreId: event.currentTarget.dataset.centreId }; return render(); }
       if (action === "close-centre-details") { devCentreDetailModal = null; return render(); }
+      if (action === "delete-centre") return (async () => {
+        const centreId = event.currentTarget.dataset.centreId;
+        const centre = (state.devCentres || []).find(item => String(item.id) === String(centreId));
+        if (!centre || !window.confirm(`Delete ${centre.name}? This permanently removes the centre, its memberships, licences, activation keys, and Drive data.`)) return;
+        try {
+          await invokePrivileged("dev-console", { action: "delete-centre", centre_id: centreId });
+          await refreshPrivilegedState();
+          render();
+        } catch (error) {
+          alert(error.message || "Unable to delete centre.");
+        }
+      })();
       if (action === "centre-activation-logout") return logout();
       if (action === "upload-centre-logo") {
         const input = document.getElementById("hiddenCentreLogoUpload");

@@ -221,6 +221,27 @@ Deno.serve(async (request) => {
     await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "centre.logo-updated", metadata: {} });
     return json({ ok: true, logo_url: logoUrl });
   }
+  if (action === "delete-centre") {
+    const centreId = String(body.centre_id || "");
+    if (!centreId) return json({ error: "centre_id is required" }, 400);
+    const { data: centre, error: centreLookupError } = await admin.from("centres").select("id,name").eq("id", centreId).maybeSingle();
+    if (centreLookupError) return json({ error: centreLookupError.message }, 500);
+    if (!centre) return json({ error: "Centre not found" }, 404);
+    const { data: memberships, error: membershipsError } = await admin.from("centre_memberships").select("user_id").eq("centre_id", centreId);
+    if (membershipsError) return json({ error: membershipsError.message }, 500);
+    const { error: deleteError } = await admin.from("centres").delete().eq("id", centreId);
+    if (deleteError) return json({ error: deleteError.message }, 500);
+    for (const membership of memberships || []) {
+      const userId = membership.user_id;
+      const { count } = await admin.from("centre_memberships").select("centre_id", { count: "exact", head: true }).eq("user_id", userId);
+      if (count !== 0) continue;
+      const { data: account } = await admin.auth.admin.getUserById(userId);
+      if (account.user?.app_metadata?.centre_id === centreId) {
+        await admin.auth.admin.deleteUser(userId);
+      }
+    }
+    return json({ ok: true, centre_id: centreId, name: centre.name });
+  }
   if (action === "update-member-role") {
     const centreId = String(body.centre_id || "");
     const userId = String(body.user_id || "");

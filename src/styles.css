@@ -1173,6 +1173,14 @@
       color: var(--red-600);
       font-weight: 700;
       border: 1px solid rgba(214, 40, 69, 0.16);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
     }
 
     .table-edit-btn {

@@ -3972,7 +3972,8 @@ export function initApp(config = {}) {
       } else if (centrePath) {
         centreRouteUnavailable = true;
       }
-      if (supabase && window.location.pathname === "/auth/callback") {
+      const isDriveCallbackPath = window.location.pathname === "/api/auth/google-drive/callback";
+      if (supabase && (window.location.pathname === "/auth/callback" || isDriveCallbackPath)) {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         driveOAuthCode = callbackParams.get("code") || "";

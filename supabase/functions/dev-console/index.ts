@@ -119,7 +119,13 @@ Deno.serve(async (request) => {
         ...key,
         redeemed_by_email: userMap.get(key.redeemed_by)?.email || "",
       })),
-      centre_memberships: (item.centre_memberships || []).map((membership) => ({
+      centre_memberships: [
+        ...(item.centre_memberships || []),
+        ...(coaches || [])
+          .filter((coach) => coach.centre_id === item.id
+            && !(item.centre_memberships || []).some((membership) => membership.user_id === coach.id))
+          .map((coach) => ({ user_id: coach.id, role: "coach" })),
+      ].map((membership) => ({
         ...membership,
         ...(coachMap.get(membership.user_id) || {}),
         email: userMap.get(membership.user_id)?.email || "",
@@ -213,7 +219,10 @@ Deno.serve(async (request) => {
     const userId = String(body.user_id || "");
     const role = body.role === "centre_admin" ? "centre_admin" : "coach";
     if (!centreId || !userId) return json({ error: "centre_id and user_id are required" }, 400);
-    const { data: membership, error: membershipError } = await admin.from("centre_memberships").update({ role }).eq("centre_id", centreId).eq("user_id", userId).select().maybeSingle();
+    const { data: membership, error: membershipError } = await admin.from("centre_memberships")
+      .upsert({ centre_id: centreId, user_id: userId, role }, { onConflict: "centre_id,user_id" })
+      .select()
+      .single();
     if (membershipError || !membership) return json({ error: membershipError?.message || "Centre membership not found" }, 400);
     const { data: target } = await admin.auth.admin.getUserById(userId);
     if (!target.user) return json({ error: "User not found" }, 404);

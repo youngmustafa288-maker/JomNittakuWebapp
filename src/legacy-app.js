@@ -2089,16 +2089,15 @@ export function initApp(config = {}) {
 
     function renderCentreSettingsPage() {
       if (state.auth.role === "dev") return renderDevConsolePage();
-      const centreName = state.auth.centreId ? `Centre ${state.auth.centreId.slice(0, 8)}` : "Your centre";
       const isCoach = state.auth.role === "coach";
       const links = isCoach ? (getCurrentCoach().links || []) : (state.centreProfile.links || []);
       const drive = state.driveConnection || {};
       return `
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
           ${state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card" style="margin-bottom:16px;">
-            <div class="section-title"><h2>Google Drive</h2><p>Centre-owned report and asset storage for ${escapeHtml(centreName)}.</p></div>
+            <div class="section-title"><h2>Google Drive</h2><p>Keep your centre's reports and assets safely stored.</p></div>
             ${drive.status === "connected" ? `<div class="review-card"><div class="review-row"><strong>Connected account</strong><span>${escapeHtml(drive.google_account_email || "Connected")}</span></div><div class="review-row"><strong>Root folder</strong><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(drive.root_folder_name || "Open Drive folder")}</a></div><div class="review-row"><strong>Last successful sync</strong><span>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString()) : "Not yet"}</span></div></div>
-              <div class="profile-actions"><button class="secondary-btn" data-action="retry-drive-sync">Retry failed sync</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect the centre Google account to create the report folder structure and sync exports.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect Google Drive</span></button>`}
+              <div class="profile-actions"><button class="secondary-btn" data-action="retry-drive-sync">Retry failed sync</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your Google account to keep all centre reports safely backed up.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect Google Drive</span></button>`}
           </div>` : ""}
           <div class="profile-card centre-settings-card">
             <div class="section-title"><h2>${isCoach ? "Coach Links" : "Centre Links"}</h2></div>

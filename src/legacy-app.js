@@ -2195,12 +2195,12 @@ export function initApp(config = {}) {
           <div class="review-row"><strong>Centre logo</strong><span>${centre.logo_url ? "Configured" : "Not configured"}</span></div>
           <div class="review-row"><strong>Centre link</strong><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">${escapeHtml(loginUrl)}</a></div>
           <div class="review-row"><strong>Centre status</strong><span>${escapeHtml(centre.status || "Unknown")}</span></div>
-          <div class="review-row"><strong>Centre created</strong><span>${centre.created_at ? escapeHtml(new Date(centre.created_at).toLocaleString()) : "Not available"}</span></div>
+          <div class="review-row"><strong>Centre created</strong><span>${centre.created_at ? escapeHtml(new Date(centre.created_at).toLocaleDateString()) : "Not available"}</span></div>
           <div class="review-row"><strong>Licence</strong><span>${licence?.status ? escapeHtml(licence.status) : "No licence"}${licence?.expires_at ? ` · expires ${escapeHtml(new Date(licence.expires_at).toLocaleDateString())}` : ""}</span></div>
           <div class="review-row"><strong>Activation code</strong><code>${escapeHtml(key?.key_value || "Unavailable")}</code></div>
           <div class="review-row"><strong>Activation status</strong><span class="status-pill ${activationKeyStatusClass(key)}">${escapeHtml(getActivationKeyStatus(key))}</span></div>
-          ${key?.generated_at ? `<div class="review-row"><strong>Key generated</strong><span>${escapeHtml(new Date(key.generated_at).toLocaleString())}</span></div>` : ""}
-          ${key?.redeemed_at ? `<div class="review-row"><strong>Key activated</strong><span>${escapeHtml(new Date(key.redeemed_at).toLocaleString())}</span></div>` : ""}
+          ${key?.generated_at ? `<div class="review-row"><strong>Key generated</strong><span>${escapeHtml(new Date(key.generated_at).toLocaleDateString())}</span></div>` : ""}
+          ${key?.redeemed_at ? `<div class="review-row"><strong>Key activated</strong><span>${escapeHtml(new Date(key.redeemed_at).toLocaleDateString())}</span></div>` : ""}
           ${key?.redeemed_by_email ? `<div class="review-row"><strong>Activated by</strong><span>${escapeHtml(key.redeemed_by_email)}</span></div>` : ""}
           <div class="review-row"><strong>Centre accounts</strong><span>${members.length}</span></div>
         </div>

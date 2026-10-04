@@ -920,8 +920,37 @@
     }
 
     .status-active { color: #166534; background: #dcfce7; }
+    .status-inactive { color: #991b1b; background: #fee2e2; }
     .status-pending { color: #92400e; background: #fef3c7; }
     .status-muted { color: var(--slate-500); background: var(--slate-100); }
+
+    .centre-sport {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .centre-sport-emoji {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      background: var(--slate-100);
+      font-size: 1.05rem;
+      line-height: 1;
+      animation: centre-sport-bob 2.8s ease-in-out infinite;
+    }
+
+    @keyframes centre-sport-bob {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-2px) rotate(-4deg); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .centre-sport-emoji { animation: none; }
+    }
 
     .field,
     .field textarea,

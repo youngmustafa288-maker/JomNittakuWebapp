@@ -2138,11 +2138,25 @@ export function initApp(config = {}) {
               const licence = getLatestCentreLicence(centre);
               const key = getLatestActivationKey(centre);
               const loginUrl = centre.login_url || `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`;
-              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${escapeHtml(centre.sport || "Not set")}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status">${escapeHtml(centre.status)}</td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="icon-btn" data-action="delete-centre" data-centre-id="${centre.id}" title="Delete centre" aria-label="Delete ${escapeHtml(centre.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`;
+              const sport = centre.sport || "Not set";
+              const status = String(centre.status || "").toLowerCase() === "active" ? "Active" : "Inactive";
+              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${centreSportMarkup(sport)}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status"><span class="status-pill ${status === "Active" ? "status-active" : "status-inactive"}">${status}</span></td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="icon-btn" data-action="delete-centre" data-centre-id="${centre.id}" title="Delete centre" aria-label="Delete ${escapeHtml(centre.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`;
             }).join("") : `<tr><td colspan="7" class="muted">No centres yet.</td></tr>`}
           </tbody></table></div>
         </div>
       </section>`;
+    }
+
+    function centreSportMarkup(sport) {
+      const label = String(sport || "Not set");
+      const key = label.toLowerCase().replace(/\s+/g, " ").trim();
+      const emoji = key.includes("badminton") ? "🏸"
+        : key.includes("football") ? "⚽"
+        : key.includes("table tennis") ? "🏓"
+        : key.includes("tennis") ? "🎾"
+        : key.includes("basketball") ? "🏀"
+        : "🏅";
+      return `<span class="centre-sport"><span class="centre-sport-emoji" aria-hidden="true">${emoji}</span><span>${escapeHtml(label)}</span></span>`;
     }
 
     function getLatestCentreLicence(centre) {

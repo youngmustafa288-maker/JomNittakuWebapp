@@ -1,6 +1,7 @@
 {
   "framework": "vite",
   "rewrites": [
+    { "source": "/api/auth/google-drive/callback", "destination": "/auth/callback" },
     { "source": "/auth/callback", "destination": "/index.html" },
     { "source": "/centre", "destination": "/index.html" },
     { "source": "/centre/", "destination": "/index.html" },

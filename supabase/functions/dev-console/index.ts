@@ -137,7 +137,7 @@ Deno.serve(async (request) => {
         ...(coachMap.get(membership.user_id) || {}),
         email: displayEmail(userMap.get(membership.user_id)?.email),
         name: userMap.get(membership.user_id)?.user_metadata?.full_name || userMap.get(membership.user_id)?.email || "Coach",
-      })),
+      })).filter((membership) => membership.email),
     })) });
   }
   if (action === "create-centre") {

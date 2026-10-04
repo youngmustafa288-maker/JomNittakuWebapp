@@ -675,6 +675,18 @@
       flex: 0 0 auto;
     }
 
+    .drive-heading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .drive-connection-card.is-connected {
+      border-color: rgba(24, 169, 87, 0.42);
+      box-shadow: 0 18px 38px rgba(24, 169, 87, 0.1);
+    }
+
     .primary-btn:hover,
     .secondary-btn:hover,
     .ghost-btn:hover,

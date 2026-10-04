@@ -4050,6 +4050,7 @@ export function initApp(config = {}) {
     (async function bootstrap() {
       let callbackError = "";
       let driveOAuthCode = "";
+      let driveOAuthState = "";
       const centrePath = window.location.pathname.match(/^\/centre\/([^/]+)\/?$/i);
       if (centrePath && supabase) {
         let slug = "";
@@ -4065,8 +4066,8 @@ export function initApp(config = {}) {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         driveOAuthCode = callbackParams.get("code") || "";
-        const oauthState = callbackParams.get("state") || "";
-        const callbackCentreSlug = callbackParams.get("centre") || oauthState.split("|")[1] || sessionStorage.getItem("pendingCentreSlug");
+        driveOAuthState = callbackParams.get("state") || "";
+        const callbackCentreSlug = callbackParams.get("centre") || driveOAuthState.split("|")[1] || sessionStorage.getItem("pendingCentreSlug");
         if (callbackCentreSlug) {
           const { data } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
           if (data?.status === "active") {
@@ -4118,7 +4119,7 @@ export function initApp(config = {}) {
             await refreshPrivilegedState().catch(() => {});
             if (driveOAuthCode && state.auth.centreId) {
               try {
-                const driveResult = await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: oauthState });
+                const driveResult = await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: driveOAuthState });
                 // The callback response contains the row written by the Edge
                 // Function. Apply it immediately so the first post-redirect
                 // render cannot show stale disconnected state.

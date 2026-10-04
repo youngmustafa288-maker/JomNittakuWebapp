@@ -661,6 +661,20 @@
       box-shadow: 0 14px 26px rgba(214, 40, 69, 0.24);
     }
 
+    .drive-connect-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+
+    .drive-logo {
+      width: 19px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+
     .primary-btn:hover,
     .secondary-btn:hover,
     .ghost-btn:hover,

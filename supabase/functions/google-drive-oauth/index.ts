@@ -1,9 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" } });
 
 Deno.serve(async (request) => {
+  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return json({ error: "Authentication required" }, 401);
   const { data: userData } = await admin.auth.getUser(token);
@@ -43,5 +49,16 @@ Deno.serve(async (request) => {
   }
   // OAuth exchange and token encryption belong here. Secrets are read only from
   // Edge Function environment variables and never sent to the browser.
-  return json({ authorization_url: `${Deno.env.get("GOOGLE_OAUTH_AUTHORIZE_URL") || "https://accounts.google.com/o/oauth2/v2/auth"}?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file&state=${crypto.randomUUID()}` });
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
+  if (!clientId || !redirectUri) return json({ error: "Drive OAuth is not configured" }, 503);
+  const authorizationUrl = new URL(Deno.env.get("GOOGLE_OAUTH_AUTHORIZE_URL") || "https://accounts.google.com/o/oauth2/v2/auth");
+  authorizationUrl.searchParams.set("client_id", clientId);
+  authorizationUrl.searchParams.set("redirect_uri", redirectUri);
+  authorizationUrl.searchParams.set("response_type", "code");
+  authorizationUrl.searchParams.set("access_type", "offline");
+  authorizationUrl.searchParams.set("prompt", "consent");
+  authorizationUrl.searchParams.set("scope", "https://www.googleapis.com/auth/drive.file");
+  authorizationUrl.searchParams.set("state", crypto.randomUUID());
+  return json({ authorization_url: authorizationUrl.toString() });
 });

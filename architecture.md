@@ -70,7 +70,8 @@ Vercel rewrites application routes to `index.html` (`vercel.json`), then `legacy
 - `/centre` - public centre entry page
 - `/centre/:slug` - centre-specific login page; after a matching centre account signs in, the same route renders that centre's dashboard
 - `/coach/:slug` - public coach profile
-- `/auth/callback` - OAuth callback processing, including the centre slug carried through centre Google SSO
+- `/auth/callback` - OAuth callback processing, including the centre slug carried through centre Google SSO and Google Drive OAuth
+- `/api/auth/google-drive/callback` - Google Drive's configured callback URL; Vercel rewrites it to `/auth/callback` so the SPA can process the code and return to `/centre/:slug`
 
 There is no route table or router package. Route behavior is implemented inside the bootstrap and render logic.
 
@@ -193,6 +194,8 @@ Centre-admin Google Drive connection operations, including:
 
 - starting OAuth
 - exchanging an OAuth callback code
+- carrying the centre ID and slug in OAuth state so the callback preserves the centre route
+- creating a Google Drive root folder named after the centre before marking the connection as connected
 - encrypting and storing refresh tokens
 - disconnecting Drive
 - queuing a retry sync job

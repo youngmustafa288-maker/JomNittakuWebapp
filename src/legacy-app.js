@@ -8,10 +8,6 @@ export function initApp(config = {}) {
     const SUPABASE_KEY = config.supabaseKey || "";
     const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate%20Template.jpg?v=4";
     const REPORT_TEMPLATE_LAYER_ROOT = config.reportTemplateLayerRoot || "/certificate-layers";
-    const MONTH_LABEL = new Intl.DateTimeFormat("en-US", {
-      month: "long",
-      year: "numeric"
-    }).format(new Date());
     const CURRENT_MONTH_PREFIX = (() => {
       const now = new Date();
       return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -178,6 +174,11 @@ export function initApp(config = {}) {
     let renderQueued = false;
     let appEventsBound = false;
     let reportFilterTimer = null;
+    let overviewDateFilter = "";
+    let overviewMonthFilter = "";
+    let overviewWeekFilter = "week1";
+    let overviewDateFrom = "";
+    let overviewDateTo = "";
     let coachFilterTimer = null;
     let studentFilterTimer = null;
     let coachAccountCount = 0;
@@ -480,7 +481,7 @@ export function initApp(config = {}) {
       if (state.auth.role === "dev") {
         const data = await invokePrivileged("dev-console", { action: "list" });
         state.devCentres = data.centres || [];
-      } else if (state.auth.role === "centre_admin" && state.auth.centreId) {
+      } else if (["centre_admin", "coach"].includes(state.auth.role) && state.auth.centreId) {
         const { data } = await supabase.from("drive_connections").select("*").eq("centre_id", state.auth.centreId).maybeSingle();
         state.driveConnection = data || null;
       }
@@ -1251,7 +1252,7 @@ export function initApp(config = {}) {
               <div class="logo-ball"></div>
               <div class="logo-copy">
                 <strong>JomNittaku</strong>
-                <span>${MONTH_LABEL}</span>
+                <span>Coach reporting</span>
               </div>
             </div>
           </div>
@@ -1277,7 +1278,7 @@ export function initApp(config = {}) {
               ${profile.photo ? "" : initials(profile.name)}
             </button>
             <div class="avatar-dropdown ${state.ui.avatarMenuOpen ? "" : "hidden"}">
-              <button class="dropdown-item" data-action="open-profile">Profile</button>
+              ${state.auth.role === "dev" ? "" : `<button class="dropdown-item" data-action="open-profile">Profile</button>`}
               <button class="dropdown-item" data-action="logout">Logout</button>
             </div>
           </div>
@@ -1300,7 +1301,8 @@ export function initApp(config = {}) {
     }
 
     function renderOverviewPage() {
-      const visibleReports = getVisibleReports().slice(0, 5);
+      const reportMonths = [...new Set(getVisibleReports().map(report => report.date.slice(0, 7)))].sort().reverse();
+      const visibleReports = getVisibleReports().filter(report => withinOverviewDateFilter(report.date)).slice(0, 5);
       return `
         <section class="page ${state.ui.page === "overview" ? "active" : ""}">
           ${renderStats()}
@@ -1310,6 +1312,28 @@ export function initApp(config = {}) {
                 <h2>Recent Reports</h2>
               </div>
               <button class="plain-link table-title-link" data-nav="reports">View all <span aria-hidden="true">→</span></button>
+            </div>
+            <div class="overview-filter-bar" aria-label="Filter overview reports">
+              <select id="overviewDateFilter" class="filter-select" aria-label="Overview date filter">
+                <option value="" ${overviewDateFilter === "" ? "selected" : ""}>All dates</option>
+                <option value="month" ${overviewDateFilter === "month" ? "selected" : ""}>By month</option>
+                <option value="week" ${overviewDateFilter === "week" ? "selected" : ""}>By week</option>
+                <option value="custom" ${overviewDateFilter === "custom" ? "selected" : ""}>Custom range</option>
+              </select>
+              <select id="overviewMonthFilter" class="filter-select ${overviewDateFilter === "month" || overviewDateFilter === "week" ? "" : "hidden"}" aria-label="Overview month">
+                <option value="">All months</option>
+                ${reportMonths.map(month => `<option value="${month}" ${overviewMonthFilter === month ? "selected" : ""}>${escapeHtml(new Date(`${month}-01T00:00:00`).toLocaleDateString("en-MY", { month: "long", year: "numeric" }))}</option>`).join("")}
+              </select>
+              <select id="overviewWeekFilter" class="filter-select ${overviewDateFilter === "week" ? "" : "hidden"}" aria-label="Overview week">
+                <option value="week1" ${overviewWeekFilter === "week1" ? "selected" : ""}>1st - 7th</option>
+                <option value="week2" ${overviewWeekFilter === "week2" ? "selected" : ""}>8th - 14th</option>
+                <option value="week3" ${overviewWeekFilter === "week3" ? "selected" : ""}>15th - 21st</option>
+                <option value="week4" ${overviewWeekFilter === "week4" ? "selected" : ""}>22nd - end of month</option>
+              </select>
+              <div id="overviewCustomDates" class="overview-custom-dates ${overviewDateFilter === "custom" ? "" : "hidden"}">
+                <input id="overviewDateFrom" class="text-input" type="date" value="${escapeHtml(overviewDateFrom)}" aria-label="Overview start date">
+                <input id="overviewDateTo" class="text-input" type="date" value="${escapeHtml(overviewDateTo)}" aria-label="Overview end date">
+              </div>
             </div>
             <div class="table-wrap">
               <table>
@@ -1343,6 +1367,17 @@ export function initApp(config = {}) {
           </div>
         </section>
       `;
+    }
+
+    function withinOverviewDateFilter(date) {
+      if (!overviewDateFilter) return true;
+      if (overviewDateFilter === "month") return !overviewMonthFilter || date.startsWith(overviewMonthFilter);
+      if (overviewDateFilter === "custom") return (!overviewDateFrom || date >= overviewDateFrom) && (!overviewDateTo || date <= overviewDateTo);
+      if (overviewDateFilter === "week") {
+        if (overviewMonthFilter && !date.startsWith(overviewMonthFilter)) return false;
+        return withinDateBucket(date, overviewWeekFilter);
+      }
+      return true;
     }
 
     function renderReportsPage() {
@@ -2041,7 +2076,7 @@ export function initApp(config = {}) {
             <header class="page-header">
               <div class="header-copy">
                 <h1>Academy Overview 🏓</h1>
-              <p>${escapeHtml(requestedCentre?.name || "JomNittaku")} Coach Reporting System · ${MONTH_LABEL}</p>
+              <p>${escapeHtml(requestedCentre?.name || "JomNittaku")} Coach Reporting System</p>
               </div>
             </header>
             ${pageContent}
@@ -2542,6 +2577,29 @@ export function initApp(config = {}) {
       const reportsDay = document.getElementById("reportsDayFilter");
       const reportsDateFrom = document.getElementById("reportsDateFrom");
       const reportsDateTo = document.getElementById("reportsDateTo");
+
+      const overviewDate = document.getElementById("overviewDateFilter");
+      const overviewMonth = document.getElementById("overviewMonthFilter");
+      const overviewWeek = document.getElementById("overviewWeekFilter");
+      const overviewFrom = document.getElementById("overviewDateFrom");
+      const overviewTo = document.getElementById("overviewDateTo");
+      overviewDate?.addEventListener("change", () => {
+        overviewDateFilter = overviewDate.value;
+        scheduleRender();
+      });
+      overviewMonth?.addEventListener("change", () => {
+        overviewMonthFilter = overviewMonth.value;
+        scheduleRender();
+      });
+      overviewWeek?.addEventListener("change", () => {
+        overviewWeekFilter = overviewWeek.value;
+        scheduleRender();
+      });
+      [overviewFrom, overviewTo].filter(Boolean).forEach(input => input.addEventListener("change", () => {
+        overviewDateFrom = overviewFrom?.value || "";
+        overviewDateTo = overviewTo?.value || "";
+        scheduleRender();
+      }));
 
       [reportsSearch, reportsDate, reportsStatus, reportsStudent, reportsMonth, reportsDay, reportsDateFrom, reportsDateTo].filter(Boolean).forEach(input => {
         input.addEventListener("input", scheduleReportsHydration);
@@ -3264,6 +3322,7 @@ export function initApp(config = {}) {
       state.ui.reportViewId = reportId;
       persist();
       render();
+      window.requestAnimationFrame(() => syncReportToDrive(finalReport));
     }
 
     function closeWizard() {
@@ -3548,6 +3607,35 @@ export function initApp(config = {}) {
         throw error;
       });
       return await reportExportPromise;
+    }
+
+    async function syncReportToDrive(report) {
+      if (!supabase || !state.auth.centreId || state.driveConnection?.status !== "connected") return;
+      try {
+        const canvas = await getReportExportCanvas(report);
+        const jsPDF = await getJsPdfLib();
+        const pdf = new jsPDF({ orientation: "portrait", unit: "px", format: [canvas.width, canvas.height], hotfixes: ["px_scaling"] });
+        pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
+        const blob = pdf.output("blob");
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("Unable to prepare report for Drive"));
+          reader.readAsDataURL(blob);
+        });
+        const result = await invokePrivileged("google-drive-oauth", {
+          action: "sync-report",
+          report_id: report.id,
+          file_name: `${report.ref || report.id}-training-report.pdf`,
+          mime_type: "application/pdf",
+          file_base64: dataUrl
+        });
+        if (result?.file_url) report.driveFileUrl = result.file_url;
+        state.driveConnection = { ...state.driveConnection, status: "connected", last_successful_sync_at: new Date().toISOString(), last_error: null };
+        persist();
+      } catch (error) {
+        console.warn("Unable to sync report to Google Drive", error);
+      }
     }
 
     async function saveCentreProfileFromInputs() {
@@ -4028,10 +4116,14 @@ export function initApp(config = {}) {
             await refreshStudentsFromSupabase();
             await refreshCoachAccountCount();
             await refreshPrivilegedState().catch(() => {});
-            if (driveOAuthCode && state.auth.role === "centre_admin" && state.auth.centreId) {
+            if (driveOAuthCode && state.auth.centreId) {
               try {
-                await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: oauthState });
+                const driveResult = await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: oauthState });
+                // The callback response contains the row written by the Edge
+                // Function. Apply it immediately so the first post-redirect
+                // render cannot show stale disconnected state.
                 await refreshPrivilegedState();
+                if (driveResult?.connection) state.driveConnection = driveResult.connection;
                 if (requestedCentre?.slug) window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(requestedCentre.slug)}`);
               } catch (error) {
                 callbackError = error.message || "Unable to connect Google Drive.";

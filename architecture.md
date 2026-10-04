@@ -199,6 +199,7 @@ Centre-admin Google Drive connection operations, including:
 - encrypting and storing refresh tokens
 - disconnecting Drive
 - queuing a retry sync job
+- uploading finalized report PDF exports into the connected root folder through the `sync-report` action
 
 Google client secrets, encryption keys, and service-role credentials must remain Edge Function secrets.
 
@@ -232,6 +233,8 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 - `qrcode` generates coach and centre QR images.
 - Report view can open a WhatsApp share composer with report metadata and the reports route.
 - Certificate design uploads can replace the `brand-logo-art` layer; the uploaded logo URL and fit settings are persisted in the coach's `report_layout`.
+
+Google Drive is a secondary backup destination, not the report source of truth. Finalized reports remain in the `dashboard_state` JSON payload and, when a centre Drive connection is active, the browser sends a generated PDF export to the `google-drive-oauth` Edge Function. The function refreshes the stored Google token, uploads the file to the centre root folder, and records the result in `drive_sync_jobs` and `drive_connections`.
 
 ## Database and Security Rules
 

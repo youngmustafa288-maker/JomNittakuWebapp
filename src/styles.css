@@ -1253,7 +1253,25 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      position: relative;
+      z-index: 2;
+      border: 0;
+      padding: 4px 0;
+      background: transparent;
+      cursor: pointer;
     }
+
+    .overview-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: -4px 0 18px;
+    }
+
+    .overview-filter-bar .filter-select { width: auto; min-width: 150px; }
+    .overview-custom-dates { display: flex; gap: 10px; flex-wrap: wrap; }
+    .overview-custom-dates .text-input { width: auto; min-width: 150px; }
 
     .profile-grid {
       display: grid;
@@ -1848,7 +1866,7 @@
     .template-bullet-group .template-bullet { position:absolute; font-family:inherit; font-size:inherit; font-weight:inherit; color:inherit; }
     .template-art-slice { position:absolute; overflow:hidden; box-sizing:border-box; }
     .template-art-slice img { display:block; width:100%; height:100%; object-fit:fill; pointer-events:none; }
-    .template-art-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:2%; box-sizing:border-box; overflow:hidden; color:inherit; font:inherit; line-height:1.1; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; background:rgba(255,255,255,.78); outline:1px dashed rgba(124,58,237,.5); }
+    .template-art-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:2%; box-sizing:border-box; overflow:hidden; color:inherit; font:inherit; line-height:1.1; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; background:transparent; outline:1px dashed rgba(124,58,237,.5); }
     .template-art-text[contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; background:rgba(255,255,255,.94); }
     .report-overlay-item[data-overlay-text="true"][contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; outline-offset:1px; background:rgba(255,255,255,.9); }
     .report-overlay-item.is-text-editing { cursor:text !important; user-select:text; caret-color:#7c3aed; }
@@ -2435,7 +2453,8 @@
       }
 
       .students-filter-bar,
-      .reports-filter-bar {
+      .reports-filter-bar,
+      .overview-filter-bar {
         flex-direction: column;
       }
 
@@ -2445,6 +2464,14 @@
       .reports-filter-bar .filter-select {
         flex: 1 1 auto;
       }
+
+      .overview-filter-bar .filter-select,
+      .overview-custom-dates,
+      .overview-custom-dates .text-input {
+        width: 100%;
+      }
+
+      .overview-custom-dates { flex-direction: column; }
 
       .report-view-wrap {
         gap: 12px;

@@ -207,6 +207,7 @@ export function initApp(config = {}) {
     let selectedReportOverlay = "date";
     let certificateEditorTool = "text";
     let reportOverlayDragged = false;
+    let activeCertificateEditor = null;
 
     async function getQrCodeLib() {
       if (!qrCodeModulePromise) {
@@ -2015,11 +2016,11 @@ export function initApp(config = {}) {
         if (!editor.isConnected) item.append(editor);
       }
       editor.contentEditable = "true";
+      editor.setAttribute("contenteditable", "true");
       editor.classList.add("is-text-editing");
       editor.setAttribute("role", "textbox");
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
-      editor.focus();
-      requestAnimationFrame(() => {
+      const placeCaretAtEnd = () => {
         if (!editor.isConnected || editor.contentEditable !== "true") return;
         editor.focus();
         const range = document.createRange();
@@ -2032,8 +2033,9 @@ export function initApp(config = {}) {
         const selection = window.getSelection();
         selection?.removeAllRanges();
         selection?.addRange(range);
-      });
+      };
       const finish = () => {
+        if (activeCertificateEditor?.editor === editor) activeCertificateEditor = null;
         if (!item.isConnected) return;
         const value = item.classList.contains("template-bullet-group")
           ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
@@ -2041,24 +2043,33 @@ export function initApp(config = {}) {
         if (layer?.type === "text") layer.text = value;
         else layout.textOverride = value;
         editor.contentEditable = "false";
+        editor.setAttribute("contenteditable", "false");
         editor.classList.remove("is-text-editing");
         coach.reportLayout = fullLayout;
         saveReportLayout(coach);
       };
-      editor.addEventListener("blur", finish, { once: true });
-      editor.addEventListener("keydown", keyEvent => {
-        if (keyEvent.key === "Backspace") {
-          keyEvent.preventDefault();
-          keyEvent.stopPropagation();
-          deleteCertificateTextBeforeCaret(editor);
-          return;
-        }
-        if (keyEvent.key === "Escape") editor.blur();
-        if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
-          keyEvent.preventDefault();
-          editor.blur();
-        }
-      });
+      activeCertificateEditor = { editor, item, finish };
+      editor.addEventListener("blur", () => {
+        if (activeCertificateEditor?.editor === editor) finish();
+      }, { once: true });
+      setTimeout(placeCaretAtEnd, 0);
+    }
+
+    function handleCertificateEditorKeydown(event) {
+      const active = activeCertificateEditor;
+      if (!active?.editor?.isConnected || active.editor.contentEditable !== "true") return;
+      if (!active.item.contains(event.target)) return;
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteCertificateTextBeforeCaret(active.editor);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        active.editor.blur();
+      } else if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        active.editor.blur();
+      }
     }
 
     function deleteCertificateTextBeforeCaret(editor) {
@@ -2797,6 +2808,7 @@ export function initApp(config = {}) {
             navigate(navButton.dataset.nav);
           }
         });
+        document.addEventListener("keydown", handleCertificateEditorKeydown, true);
         app.addEventListener("change", event => {
           const filter = event.target.closest("[data-dev-centre-filter]");
           if (!filter) return;

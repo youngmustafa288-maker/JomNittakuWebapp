@@ -2052,7 +2052,9 @@ export function initApp(config = {}) {
       editor.addEventListener("blur", () => {
         if (activeCertificateEditor?.editor === editor) finish();
       }, { once: true });
-      setTimeout(placeCaretAtEnd, 0);
+      // Let the browser finish its double-click selection before taking control
+      // of focus and placing the deterministic default caret.
+      requestAnimationFrame(() => requestAnimationFrame(placeCaretAtEnd));
     }
 
     function handleCertificateEditorKeydown(event) {
@@ -2089,16 +2091,28 @@ export function initApp(config = {}) {
       const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
       const textNodes = [];
       while (walker.nextNode()) textNodes.push(walker.currentNode);
-      let nodeIndex = textNodes.indexOf(activeRange.startContainer);
-      let offset = activeRange.startOffset;
-      if (nodeIndex < 0) return false;
-      if (offset === 0) {
-        nodeIndex -= 1;
-        while (nodeIndex >= 0 && !textNodes[nodeIndex].textContent.length) nodeIndex -= 1;
-        if (nodeIndex < 0) return false;
-        offset = textNodes[nodeIndex].textContent.length;
+      if (!textNodes.length) return false;
+
+      // Selection endpoints can be text nodes or the editable element itself.
+      // Convert either shape to a flat text offset before choosing the previous
+      // code point, including when markup splits the text into several nodes.
+      const beforeCaret = document.createRange();
+      beforeCaret.selectNodeContents(editor);
+      beforeCaret.setEnd(activeRange.startContainer, activeRange.startOffset);
+      const caretOffset = beforeCaret.toString().length;
+      if (caretOffset <= 0) return false;
+
+      let remaining = caretOffset - 1;
+      let textNode = textNodes[0];
+      let offset = 0;
+      for (const node of textNodes) {
+        if (remaining < node.textContent.length) {
+          textNode = node;
+          offset = remaining + 1;
+          break;
+        }
+        remaining -= node.textContent.length;
       }
-      const textNode = textNodes[nodeIndex];
       let deleteStart = offset - 1;
       const codeUnit = textNode.textContent.charCodeAt(deleteStart);
       if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff && deleteStart > 0) {

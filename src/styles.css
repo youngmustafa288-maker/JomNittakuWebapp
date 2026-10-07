@@ -1941,6 +1941,9 @@
     .report-overlay-item.is-image-drop-target { outline:2px dashed #3a857d !important; outline-offset:3px; }
     .report-overlay-item[data-certificate-image-target]:focus-visible { outline:2px solid #3a857d; outline-offset:3px; }
     .certificate-resize-handle { position:absolute; z-index:2; width:14px; height:14px; right:3px; bottom:3px; border:2px solid #7c3aed; background:#fff; border-radius:50%; box-shadow:0 1px 3px rgba(17,24,39,.28); cursor:nwse-resize; touch-action:none; visibility:hidden; box-sizing:border-box; }
+    .certificate-resize-handle.is-resize-edge-left { left:3px; right:auto; top:50%; bottom:auto; transform:translateY(-50%); cursor:ew-resize; }
+    .certificate-resize-handle.is-resize-edge-right { left:auto; right:3px; top:50%; bottom:auto; transform:translateY(-50%); cursor:ew-resize; }
+    .certificate-resize-handle.is-resize-corner { cursor:nwse-resize; }
     .report-overlay-item.is-selected > .certificate-resize-handle { visibility:visible; }
     .report-overlay-item.is-locked > .certificate-resize-handle { visibility:hidden; }
     .certificate-layer-panel { display:grid; gap:10px; padding:0; border:0; border-radius:0; background:#fff; }

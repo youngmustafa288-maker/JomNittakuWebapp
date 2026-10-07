@@ -2019,16 +2019,20 @@ export function initApp(config = {}) {
       editor.setAttribute("role", "textbox");
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
       editor.focus();
-      const range = document.createRange();
-      const textWalker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
-      let lastTextNode = null;
-      while (textWalker.nextNode()) lastTextNode = textWalker.currentNode;
-      if (lastTextNode) range.setStart(lastTextNode, lastTextNode.textContent.length);
-      else range.selectNodeContents(editor);
-      range.collapse(true);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
+      requestAnimationFrame(() => {
+        if (!editor.isConnected || editor.contentEditable !== "true") return;
+        editor.focus();
+        const range = document.createRange();
+        const textWalker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+        let lastTextNode = null;
+        while (textWalker.nextNode()) lastTextNode = textWalker.currentNode;
+        if (lastTextNode) range.setStart(lastTextNode, lastTextNode.textContent.length);
+        else range.selectNodeContents(editor);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      });
       const finish = () => {
         if (!item.isConnected) return;
         const value = item.classList.contains("template-bullet-group")
@@ -2046,7 +2050,7 @@ export function initApp(config = {}) {
         if (keyEvent.key === "Backspace") {
           keyEvent.preventDefault();
           keyEvent.stopPropagation();
-          document.execCommand("delete", false);
+          deleteCertificateTextBeforeCaret(editor);
           return;
         }
         if (keyEvent.key === "Escape") editor.blur();
@@ -2055,6 +2059,49 @@ export function initApp(config = {}) {
           editor.blur();
         }
       });
+    }
+
+    function deleteCertificateTextBeforeCaret(editor) {
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return false;
+      const activeRange = selection.getRangeAt(0);
+      if (!editor.contains(activeRange.startContainer) || !editor.contains(activeRange.endContainer)) return false;
+
+      if (!activeRange.collapsed) {
+        activeRange.deleteContents();
+        activeRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(activeRange);
+        return true;
+      }
+
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      const textNodes = [];
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+      let nodeIndex = textNodes.indexOf(activeRange.startContainer);
+      let offset = activeRange.startOffset;
+      if (nodeIndex < 0) return false;
+      if (offset === 0) {
+        nodeIndex -= 1;
+        while (nodeIndex >= 0 && !textNodes[nodeIndex].textContent.length) nodeIndex -= 1;
+        if (nodeIndex < 0) return false;
+        offset = textNodes[nodeIndex].textContent.length;
+      }
+      const textNode = textNodes[nodeIndex];
+      let deleteStart = offset - 1;
+      const codeUnit = textNode.textContent.charCodeAt(deleteStart);
+      if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff && deleteStart > 0) {
+        const previousCodeUnit = textNode.textContent.charCodeAt(deleteStart - 1);
+        if (previousCodeUnit >= 0xd800 && previousCodeUnit <= 0xdbff) deleteStart -= 1;
+      }
+      const range = document.createRange();
+      range.setStart(textNode, deleteStart);
+      range.setEnd(textNode, offset);
+      range.deleteContents();
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
     }
 
     function renderReportWizard() {

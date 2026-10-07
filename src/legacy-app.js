@@ -87,7 +87,7 @@ export function initApp(config = {}) {
       // Let the template's own footer color show through instead of stacking
       // another opaque navy band on top of it.
       "footer-bar-art": { left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true },
-      "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
+      "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5, locked: true }
     };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -326,11 +326,13 @@ export function initApp(config = {}) {
             const fixedFooter = defaultLayer.id === "footer-bar-art" ? {
               left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true
             } : {};
+            const fixedDecoration = defaultLayer.id === "decor-bottom-right" ? { locked: true } : {};
             return {
               ...defaultLayer,
               ...savedLayer,
               ...fixedQr,
               ...fixedFooter,
+              ...fixedDecoration,
               visible: savedLayer.visible !== false,
               zIndex: defaultLayer.id === "footer-bar-art" ? 1 : defaultLayer.id === "qr" ? DEFAULT_LAYER_GEOMETRY.qr.zIndex : (Number(savedLayer.zIndex) || index + 2)
             };
@@ -1938,7 +1940,7 @@ export function initApp(config = {}) {
       if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add Text Box</button></div>`;
       if (certificateEditorTool === "uploads") {
         const uploads = getReportLayout(coach).uploads || [];
-        return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Drop a logo here or choose a logo file"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Replace logo</b><small>Drop an image here or choose a file</small></span></div><button type="button" class="certificate-panel-action" data-action="replace-certificate-logo"><span aria-hidden="true">+</span>Choose logo</button><button type="button" class="certificate-panel-action" data-action="add-certificate-image"><span aria-hidden="true">+</span>Upload image</button><button type="button" class="certificate-panel-action" data-action="add-certificate-frame"><span aria-hidden="true">+</span>Add image frame</button>${uploads.length ? `<div class="certificate-upload-list" aria-label="Uploaded images">${uploads.map(asset => `<button type="button" class="certificate-upload-asset ${selectedCertificateUploadId === asset.id ? "is-selected" : ""}" draggable="true" data-certificate-asset-id="${escapeHtml(asset.id)}" aria-pressed="${selectedCertificateUploadId === asset.id}" aria-label="Select or drag ${escapeHtml(asset.name)} to an image frame"><img src="${escapeHtml(asset.source)}" alt=""><span title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</span></button>`).join("")}</div>` : `<p class="certificate-upload-empty">No uploads</p>`}</div>`;
+        return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Upload an image or drop one here"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Upload image</b><small>Drop an image here or choose a file</small></span></div><button type="button" class="certificate-panel-action" data-action="add-certificate-frame"><span aria-hidden="true">+</span>Add image frame</button>${uploads.length ? `<div class="certificate-upload-list" aria-label="Uploaded images">${uploads.map(asset => `<button type="button" class="certificate-upload-asset ${selectedCertificateUploadId === asset.id ? "is-selected" : ""}" draggable="true" data-certificate-asset-id="${escapeHtml(asset.id)}" aria-pressed="${selectedCertificateUploadId === asset.id}" aria-label="Select or drag ${escapeHtml(asset.name)} to an image frame"><img src="${escapeHtml(asset.source)}" alt=""><span title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</span></button>`).join("")}</div>` : `<p class="certificate-upload-empty">No uploads</p>`}</div>`;
       }
       if (certificateEditorTool === "position") return `<div class="certificate-tool-panel"><strong>Position</strong><button type="button" class="certificate-panel-action" data-action="raise-certificate-layer">Bring forward</button><button type="button" class="certificate-panel-action" data-action="lower-certificate-layer">Send backward</button><button type="button" class="certificate-panel-action" data-action="toggle-certificate-lock">Lock or unlock</button></div>`;
       return renderCertificateLayerPanel(coach);
@@ -1970,6 +1972,16 @@ export function initApp(config = {}) {
       return asset;
     }
 
+    async function uploadCertificateImageToLibrary(file) {
+      const coach = getCurrentCoach();
+      if (!coach) return;
+      const source = await uploadProfileImage(file, "certificate", coach.id);
+      const layout = getReportLayout(coach);
+      addCertificateUpload(layout, source, file.name);
+      coach.reportLayout = layout;
+      await saveReportLayout(coach);
+    }
+
     function applyCertificateUpload(assetId, layerId) {
       const coach = getCurrentCoach();
       if (!coach || layerId === "qr") return;
@@ -1987,7 +1999,7 @@ export function initApp(config = {}) {
       return saveReportLayout(coach);
     }
 
-    function beginCertificateTextEditing(item) {
+    function beginCertificateTextEditing(item, clickEvent = null) {
       const coach = getCurrentCoach();
       if (!coach || item.dataset.overlayId === "qr" || item.contentEditable === "true" || item.querySelector('[contenteditable="true"]')) return;
       const fullLayout = getReportLayout(coach);
@@ -2005,13 +2017,14 @@ export function initApp(config = {}) {
       editor.setAttribute("role", "textbox");
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
       editor.focus();
-      const selection = window.getSelection();
-      if (selection) {
-        const range = document.createRange();
-        range.selectNodeContents(editor);
-        range.collapse(false);
-        selection.removeAllRanges();
-        selection.addRange(range);
+      const clickPoint = clickEvent ? document.caretPositionFromPoint?.(clickEvent.clientX, clickEvent.clientY) : null;
+      const range = clickPoint ? document.createRange() : clickEvent ? document.caretRangeFromPoint?.(clickEvent.clientX, clickEvent.clientY) : null;
+      if (range && clickPoint) range.setStart(clickPoint.offsetNode, clickPoint.offset);
+      if (range && editor.contains(range.startContainer)) {
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
       }
       const finish = () => {
         if (!item.isConnected) return;
@@ -2851,10 +2864,10 @@ export function initApp(config = {}) {
                 render();
                 requestAnimationFrame(() => {
                   const selectedItem = document.querySelector(`[data-overlay-id="${layout.id}"]`);
-                  if (selectedItem) beginCertificateTextEditing(selectedItem);
+                  if (selectedItem) beginCertificateTextEditing(selectedItem, upEvent);
                 });
               } else {
-                beginCertificateTextEditing(item);
+                beginCertificateTextEditing(item, upEvent);
               }
             }
           };
@@ -2998,7 +3011,7 @@ export function initApp(config = {}) {
         selectedReportOverlay = item.dataset.overlayId;
         const layer = getReportLayout(getCurrentCoach()).layers.find(entry => entry.id === item.dataset.overlayId);
         if (reportLayoutEditing && layer?.type === "text" && layer.id.startsWith("custom-")) {
-          beginCertificateTextEditing(item);
+          beginCertificateTextEditing(item, event);
           return;
         }
         if (reportLayoutEditing) render();
@@ -3032,8 +3045,7 @@ export function initApp(config = {}) {
       }));
       document.querySelectorAll('[data-overlay-text="true"][data-overlay-id]').forEach(item => item.addEventListener("dblclick", event => {
         event.stopPropagation();
-        event.preventDefault();
-        beginCertificateTextEditing(item);
+        beginCertificateTextEditing(item, event);
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
       document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));
@@ -3073,14 +3085,8 @@ export function initApp(config = {}) {
         }
         if (certificateUploadToLibrary) {
           certificateUploadToLibrary = false;
-          uploadProfileImage(file, "certificate", getCurrentCoach().id).then(url => {
-            const coach = getCurrentCoach();
-            const layout = getReportLayout(coach);
-            addCertificateUpload(layout, url, file.name);
-            coach.reportLayout = layout;
-            event.target.value = "";
-            return saveReportLayout(coach);
-          }).catch(error => { event.target.value = ""; alert(error.message || "Unable to upload certificate image."); });
+          uploadCertificateImageToLibrary(file).catch(error => alert(error.message || "Unable to upload certificate image."));
+          event.target.value = "";
           return;
         }
         uploadProfileImage(file, "certificate", getCurrentCoach().id).then(url => {
@@ -3099,19 +3105,24 @@ export function initApp(config = {}) {
       });
       const logoDropzone = document.querySelector("[data-logo-dropzone]");
       if (logoDropzone) {
-        logoDropzone.addEventListener("click", () => triggerCertificateLogoUpload());
+        const openUpload = () => {
+          certificateUploadToLibrary = true;
+          certificateLogoUploadTarget = null;
+          document.getElementById("hiddenCertificateUpload")?.click();
+        };
+        logoDropzone.addEventListener("click", openUpload);
         logoDropzone.addEventListener("dragover", event => { event.preventDefault(); logoDropzone.classList.add("is-dragging"); });
         logoDropzone.addEventListener("dragleave", () => logoDropzone.classList.remove("is-dragging"));
         logoDropzone.addEventListener("drop", event => {
           event.preventDefault();
           logoDropzone.classList.remove("is-dragging");
           const file = [...(event.dataTransfer?.files || [])].find(item => item.type.startsWith("image/"));
-          if (file) replaceCertificateLogo(file);
+          if (file) uploadCertificateImageToLibrary(file).catch(error => alert(error.message || "Unable to upload certificate image."));
         });
         logoDropzone.addEventListener("keydown", event => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            triggerCertificateLogoUpload();
+            openUpload();
           }
         });
       }
@@ -3251,7 +3262,7 @@ export function initApp(config = {}) {
       if (["toggle-certificate-lock", "duplicate-certificate-layer", "delete-certificate-layer"].includes(action)) {
         const coach = getCurrentCoach();
         const layout = getReportLayout(coach);
-        if (selectedReportOverlay === "qr") return;
+        if (selectedReportOverlay === "qr" || (selectedReportOverlay === "decor-bottom-right" && action === "toggle-certificate-lock")) return;
         const index = (layout.layers || []).findIndex(layer => layer.id === selectedReportOverlay);
         const selectedLayer = index >= 0 ? layout.layers[index] : null;
         const target = layout[selectedReportOverlay] || selectedLayer;
@@ -3515,6 +3526,7 @@ export function initApp(config = {}) {
       const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
       const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image");
+      const isFixedArtwork = selectedReportOverlay === "decor-bottom-right";
       return `<div class="report-layout-toolbar">
         <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${layout.fontStyle === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${layout.textDecoration === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
@@ -3522,7 +3534,7 @@ export function initApp(config = {}) {
         <span class="toolbar-divider" aria-hidden="true"></span>
         <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
         <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>
-        <button class="certificate-icon-action" data-action="toggle-certificate-lock" title="${layout.locked === true ? "Unlock" : "Lock"}" aria-label="${layout.locked === true ? "Unlock" : "Lock"}">${layout.locked === true ? "Unlock" : "Lock"}</button>
+        ${isFixedArtwork ? "" : `<button class="certificate-icon-action" data-action="toggle-certificate-lock" title="${layout.locked === true ? "Unlock" : "Lock"}" aria-label="${layout.locked === true ? "Unlock" : "Lock"}">${layout.locked === true ? "Unlock" : "Lock"}</button>`}
         ${isCustomLayer ? `<button class="certificate-icon-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate">Duplicate</button><button class="certificate-icon-action is-danger" data-action="delete-certificate-layer" title="Delete" aria-label="Delete">Delete</button>` : ""}
         <button class="certificate-icon-action" data-action="toggle-certificate-layer">${layout.visible === false ? "Show" : "Hide"}</button>
       </div>`;

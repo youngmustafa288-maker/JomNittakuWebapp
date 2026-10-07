@@ -233,7 +233,7 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 - The browser downloads PNG or PDF blobs locally.
 - `qrcode` generates coach and centre QR images.
 - Report view can open a WhatsApp share composer with report metadata and the reports route.
-- Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket is fixed to its template geometry.
+- Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket starts at the template geometry and can be repositioned in the layout editor.
 
 Google Drive is the sole durable store for centre report drafts and records. The Edge Function refreshes the encrypted Drive token, authorizes the caller's centre membership, and reads/writes app-managed files. `drive_connections` may record generic connection status and successful-sync timestamps, but not report IDs, names, URLs, or content. No migration is planned for historical reports.
 

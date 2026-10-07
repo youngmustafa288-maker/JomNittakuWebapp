@@ -93,7 +93,7 @@ export function initApp(config = {}) {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
-      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50, locked: true },
+      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50 },
       "footer-text-overlay": {
         left: 27,
         top: 91.55,
@@ -317,10 +317,7 @@ export function initApp(config = {}) {
       const layers = Array.isArray(saved?.layers)
         ? DEFAULT_CERTIFICATE_LAYERS.map((defaultLayer, index) => {
             const savedLayer = saved.layers.find(layer => layer.id === defaultLayer.id) || {};
-            const fixedQr = defaultLayer.id === "qr" ? {
-              ...DEFAULT_LAYER_GEOMETRY.qr,
-              locked: true
-            } : {};
+            const movableQr = defaultLayer.id === "qr" ? { locked: false } : {};
             // The footer is part of the fixed certificate frame. Do not let a
             // prior drag move its opaque strip over the report content.
             const fixedFooter = defaultLayer.id === "footer-bar-art" ? {
@@ -330,7 +327,7 @@ export function initApp(config = {}) {
             return {
               ...defaultLayer,
               ...savedLayer,
-              ...fixedQr,
+              ...movableQr,
               ...fixedFooter,
               ...fixedDecoration,
               visible: savedLayer.visible !== false,
@@ -1379,7 +1376,7 @@ export function initApp(config = {}) {
     function renderEditableQr(layer) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY.qr;
-      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links"></div>`;
     }
 
     function renderSidebar() {
@@ -2003,7 +2000,7 @@ export function initApp(config = {}) {
       return saveReportLayout(coach);
     }
 
-    function beginCertificateTextEditing(item, clickEvent = null) {
+    function beginCertificateTextEditing(item) {
       const coach = getCurrentCoach();
       if (!coach || item.dataset.overlayId === "qr" || item.contentEditable === "true" || item.querySelector('[contenteditable="true"]')) return;
       const fullLayout = getReportLayout(coach);
@@ -2022,15 +2019,12 @@ export function initApp(config = {}) {
       editor.setAttribute("role", "textbox");
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
       editor.focus();
-      const clickPoint = clickEvent ? document.caretPositionFromPoint?.(clickEvent.clientX, clickEvent.clientY) : null;
-      const range = clickPoint ? document.createRange() : clickEvent ? document.caretRangeFromPoint?.(clickEvent.clientX, clickEvent.clientY) : null;
-      if (range && clickPoint) range.setStart(clickPoint.offsetNode, clickPoint.offset);
-      if (range && editor.contains(range.startContainer)) {
-        range.collapse(true);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-      }
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
       const finish = () => {
         if (!item.isConnected) return;
         const value = item.classList.contains("template-bullet-group")
@@ -2799,7 +2793,7 @@ export function initApp(config = {}) {
           const item = event.target.closest(".report-overlay-item.is-editing");
           const preview = document.querySelector("#reportTemplatePreview");
           if (!item || !preview) return;
-          if (event.target.closest(".certificate-object-toolbar") || item.dataset.overlayId === "qr") return;
+          if (event.target.closest(".certificate-object-toolbar")) return;
           if (event.target.closest('[contenteditable="true"]')) return;
           if (event.detail > 1 && event.target.closest('[data-overlay-text="true"]')) return;
           selectedReportOverlay = item.dataset.overlayId;
@@ -3051,7 +3045,7 @@ export function initApp(config = {}) {
       }));
       document.querySelectorAll('[data-overlay-text="true"][data-overlay-id]').forEach(item => item.addEventListener("dblclick", event => {
         event.stopPropagation();
-        beginCertificateTextEditing(item, event);
+        beginCertificateTextEditing(item);
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
       document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));

@@ -1883,7 +1883,7 @@
     .template-report-overlay .report-overlay-item.is-selected { outline: 2px solid #7c3aed; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(124,58,237,.12); }
     .template-custom-layer { position:absolute; box-sizing:border-box; min-width:2%; min-height:2%; white-space:pre-wrap; overflow:hidden; }
     .template-custom-layer.has-object-tools { overflow:visible; }
-    .template-custom-layer-content { position:absolute; inset:0; display:block; box-sizing:border-box; overflow:hidden; white-space:pre-wrap; }
+    .template-custom-layer-content { position:absolute; inset:0; display:block; box-sizing:border-box; overflow:hidden; white-space:pre-wrap; font:inherit; line-height:inherit; color:inherit; }
     .certificate-object-toolbar { position:absolute; top:-34px; right:0; z-index:1200; display:flex; align-items:center; gap:2px; height:30px; padding:2px; border:1px solid #d7dbe1; border-radius:7px; background:#fff; box-shadow:0 2px 8px rgba(17,24,39,.18); white-space:nowrap; }
     .certificate-object-action { display:grid; place-items:center; width:28px; height:26px; padding:0; border:0; border-radius:4px; background:transparent; color:#374151; cursor:pointer; }
     .certificate-object-action:hover, .certificate-object-action:focus-visible { background:#f0f2f4; outline:2px solid rgba(109,143,136,.28); }

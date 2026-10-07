@@ -2021,6 +2021,10 @@ export function initApp(config = {}) {
       editor.setAttribute("role", "textbox");
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
       editor.focus({ preventScroll: true });
+      const selectionIsInsideEditor = () => {
+        const selection = window.getSelection();
+        return Boolean(selection?.rangeCount && editor.contains(selection.anchorNode) && editor.contains(selection.focusNode));
+      };
       const placeCaretAtEnd = () => {
         if (!editor.isConnected || editor.contentEditable !== "true") return;
         editor.focus({ preventScroll: true });
@@ -2051,14 +2055,30 @@ export function initApp(config = {}) {
         saveReportLayout(coach);
       };
       const onKeydown = event => handleCertificateEditorKeydown(event);
+      const onBeforeInput = event => {
+        if (event.inputType !== "deleteContentBackward" && event.inputType !== "deleteContentForward") return;
+        const handled = deleteCertificateTextAtCaret(editor, event.inputType === "deleteContentBackward" ? -1 : 1);
+        if (handled) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      };
       activeCertificateEditor = { editor, item, finish };
       editor.addEventListener("keydown", onKeydown);
+      editor.addEventListener("beforeinput", onBeforeInput);
       editor.addEventListener("blur", () => {
         if (activeCertificateEditor?.editor === editor) finish();
       }, { once: true });
-      // Let the browser finish its double-click selection before placing the
-      // deterministic default caret, while keeping the editor focused now.
-      requestAnimationFrame(placeCaretAtEnd);
+      editor.addEventListener("blur", () => {
+        editor.removeEventListener("beforeinput", onBeforeInput);
+      }, { once: true });
+      // Keep a browser-provided click selection when it is already inside the
+      // editor; otherwise default to the end immediately. The frame fallback
+      // handles browsers that publish the double-click selection asynchronously.
+      if (!selectionIsInsideEditor()) placeCaretAtEnd();
+      requestAnimationFrame(() => {
+        if (!selectionIsInsideEditor()) placeCaretAtEnd();
+      });
     }
 
     function handleCertificateEditorKeydown(event) {

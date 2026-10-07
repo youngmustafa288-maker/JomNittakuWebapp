@@ -2020,8 +2020,12 @@ export function initApp(config = {}) {
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
       editor.focus();
       const range = document.createRange();
-      range.selectNodeContents(editor);
-      range.collapse(false);
+      const textWalker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let lastTextNode = null;
+      while (textWalker.nextNode()) lastTextNode = textWalker.currentNode;
+      if (lastTextNode) range.setStart(lastTextNode, lastTextNode.textContent.length);
+      else range.selectNodeContents(editor);
+      range.collapse(true);
       const selection = window.getSelection();
       selection?.removeAllRanges();
       selection?.addRange(range);
@@ -2039,6 +2043,12 @@ export function initApp(config = {}) {
       };
       editor.addEventListener("blur", finish, { once: true });
       editor.addEventListener("keydown", keyEvent => {
+        if (keyEvent.key === "Backspace") {
+          keyEvent.preventDefault();
+          keyEvent.stopPropagation();
+          document.execCommand("delete", false);
+          return;
+        }
         if (keyEvent.key === "Escape") editor.blur();
         if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
           keyEvent.preventDefault();

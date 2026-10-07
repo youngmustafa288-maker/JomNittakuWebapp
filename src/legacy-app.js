@@ -2020,9 +2020,10 @@ export function initApp(config = {}) {
       editor.classList.add("is-text-editing");
       editor.setAttribute("role", "textbox");
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
+      editor.focus({ preventScroll: true });
       const placeCaretAtEnd = () => {
         if (!editor.isConnected || editor.contentEditable !== "true") return;
-        editor.focus();
+        editor.focus({ preventScroll: true });
         const range = document.createRange();
         const textWalker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
         let lastTextNode = null;
@@ -2045,26 +2046,31 @@ export function initApp(config = {}) {
         editor.contentEditable = "false";
         editor.setAttribute("contenteditable", "false");
         editor.classList.remove("is-text-editing");
+        editor.removeEventListener("keydown", onKeydown);
         coach.reportLayout = fullLayout;
         saveReportLayout(coach);
       };
+      const onKeydown = event => handleCertificateEditorKeydown(event);
       activeCertificateEditor = { editor, item, finish };
+      editor.addEventListener("keydown", onKeydown);
       editor.addEventListener("blur", () => {
         if (activeCertificateEditor?.editor === editor) finish();
       }, { once: true });
-      // Let the browser finish its double-click selection before taking control
-      // of focus and placing the deterministic default caret.
-      requestAnimationFrame(() => requestAnimationFrame(placeCaretAtEnd));
+      // Let the browser finish its double-click selection before placing the
+      // deterministic default caret, while keeping the editor focused now.
+      requestAnimationFrame(placeCaretAtEnd);
     }
 
     function handleCertificateEditorKeydown(event) {
       const active = activeCertificateEditor;
       if (!active?.editor?.isConnected || active.editor.contentEditable !== "true") return;
-      if (!active.item.contains(event.target)) return;
-      if (event.key === "Backspace") {
-        event.preventDefault();
-        event.stopPropagation();
-        deleteCertificateTextBeforeCaret(active.editor);
+      if (event.currentTarget !== active.editor) return;
+      if (event.key === "Backspace" || event.key === "Delete") {
+        const handled = deleteCertificateTextAtCaret(active.editor, event.key === "Backspace" ? -1 : 1);
+        if (handled) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       } else if (event.key === "Escape") {
         event.preventDefault();
         active.editor.blur();
@@ -2074,7 +2080,7 @@ export function initApp(config = {}) {
       }
     }
 
-    function deleteCertificateTextBeforeCaret(editor) {
+    function deleteCertificateTextAtCaret(editor, direction) {
       const selection = window.getSelection();
       if (!selection?.rangeCount) return false;
       const activeRange = selection.getRangeAt(0);
@@ -2100,28 +2106,33 @@ export function initApp(config = {}) {
       beforeCaret.selectNodeContents(editor);
       beforeCaret.setEnd(activeRange.startContainer, activeRange.startOffset);
       const caretOffset = beforeCaret.toString().length;
-      if (caretOffset <= 0) return false;
-
-      let remaining = caretOffset - 1;
-      let textNode = textNodes[0];
-      let offset = 0;
-      for (const node of textNodes) {
-        if (remaining < node.textContent.length) {
-          textNode = node;
-          offset = remaining + 1;
-          break;
+      const textLength = textNodes.reduce((total, node) => total + node.textContent.length, 0);
+      const rawStart = direction < 0 ? caretOffset - 1 : caretOffset;
+      if (rawStart < 0 || rawStart >= textLength) return false;
+      let deleteStart = rawStart;
+      let deleteEnd = rawStart + 1;
+      const flatText = textNodes.map(node => node.textContent).join("");
+      if (direction < 0 && /[\uDC00-\uDFFF]/.test(flatText[deleteStart]) && deleteStart > 0 && /[\uD800-\uDBFF]/.test(flatText[deleteStart - 1])) {
+        deleteStart -= 1;
+      } else if (direction > 0 && /[\uD800-\uDBFF]/.test(flatText[deleteStart]) && deleteEnd < textLength && /[\uDC00-\uDFFF]/.test(flatText[deleteEnd])) {
+        deleteEnd += 1;
+      }
+      const locate = (offset, preferNext = false) => {
+        let remaining = offset;
+        for (const node of textNodes) {
+          if (remaining < node.textContent.length || (!preferNext && remaining === node.textContent.length)) {
+            return { node, offset: remaining };
+          }
+          remaining -= node.textContent.length;
         }
-        remaining -= node.textContent.length;
-      }
-      let deleteStart = offset - 1;
-      const codeUnit = textNode.textContent.charCodeAt(deleteStart);
-      if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff && deleteStart > 0) {
-        const previousCodeUnit = textNode.textContent.charCodeAt(deleteStart - 1);
-        if (previousCodeUnit >= 0xd800 && previousCodeUnit <= 0xdbff) deleteStart -= 1;
-      }
+        const last = textNodes[textNodes.length - 1];
+        return { node: last, offset: last.textContent.length };
+      };
+      const start = locate(deleteStart, direction > 0);
+      const end = locate(deleteEnd);
       const range = document.createRange();
-      range.setStart(textNode, deleteStart);
-      range.setEnd(textNode, offset);
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
       range.deleteContents();
       range.collapse(true);
       selection.removeAllRanges();
@@ -2822,7 +2833,6 @@ export function initApp(config = {}) {
             navigate(navButton.dataset.nav);
           }
         });
-        document.addEventListener("keydown", handleCertificateEditorKeydown, true);
         app.addEventListener("change", event => {
           const filter = event.target.closest("[data-dev-centre-filter]");
           if (!filter) return;

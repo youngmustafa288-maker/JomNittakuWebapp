@@ -3045,6 +3045,7 @@ export function initApp(config = {}) {
       }));
       document.querySelectorAll('[data-overlay-text="true"][data-overlay-id]').forEach(item => item.addEventListener("dblclick", event => {
         event.stopPropagation();
+        event.preventDefault();
         beginCertificateTextEditing(item);
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });

@@ -83,8 +83,7 @@ The main in-memory `state` object contains:
 - `ui`: current page, selected report, menu state, and notices
 - `coaches`
 - `students`
-- `reports`
-- `reportDrafts`
+- `reports` and `reportDrafts` (Drive-loaded, in-memory session state only)
 - `centreProfile`
 - `devCentres` and dev-console filters/detail state
 - admin, dev-console, and Drive connection data
@@ -147,6 +146,7 @@ The current dashboard also persists a large JSON payload in `dashboard_state`.
 - Global data uses the ID `dashboard`.
 - Centre accounts use `centre:<centre-id>`.
 - Auth values are stripped before writing.
+- Reports, drafts, and report-view identifiers are stripped before writing and are never hydrated from this payload.
 - Browser-specific auth and UI values are carried over when realtime payloads are applied.
 - Writes are debounced by approximately 250 ms.
 
@@ -154,18 +154,15 @@ Supabase Realtime listens for changes to `dashboard_state`, `coaches`, `students
 
 ### Browser storage
 
-Centre links can fall back to `localStorage` under the key `centre_profile` when Supabase is unavailable.
+Centre links can fall back to `localStorage` under the key `centre_profile` when Supabase is unavailable. Report content is never placed in browser persistent storage.
 
-## Important Current-State Caveat
+### Centre report records
 
-The database has a normalized `reports` table, but the primary report wizard currently creates finalized reports in `state.reports` and persists them through the `dashboard_state` JSON payload. The report workflow does not currently appear to insert every finalized report into the relational `reports` table.
+Each centre's connected Google Drive is the durable source of truth for report drafts and finalized reports. The app stores versioned JSON records under the centre root's `Reports/Records` folder and finalized PDF derivatives under `Reports/Exports`. Stable opaque IDs are used for filenames and Drive `appProperties`; student names and report summaries are not placed in metadata. JSON is canonical; PDF upload can be retried independently.
 
-Any future report/data work must decide explicitly whether to:
+The browser loads report records into memory after centre authentication and Drive connection refresh. Draft saves and finalization go through `google-drive-oauth`; a finalized report is not presented as saved until its JSON write succeeds. Supabase `dashboard_state` serialization excludes report arrays and report-specific view IDs. Realtime hydration preserves the currently loaded in-memory Drive records. Failed Drive writes do not fall back to Supabase or browser storage.
 
-1. continue using the JSON dashboard state as the report source of truth, or
-2. migrate report creation and reads to the relational `reports` table.
-
-Do not assume both stores are automatically synchronized.
+Supabase remains responsible for auth, centre memberships, coach/student/centre profiles, licensing, and encrypted Drive connection/control-plane metadata. The existing student `lessons` profile scalar remains in Supabase as an aggregate; it is not a report record. No historical migration is planned because the user confirmed no report data needs migration. A read-only cutover audit found no report rows, dashboard-state reports, or drafts at implementation time.
 
 ## Supabase Storage
 
@@ -199,7 +196,11 @@ Centre-admin Google Drive connection operations, including:
 - encrypting and storing refresh tokens
 - disconnecting Drive
 - queuing a retry sync job
-- uploading finalized report PDF exports into the connected root folder through the `sync-report` action
+- listing and saving centre-scoped JSON report records in managed report folders
+- uploading or replacing finalized PDF derivatives idempotently
+- checking centre membership and coach/student ownership for every report action
+
+Report content and IDs are not written to Supabase sync jobs, connection metadata, or function logs. The legacy `sync-report` action is rejected; clients use the report repository actions instead.
 
 Google client secrets, encryption keys, and service-role credentials must remain Edge Function secrets.
 
@@ -219,22 +220,22 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 
 ### Report creation
 
-1. A coach starts a report and a draft is placed in `state.reportDrafts`.
-2. The wizard collects student, lesson, date/time, and summary fields.
-3. Finalization moves the draft into `state.reports` and updates the student's lesson count.
+1. A coach starts a report; its draft is saved to Drive and held in memory while the wizard is open.
+2. Wizard edits are debounced to Drive; step changes and close flush pending edits first.
+3. Finalization writes the canonical JSON report to Drive before moving it into in-memory `state.reports`; the student lesson count remains a Supabase profile aggregate.
 4. The report view renders the fixed certificate artwork plus dynamic overlays.
 5. Layout edits update the coach's `report_layout`.
 
 ### Report export
 
-- `html2canvas` creates the report canvas.
-- `jsPDF` wraps the canvas in a PDF.
+- `html2canvas` creates the report canvas and `jsPDF` wraps it in a PDF.
+- Finalized PDF derivatives are saved to the centre Drive and can be retried without duplicating the canonical JSON record.
 - The browser downloads PNG or PDF blobs locally.
 - `qrcode` generates coach and centre QR images.
 - Report view can open a WhatsApp share composer with report metadata and the reports route.
-- Certificate design uploads can replace the `brand-logo-art` layer; the uploaded logo URL and fit settings are persisted in the coach's `report_layout`.
+- Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket is fixed to its template geometry.
 
-Google Drive is a secondary backup destination, not the report source of truth. Finalized reports remain in the `dashboard_state` JSON payload and, when a centre Drive connection is active, the browser sends a generated PDF export to the `google-drive-oauth` Edge Function. The function refreshes the stored Google token, uploads the file to the centre root folder, and records the result in `drive_sync_jobs` and `drive_connections`.
+Google Drive is the sole durable store for centre report drafts and records. The Edge Function refreshes the encrypted Drive token, authorizes the caller's centre membership, and reads/writes app-managed files. `drive_connections` may record generic connection status and successful-sync timestamps, but not report IDs, names, URLs, or content. No migration is planned for historical reports.
 
 ## Database and Security Rules
 

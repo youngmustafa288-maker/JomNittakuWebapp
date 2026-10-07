@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createDashboardStatePayload, createReportDriveRepository, normalizeReportRecord } from "./report-drive.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
 const CENTRE_PROFILE_KEY = "centre_profile";
@@ -92,7 +93,7 @@ export function initApp(config = {}) {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
-      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12 },
+      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50, locked: true },
       "footer-text-overlay": {
         left: 27,
         top: 91.55,
@@ -148,6 +149,9 @@ export function initApp(config = {}) {
           auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
         })
       : null;
+    const reportRepository = supabase
+      ? createReportDriveRepository(body => invokePrivileged("google-drive-oauth", { ...body, centre_id: state.auth.centreId }))
+      : null;
     let state = createInitialState();
     state.centreProfile = getCentreProfile();
     let wizardDraftId = null;
@@ -168,6 +172,8 @@ export function initApp(config = {}) {
     let authInitializing = Boolean(supabase);
     let draftProfileUploadContext = null;
     let certificateLogoUploadTarget = null;
+    let certificateUploadToLibrary = false;
+    let selectedCertificateUploadId = "";
     let persistTimer = null;
     let isApplyingRemoteState = false;
     let realtimeChannel = null;
@@ -189,6 +195,14 @@ export function initApp(config = {}) {
     let jsPdfModulePromise = null;
     let reportExportPromise = null;
     let reportExportKey = "";
+    let reportStoreStatus = "idle";
+    let reportStoreError = "";
+    let reportPdfError = "";
+    let reportLoadPromise = null;
+    let draftSaveTimer = null;
+    let dirtyReportDraftId = "";
+    const reportWriteQueues = new Map();
+    const draftRevisions = new Map();
     let reportLayoutEditing = false;
     let selectedReportOverlay = "date";
     let certificateEditorTool = "text";
@@ -303,6 +317,10 @@ export function initApp(config = {}) {
       const layers = Array.isArray(saved?.layers)
         ? DEFAULT_CERTIFICATE_LAYERS.map((defaultLayer, index) => {
             const savedLayer = saved.layers.find(layer => layer.id === defaultLayer.id) || {};
+            const fixedQr = defaultLayer.id === "qr" ? {
+              ...DEFAULT_LAYER_GEOMETRY.qr,
+              locked: true
+            } : {};
             // The footer is part of the fixed certificate frame. Do not let a
             // prior drag move its opaque strip over the report content.
             const fixedFooter = defaultLayer.id === "footer-bar-art" ? {
@@ -311,13 +329,23 @@ export function initApp(config = {}) {
             return {
               ...defaultLayer,
               ...savedLayer,
+              ...fixedQr,
               ...fixedFooter,
               visible: savedLayer.visible !== false,
-              zIndex: defaultLayer.id === "footer-bar-art" ? 1 : (Number(savedLayer.zIndex) || index + 2)
+              zIndex: defaultLayer.id === "footer-bar-art" ? 1 : defaultLayer.id === "qr" ? DEFAULT_LAYER_GEOMETRY.qr.zIndex : (Number(savedLayer.zIndex) || index + 2)
             };
           }).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id) && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)))
         : DEFAULT_CERTIFICATE_LAYERS.map(layer => ({ ...layer }));
-      return { ...keyed, layers };
+      const uploads = Array.isArray(saved?.uploads)
+        ? saved.uploads.filter(asset => asset && typeof asset.source === "string" && /^https:\/\//i.test(asset.source))
+          .slice(-40)
+          .map((asset, index) => ({
+            id: String(asset.id || `upload-${index + 1}`).slice(0, 128),
+            name: String(asset.name || "Uploaded image").slice(0, 120),
+            source: asset.source.slice(0, 2048)
+          }))
+        : [];
+      return { ...keyed, layers, uploads };
     }
 
     function getReportLayout(coach) {
@@ -407,8 +435,8 @@ export function initApp(config = {}) {
         centreProfile: normalizeCentreProfile(rawState.centreProfile || defaults.centreProfile),
         coaches: mergeList(rawState.coaches, defaults.coaches, normalizeCoach),
         students: mergeList(rawState.students, defaults.students, normalizeStudent),
-        reports: mergeList(rawState.reports, defaults.reports, normalizeReport),
-        reportDrafts: Object.fromEntries(Object.entries(rawState.reportDrafts && Object.keys(rawState.reportDrafts).length ? rawState.reportDrafts : defaults.reportDrafts).map(([key, draft]) => [key, normalizeDraft(draft)]))
+        reports: [],
+        reportDrafts: {}
       };
     }
 
@@ -437,7 +465,7 @@ export function initApp(config = {}) {
           .eq("id", id)
           .single();
         if (!error && data?.payload && data.payload.dataVersion >= 2) {
-          return normalizeState(data.payload);
+          return normalizeState({ ...createDashboardStatePayload(data.payload), reports: [], reportDrafts: {} });
         }
       } catch (error) {}
       return normalizeState(createInitialState());
@@ -476,13 +504,90 @@ export function initApp(config = {}) {
       return data;
     }
 
+    function queueReportWrite(record, options) {
+      const normalized = normalizeReportRecord(record);
+      const previous = reportWriteQueues.get(normalized.id) || Promise.resolve();
+      const current = previous.catch(() => {}).then(() => reportRepository.save(normalized, options));
+      reportWriteQueues.set(normalized.id, current);
+      current.finally(() => {
+        if (reportWriteQueues.get(normalized.id) === current) reportWriteQueues.delete(normalized.id);
+      }).catch(() => {});
+      return current;
+    }
+
+    function updateReportSaveStatus(text, isError = false) {
+      const status = document.getElementById("reportSaveStatus");
+      if (!status) return;
+      status.textContent = text;
+      status.classList.toggle("is-error", isError);
+    }
+
+    async function saveReportRecord(record, options = {}) {
+      reportStoreError = "";
+      reportStoreStatus = "saving";
+      updateReportSaveStatus("Saving to Google Drive…");
+      try {
+        const saved = await queueReportWrite(record, options);
+        reportStoreStatus = "ready";
+        reportStoreError = "";
+        updateReportSaveStatus("Saved to Google Drive");
+        if (record.recordType === "draft") {
+          state.reportDrafts[saved.id] = normalizeDraft(saved);
+        }
+        return saved;
+      } catch (error) {
+        reportStoreStatus = "error";
+        reportStoreError = error.message || "Unable to save report to Google Drive.";
+        updateReportSaveStatus(`Not saved: ${reportStoreError}`, true);
+        throw error;
+      }
+    }
+
+    async function loadReportsFromDrive() {
+      if (!isCentreAccount()) return;
+      if (reportLoadPromise) return reportLoadPromise;
+      reportStoreError = "";
+      state.reports = [];
+      state.reportDrafts = {};
+      if (/^\/coach\/[^/]+\/?$/i.test(window.location.pathname)) {
+        reportStoreStatus = "idle";
+        return;
+      }
+      if (state.driveConnection?.status !== "connected") {
+        reportStoreStatus = "disconnected";
+        reportStoreError = "Connect Google Drive to view or create centre reports.";
+        return;
+      }
+      reportStoreStatus = "loading";
+      reportLoadPromise = (async () => {
+        try {
+          const records = await reportRepository.list();
+          state.reports = records.filter(record => record.recordType === "report").map(normalizeReport);
+          state.reportDrafts = Object.fromEntries(records
+            .filter(record => record.recordType === "draft")
+            .map(record => [record.id, normalizeDraft(record)]));
+          reportStoreStatus = "ready";
+        } catch (error) {
+          reportStoreStatus = "error";
+          reportStoreError = error.message || "Unable to load reports from Google Drive.";
+        }
+      })();
+      try {
+        await reportLoadPromise;
+      } finally {
+        reportLoadPromise = null;
+      }
+    }
+
     async function refreshPrivilegedState() {
       if (!supabase) return;
       if (state.auth.role === "dev") {
         const data = await invokePrivileged("dev-console", { action: "list" });
         state.devCentres = data.centres || [];
       } else if (["centre_admin", "coach"].includes(state.auth.role) && state.auth.centreId) {
-        const { data } = await supabase.from("drive_connections").select("*").eq("centre_id", state.auth.centreId).maybeSingle();
+        const { data } = await supabase.from("drive_connections")
+          .select("centre_id,google_account_email,root_folder_id,root_folder_name,root_folder_url,token_expires_at,status,last_error,last_successful_sync_at,connected_at,updated_at")
+          .eq("centre_id", state.auth.centreId).maybeSingle();
         state.driveConnection = data || null;
       }
     }
@@ -519,7 +624,10 @@ export function initApp(config = {}) {
       if (!hasSupabaseConfig() || isApplyingRemoteState) {
         return;
       }
-      const payload = { ...state, auth: { role: null, coachId: null, userId: null, centreId: null, email: "" } };
+      const payload = createDashboardStatePayload({
+        ...state,
+        auth: { role: null, coachId: null, userId: null, centreId: null, email: "" }
+      });
       await supabase
         .from("dashboard_state")
         .upsert({ id: dashboardStateId(), payload }, { onConflict: "id" });
@@ -546,6 +654,8 @@ export function initApp(config = {}) {
       const liveAuth = state.auth;
       const liveUi = state.ui;
       const liveCentreProfile = state.centreProfile;
+      const liveReports = state.reports;
+      const liveReportDrafts = state.reportDrafts;
       const focusedWizardField = document.activeElement?.closest("#wizardModal input, #wizardModal textarea, #wizardModal select");
       const localWizardDraft = focusedWizardField && wizardDraftId && state.reportDrafts?.[wizardDraftId]
         ? {
@@ -553,10 +663,12 @@ export function initApp(config = {}) {
             summary: { ...state.reportDrafts[wizardDraftId].summary }
           }
         : null;
-      state = normalizeState(payload);
+      state = normalizeState(createDashboardStatePayload(payload));
       state.auth = liveAuth;
       state.ui = liveUi;
       state.centreProfile = liveCentreProfile;
+      state.reports = liveReports;
+      state.reportDrafts = liveReportDrafts;
       if (localWizardDraft) {
         // Realtime echoes must not replace the wizard while a field is active.
         // Keep the locally edited draft until the field loses focus or the user
@@ -878,6 +990,7 @@ export function initApp(config = {}) {
         return render();
       }
       await refreshPrivilegedState().catch(() => {});
+      await loadReportsFromDrive();
       state.ui.page = "overview";
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
@@ -899,7 +1012,7 @@ export function initApp(config = {}) {
       ]);
       return (layout.layers || []).filter(layer => !builtInLayerIds.has(layer.id) && layer.id !== "footer-bar-art" && layer.visible !== false).map(layer => {
         const slice = ARTWORK_SLICES[layer.id];
-        if (slice) {
+      if (slice) {
           const left = Number(layer.left ?? slice.left) || 0;
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
@@ -909,10 +1022,18 @@ export function initApp(config = {}) {
           // previously saved layout assigned it a higher stacking order.
           const zIndex = layer.id === "footer-bar-art" ? 1 : (Number(layer.zIndex) || 2);
           const objectFit = layer.objectFit || (layer.source ? "contain" : "fill");
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${escapeHtml(source)}" alt="" style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${layer.source ? "hidden" : ""}>${escapeHtml(layer.textOverride || "")}</span>${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+          const imageTarget = reportLayoutEditing && layer.type === "image" && layer.id !== "qr" && layer.locked !== true
+            ? `data-certificate-image-target tabindex="0" role="button" aria-label="Replace image in ${escapeHtml(layer.name || layer.id)}"`
+            : "";
+          const objectTools = reportLayoutEditing && selectedReportOverlay === layer.id && layer.id.startsWith("custom-") && layer.type === "text"
+            ? renderCertificateObjectTools(layer)
+            : "";
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${escapeHtml(source)}" alt="" style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${layer.source ? "hidden" : ""}>${escapeHtml(layer.textOverride || "")}</span>${objectTools}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
-        const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};font-style:${escapeHtml(layer.fontStyle || "normal")};text-decoration:${escapeHtml(layer.textDecoration || "none")};background:${escapeHtml(layer.fill || "transparent")};`;
+        const isCustomText = layer.id.startsWith("custom-") && layer.type === "text";
+        const fill = layer.type === "text" ? "transparent" : layer.fill || "transparent";
+        const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};font-style:${escapeHtml(layer.fontStyle || "normal")};text-decoration:${escapeHtml(layer.textDecoration || "none")};background:${escapeHtml(fill)};`;
         const content = layer.type === "image" || layer.type === "photo"
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
           : isFooterText
@@ -921,7 +1042,13 @@ export function initApp(config = {}) {
               return `<span class="template-footer-title">${escapeHtml(title)}</span><span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>`;
             })()
           : escapeHtml(layer.text || "");
-        return `<div class="template-custom-layer ${isFooterText ? "template-footer-text" : ""} report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${layer.type === "text" ? 'data-overlay-text="true"' : ""} style="${style}">${content}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
+        const isSelected = selectedReportOverlay === layer.id;
+        const objectTools = reportLayoutEditing && isSelected && isCustomText ? renderCertificateObjectTools(layer) : "";
+        const innerContent = isCustomText ? `<span class="template-custom-layer-content">${content}</span>` : content;
+        const imageTarget = reportLayoutEditing && layer.type === "image" && layer.locked !== true
+          ? `data-certificate-image-target tabindex="0" role="button" aria-label="Replace image in ${escapeHtml(layer.name || layer.id)}"`
+          : "";
+        return `<div class="template-custom-layer ${isFooterText ? "template-footer-text" : ""} ${isCustomText && isSelected && reportLayoutEditing ? "has-object-tools" : ""} report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${isSelected ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${layer.type === "text" ? 'data-overlay-text="true"' : ""} style="${style}">${innerContent}${objectTools}${reportLayoutEditing ? `<span class="certificate-resize-handle" aria-hidden="true"></span>` : ""}</div>`;
       }).join("");
     }
 
@@ -967,8 +1094,16 @@ export function initApp(config = {}) {
     }
 
     async function applyAuthUser(user) {
+      const previousUserId = state.auth.userId;
+      const previousCentreId = state.auth.centreId;
       if (!user) {
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+        state.reports = [];
+        state.reportDrafts = {};
+        reportStoreStatus = "idle";
+        reportStoreError = "";
+        wizardDraftId = null;
+        dirtyReportDraftId = "";
         return;
       }
       const appRole = user.app_metadata?.role;
@@ -1045,6 +1180,14 @@ export function initApp(config = {}) {
         });
         state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
       }
+      if (previousUserId && (previousUserId !== user.id || previousCentreId !== centreId)) {
+        state.reports = [];
+        state.reportDrafts = {};
+        reportStoreStatus = "idle";
+        reportStoreError = "";
+        wizardDraftId = null;
+        dirtyReportDraftId = "";
+      }
       state.auth = {
         role: appRole === "dev" || appRole === "admin"
           ? appRole
@@ -1065,12 +1208,16 @@ export function initApp(config = {}) {
 
     function bindAuthStateListener() {
       if (!supabase) return;
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange((event, session) => {
         window.setTimeout(async () => {
           await applyAuthUser(session?.user || null);
           await refreshCoachesFromSupabase();
           await refreshStudentsFromSupabase();
           await refreshCoachAccountCount();
+          if (event === "SIGNED_IN" && !authInitializing) {
+            await refreshPrivilegedState().catch(() => {});
+            await loadReportsFromDrive();
+          }
           if (!authInitializing) render();
         }, 0);
       });
@@ -1083,6 +1230,12 @@ export function initApp(config = {}) {
       state.ui.page = "overview";
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
+      state.reports = [];
+      state.reportDrafts = {};
+      reportStoreStatus = "idle";
+      reportStoreError = "";
+      reportPdfError = "";
+      dirtyReportDraftId = "";
       persist();
       wizardDraftId = null;
       scheduleRender();
@@ -1385,8 +1538,27 @@ export function initApp(config = {}) {
         .filter(student => state.auth.role === "admin" || student.coachId === getCurrentCoach().id)
         .map(student => `<option value="${student.id}">${escapeHtml(student.name)}</option>`).join("");
       const reportMonths = [...new Set(state.reports.map(report => report.date.slice(0, 7)))].sort().reverse();
+      const drafts = Object.values(state.reportDrafts)
+        .filter(draft => state.auth.role !== "coach" || draft.coachId === state.auth.coachId)
+        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+      const reportNotice = !isCentreAccount()
+        ? '<p class="report-drive-notice">Reports are available within a centre workspace.</p>'
+        : reportStoreStatus === "loading"
+        ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive…</p>'
+        : reportStoreError
+          ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)}${state.auth.role === "centre_admin" ? ' <button class="secondary-btn" data-action="connect-drive">Connect Google Drive</button>' : ""}</p>`
+          : "";
+      const draftList = drafts.length ? `
+        <section class="report-drafts-section" aria-labelledby="reportDraftsHeading">
+          <h3 id="reportDraftsHeading">Drafts</h3>
+          <div class="report-draft-list">
+            ${drafts.map(draft => `<div class="report-draft-row"><div><strong>${escapeHtml(draft.ref || "Untitled report")}</strong><span>${escapeHtml(draft.date || "Date not set")} · ${escapeHtml(draft.time || "Time not set")}</span></div><button class="secondary-btn" data-action="continue-report-draft" data-draft-id="${escapeHtml(draft.id)}">Continue</button></div>`).join("")}
+          </div>
+        </section>` : "";
       return `
         <section class="page ${state.ui.page === "reports" ? "active" : ""}">
+          ${reportNotice}
+          ${draftList}
           <div class="table-card">
             <div class="table-topline">
               <div class="section-title">
@@ -1610,7 +1782,7 @@ export function initApp(config = {}) {
     function renderReportViewPage() {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) {
-        return "";
+        return `<section class="page ${state.ui.page === "report-view" ? "active" : ""}"><div class="report-view-wrap"><p class="report-drive-notice" role="status">${reportStoreStatus === "loading" ? "Loading report from Google Drive…" : "This report is not available in the centre's Google Drive."}</p><button class="ghost-btn" data-action="close-report-view">Back to reports</button></div></section>`;
       }
       const student = getStudentById(report.studentId);
       const coach = getCoachById(report.coachId);
@@ -1627,6 +1799,7 @@ export function initApp(config = {}) {
                   <p>${coach.name} · ${formatDate(report.date)} · ${formatTime(report.time)}</p>
                 </div>
                 <div class="report-actions">
+                  ${reportPdfError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportPdfError)}</p><button class="secondary-btn" data-action="retry-report-pdf">Retry Drive PDF save</button>` : ""}
                   ${state.auth.role === "coach" ? `<button class="secondary-btn" data-action="toggle-report-layout">${reportLayoutEditing ? "Done Editing" : "Edit Layout"}</button>` : ""}
                   <button class="primary-btn" data-action="download-report-pdf">Download PDF</button>
                   <button class="secondary-btn" data-action="download-report-png">Export PNG</button>
@@ -1763,7 +1936,10 @@ export function initApp(config = {}) {
     function renderCertificateToolPanel(coach) {
       if (certificateEditorTool === "elements") return `<div class="certificate-tool-panel"><strong>Elements</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-shape"><span aria-hidden="true">□</span>Add shape</button></div>`;
       if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add Text Box</button></div>`;
-      if (certificateEditorTool === "uploads") return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Drop a logo here or choose a logo file"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Replace logo</b><small>Drop an image here or choose a file</small></span></div><button type="button" class="certificate-panel-action" data-action="replace-certificate-logo"><span aria-hidden="true">+</span>Choose logo</button><button type="button" class="certificate-panel-action" data-action="add-certificate-image"><span aria-hidden="true">+</span>Upload image</button></div>`;
+      if (certificateEditorTool === "uploads") {
+        const uploads = getReportLayout(coach).uploads || [];
+        return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Drop a logo here or choose a logo file"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Replace logo</b><small>Drop an image here or choose a file</small></span></div><button type="button" class="certificate-panel-action" data-action="replace-certificate-logo"><span aria-hidden="true">+</span>Choose logo</button><button type="button" class="certificate-panel-action" data-action="add-certificate-image"><span aria-hidden="true">+</span>Upload image</button><button type="button" class="certificate-panel-action" data-action="add-certificate-frame"><span aria-hidden="true">+</span>Add image frame</button>${uploads.length ? `<div class="certificate-upload-list" aria-label="Uploaded images">${uploads.map(asset => `<button type="button" class="certificate-upload-asset ${selectedCertificateUploadId === asset.id ? "is-selected" : ""}" draggable="true" data-certificate-asset-id="${escapeHtml(asset.id)}" aria-pressed="${selectedCertificateUploadId === asset.id}" aria-label="Select or drag ${escapeHtml(asset.name)} to an image frame"><img src="${escapeHtml(asset.source)}" alt=""><span title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</span></button>`).join("")}</div>` : `<p class="certificate-upload-empty">No uploads</p>`}</div>`;
+      }
       if (certificateEditorTool === "position") return `<div class="certificate-tool-panel"><strong>Position</strong><button type="button" class="certificate-panel-action" data-action="raise-certificate-layer">Bring forward</button><button type="button" class="certificate-panel-action" data-action="lower-certificate-layer">Send backward</button><button type="button" class="certificate-panel-action" data-action="toggle-certificate-lock">Lock or unlock</button></div>`;
       return renderCertificateLayerPanel(coach);
     }
@@ -1774,6 +1950,89 @@ export function initApp(config = {}) {
         <strong>Layers</strong>
         <div class="certificate-layer-list">${layers.map(layer => `<button type="button" class="certificate-layer-row ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-layer-select="${escapeHtml(layer.id)}"><span>${escapeHtml(layer.name || layer.id)}</span><small>${layer.locked === true ? "Locked" : escapeHtml(layer.type || "layer")}</small></button>`).join("")}</div>
       </div>`;
+    }
+
+    function renderCertificateObjectTools(layer) {
+      const locked = layer.locked === true;
+      return `<span class="certificate-object-toolbar" role="group" aria-label="Text box actions"><button type="button" class="certificate-object-action" data-action="toggle-certificate-lock" title="${locked ? "Unlock" : "Lock"}" aria-label="${locked ? "Unlock" : "Lock"}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button><button type="button" class="certificate-object-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button><button type="button" class="certificate-object-action is-danger" data-action="delete-certificate-layer" title="Delete text box" aria-label="Delete text box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v7m6-7v7"/></svg></button></span>`;
+    }
+
+    function addCertificateUpload(layout, source, name = "Uploaded image") {
+      if (!/^https:\/\//i.test(source)) throw new Error("The uploaded image URL is invalid.");
+      const existing = (layout.uploads || []).find(asset => asset.source === source);
+      if (existing) return existing;
+      const asset = {
+        id: `upload-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`,
+        name: String(name || "Uploaded image").slice(0, 120),
+        source
+      };
+      layout.uploads = [...(layout.uploads || []), asset].slice(-40);
+      return asset;
+    }
+
+    function applyCertificateUpload(assetId, layerId) {
+      const coach = getCurrentCoach();
+      if (!coach || layerId === "qr") return;
+      const layout = getReportLayout(coach);
+      const asset = layout.uploads.find(item => item.id === assetId);
+      const layer = layout.layers.find(item => item.id === layerId);
+      if (!asset || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[layerId])) return;
+      layer.source = asset.source;
+      layer.objectFit = "contain";
+      layer.objectPosition = "center";
+      layer.textOverride = "";
+      selectedCertificateUploadId = "";
+      selectedReportOverlay = layerId;
+      coach.reportLayout = layout;
+      return saveReportLayout(coach);
+    }
+
+    function beginCertificateTextEditing(item) {
+      const coach = getCurrentCoach();
+      if (!coach || item.dataset.overlayId === "qr" || item.contentEditable === "true" || item.querySelector('[contenteditable="true"]')) return;
+      const fullLayout = getReportLayout(coach);
+      const layer = fullLayout.layers.find(entry => entry.id === item.dataset.overlayId);
+      const layout = fullLayout[item.dataset.overlayId] || layer;
+      if (!layout || layout.locked === true) return;
+      let editor = item.querySelector(".template-custom-layer-content") || item;
+      if (layer?.type === "image") {
+        editor = item.querySelector(".template-art-text") || document.createElement("span");
+        editor.className = "template-art-text";
+        if (!editor.isConnected) item.append(editor);
+      }
+      editor.contentEditable = "true";
+      editor.classList.add("is-text-editing");
+      editor.setAttribute("role", "textbox");
+      editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
+      editor.focus();
+      const selection = window.getSelection();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      const finish = () => {
+        if (!item.isConnected) return;
+        const value = item.classList.contains("template-bullet-group")
+          ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
+          : (editor.innerText || editor.textContent).trim().slice(0, 500);
+        if (layer?.type === "text") layer.text = value;
+        else layout.textOverride = value;
+        editor.contentEditable = "false";
+        editor.classList.remove("is-text-editing");
+        coach.reportLayout = fullLayout;
+        saveReportLayout(coach);
+      };
+      editor.addEventListener("blur", finish, { once: true });
+      editor.addEventListener("keydown", keyEvent => {
+        if (keyEvent.key === "Escape") editor.blur();
+        if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
+          keyEvent.preventDefault();
+          editor.blur();
+        }
+      });
     }
 
     function renderReportWizard() {
@@ -1803,6 +2062,7 @@ export function initApp(config = {}) {
         <div id="wizardModal" class="modal-backdrop open">
           <div class="modal-card">
             <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
+            <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || "Saved to Google Drive")}</p>
             <div class="wizard-steps">
               ${[
                 ["Step 1", "Select Student"],
@@ -2278,8 +2538,6 @@ export function initApp(config = {}) {
     }
 
     function renderPublicCoachPage(coach) {
-      const reports = state.reports.filter(report => report.coachId === coach.id);
-      const generated = reports.filter(report => report.status === "Generated").length;
       const coachLinks = (coach.links || [])
         .filter(link => link.visible !== false && String(link.url || "").trim())
         .map(link => ({ ...link, title: link.title || link.label || "Coach link" }));
@@ -2294,11 +2552,6 @@ export function initApp(config = {}) {
             <p class="public-coach-kicker">${escapeHtml(coach.role || "Coach")}</p>
             <h1>${escapeHtml(coach.name)}</h1>
             <p class="public-coach-bio">${escapeHtml(coach.bio || coach.branch || "")}</p>
-            <div class="public-coach-stats">
-              <span><strong>${reports.length}</strong> sessions</span>
-              <span><strong>${reports.length ? "100" : "0"}%</strong> attendance</span>
-              <span><strong>${generated}</strong> reports filed</span>
-            </div>
             ${links.length ? "" : `<div class="public-coach-links-empty">No centre or coach links have been added yet.</div>`}
             <div class="public-coach-links">
               ${links.map(link => `<a href="${escapeHtml(link.url)}" class="public-coach-link" ${/^https?:|^mailto:|^tel:/.test(link.url) ? 'target="_blank" rel="noreferrer"' : ""}><span>${escapeHtml(link.icon || "↗")}</span>${escapeHtml(link.title)}</a>`).join("")}
@@ -2493,10 +2746,42 @@ export function initApp(config = {}) {
             search.setSelectionRange(selectionStart, selectionStart);
           });
         });
+        app.addEventListener("dragstart", event => {
+          const asset = event.target.closest("[data-certificate-asset-id]");
+          if (!asset || !event.dataTransfer) return;
+          event.dataTransfer.setData("application/x-certificate-asset", asset.dataset.certificateAssetId);
+          event.dataTransfer.setData("text/plain", asset.dataset.certificateAssetId);
+          event.dataTransfer.effectAllowed = "copy";
+        });
+        app.addEventListener("dragover", event => {
+          const target = event.target.closest("[data-overlay-id]");
+          const types = Array.from(event.dataTransfer?.types || []);
+          if (!target || (!types.includes("application/x-certificate-asset") && !types.includes("text/plain"))) return;
+          const layout = getReportLayout(getCurrentCoach());
+          const layer = layout.layers.find(item => item.id === target.dataset.overlayId);
+          if (target.dataset.overlayId === "qr" || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[target.dataset.overlayId])) return;
+          event.preventDefault();
+          target.classList.add("is-image-drop-target");
+          event.dataTransfer.dropEffect = "copy";
+        });
+        app.addEventListener("dragleave", event => {
+          event.target.closest("[data-overlay-id]")?.classList.remove("is-image-drop-target");
+        });
+        app.addEventListener("drop", event => {
+          const target = event.target.closest("[data-overlay-id]");
+          if (!target) return;
+          target.classList.remove("is-image-drop-target");
+          const assetId = event.dataTransfer?.getData("application/x-certificate-asset") || event.dataTransfer?.getData("text/plain");
+          if (!assetId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          applyCertificateUpload(assetId, target.dataset.overlayId);
+        });
         app.addEventListener("pointerdown", event => {
           const item = event.target.closest(".report-overlay-item.is-editing");
           const preview = document.querySelector("#reportTemplatePreview");
           if (!item || !preview) return;
+          if (event.target.closest(".certificate-object-toolbar") || item.dataset.overlayId === "qr") return;
           if (event.target.closest('[contenteditable="true"]')) return;
           if (event.detail > 1 && event.target.closest('[data-overlay-text="true"]')) return;
           selectedReportOverlay = item.dataset.overlayId;
@@ -2551,7 +2836,7 @@ export function initApp(config = {}) {
               item.style.height = `${layout.height}%`;
             }
           };
-          const up = () => {
+          const up = upEvent => {
             document.removeEventListener("pointermove", move);
             document.removeEventListener("pointerup", up);
             document.removeEventListener("pointercancel", up);
@@ -2560,6 +2845,17 @@ export function initApp(config = {}) {
             if (reportOverlayDragged || resizing) {
               coach.reportLayout = fullLayout;
               saveReportLayout(coach);
+            } else if (upEvent?.type === "pointerup" && layout.id?.startsWith("custom-") && layout.type === "text") {
+              selectedReportOverlay = layout.id;
+              if (!item.classList.contains("is-selected")) {
+                render();
+                requestAnimationFrame(() => {
+                  const selectedItem = document.querySelector(`[data-overlay-id="${layout.id}"]`);
+                  if (selectedItem) beginCertificateTextEditing(selectedItem);
+                });
+              } else {
+                beginCertificateTextEditing(item);
+              }
             }
           };
           document.addEventListener("pointermove", move);
@@ -2683,12 +2979,28 @@ export function initApp(config = {}) {
         }
       });
       document.querySelectorAll("[data-overlay-id]").forEach(item => item.addEventListener("click", event => {
+        if (event.target.closest(".certificate-object-toolbar")) return;
         event.stopPropagation();
+        if (selectedCertificateUploadId) {
+          const targetLayer = getReportLayout(getCurrentCoach()).layers.find(layer => layer.id === item.dataset.overlayId);
+          if (targetLayer?.type === "image" && targetLayer.locked !== true && item.dataset.overlayId !== "qr") {
+            const assetId = selectedCertificateUploadId;
+            selectedCertificateUploadId = "";
+            applyCertificateUpload(assetId, item.dataset.overlayId);
+            return;
+          }
+        }
         if (reportOverlayDragged) {
           reportOverlayDragged = false;
           return;
         }
+        if (item.dataset.overlayId === "qr") return;
         selectedReportOverlay = item.dataset.overlayId;
+        const layer = getReportLayout(getCurrentCoach()).layers.find(entry => entry.id === item.dataset.overlayId);
+        if (reportLayoutEditing && layer?.type === "text" && layer.id.startsWith("custom-")) {
+          beginCertificateTextEditing(item);
+          return;
+        }
         if (reportLayoutEditing) render();
       }));
       document.querySelector("#reportTemplatePreview")?.addEventListener("click", event => {
@@ -2702,55 +3014,29 @@ export function initApp(config = {}) {
         certificateEditorTool = item.dataset.certificateTool;
         render();
       }));
+      document.querySelectorAll("[data-certificate-asset-id]").forEach(item => item.addEventListener("click", () => {
+        selectedCertificateUploadId = item.dataset.certificateAssetId;
+        render();
+        requestAnimationFrame(() => {
+          [...document.querySelectorAll("[data-certificate-asset-id]")]
+            .find(asset => asset.dataset.certificateAssetId === selectedCertificateUploadId)
+            ?.focus();
+        });
+      }));
+      document.querySelectorAll("[data-certificate-image-target]").forEach(item => item.addEventListener("keydown", event => {
+        if (!selectedCertificateUploadId || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        const assetId = selectedCertificateUploadId;
+        selectedCertificateUploadId = "";
+        applyCertificateUpload(assetId, item.dataset.overlayId);
+      }));
       document.querySelectorAll('[data-overlay-text="true"][data-overlay-id]').forEach(item => item.addEventListener("dblclick", event => {
         event.stopPropagation();
         event.preventDefault();
-        const coach = getCurrentCoach();
-        const fullLayout = getReportLayout(coach);
-        const layer = (fullLayout.layers || []).find(entry => entry.id === item.dataset.overlayId);
-        const layout = fullLayout[item.dataset.overlayId] || layer;
-        if (!layout || layout.locked === true) return;
-        let editor = item;
-        if (layer?.type === "image") {
-          editor = item.querySelector(".template-art-text") || document.createElement("span");
-          editor.className = "template-art-text";
-          if (!editor.isConnected) item.append(editor);
-        }
-        editor.contentEditable = "true";
-        editor.classList.add("is-text-editing");
-        editor.setAttribute("role", "textbox");
-        editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
-        editor.focus();
-        const selection = window.getSelection();
-        if (selection) {
-          const range = document.createRange();
-          range.selectNodeContents(editor);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-        const finish = () => {
-          const value = item.classList.contains("template-bullet-group")
-            ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
-            : (editor.innerText || editor.textContent).trim().slice(0, 500);
-          if (layer?.type === "text") layer.text = value;
-          else layout.textOverride = value;
-          editor.contentEditable = "false";
-          editor.classList.remove("is-text-editing");
-          coach.reportLayout = fullLayout;
-          saveReportLayout(coach);
-        };
-        editor.addEventListener("blur", finish, { once: true });
-        editor.addEventListener("keydown", keyEvent => {
-          if (keyEvent.key === "Escape") editor.blur();
-          if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
-            keyEvent.preventDefault();
-            editor.blur();
-          }
-        });
+        beginCertificateTextEditing(item);
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
       document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));
-      document.querySelector("[data-layout-text]")?.addEventListener("change", event => updateSelectedReportLayout({ text: event.target.value.slice(0, 500) }));
       document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
       document.querySelector("[data-layout-size]")?.addEventListener("change", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
       document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
@@ -2770,6 +3056,7 @@ export function initApp(config = {}) {
         if (format === "italic") updateSelectedReportLayout({ fontStyle: button.classList.contains("is-active") ? "normal" : "italic" });
         if (format === "underline") updateSelectedReportLayout({ textDecoration: button.classList.contains("is-active") ? "none" : "underline" });
       }));
+      document.querySelectorAll(".certificate-object-toolbar button").forEach(button => button.addEventListener("mousedown", event => event.preventDefault()));
       document.querySelector("[data-layout-left]")?.addEventListener("change", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
       document.querySelector("[data-layout-top]")?.addEventListener("change", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
       document.querySelector("[data-layout-width]")?.addEventListener("change", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
@@ -2784,15 +3071,31 @@ export function initApp(config = {}) {
           event.target.value = "";
           return replaceCertificateLogo(file, target);
         }
+        if (certificateUploadToLibrary) {
+          certificateUploadToLibrary = false;
+          uploadProfileImage(file, "certificate", getCurrentCoach().id).then(url => {
+            const coach = getCurrentCoach();
+            const layout = getReportLayout(coach);
+            addCertificateUpload(layout, url, file.name);
+            coach.reportLayout = layout;
+            event.target.value = "";
+            return saveReportLayout(coach);
+          }).catch(error => { event.target.value = ""; alert(error.message || "Unable to upload certificate image."); });
+          return;
+        }
         uploadProfileImage(file, "certificate", getCurrentCoach().id).then(url => {
           const coach = getCurrentCoach();
           const layout = getReportLayout(coach);
           const layer = (layout.layers || []).find(entry => entry.id === selectedReportOverlay);
-          if (layer) layer.source = url;
+          if (!layer || layer.type !== "image") throw new Error("Select an image layer before uploading.");
+          addCertificateUpload(layout, url, file.name);
+          layer.source = url;
+          layer.objectFit = "contain";
+          layer.objectPosition = "center";
           coach.reportLayout = layout;
           event.target.value = "";
           return saveReportLayout(coach);
-        }).catch(error => alert(error.message || "Unable to upload certificate image."));
+        }).catch(error => { event.target.value = ""; alert(error.message || "Unable to upload certificate image."); });
       });
       const logoDropzone = document.querySelector("[data-logo-dropzone]");
       if (logoDropzone) {
@@ -2907,9 +3210,19 @@ export function initApp(config = {}) {
       if (action === "wizard-generate") return finalizeWizard();
       if (action === "pick-student") return pickStudent(event.currentTarget.dataset.studentId);
       if (action === "view-report") return openReportView(event.currentTarget.dataset.reportId);
+      if (action === "continue-report-draft") {
+        const draftId = event.currentTarget.dataset.draftId;
+        if (!state.reportDrafts[draftId] || reportStoreStatus !== "ready") return;
+        wizardDraftId = draftId;
+        return render();
+      }
       if (action === "close-report-view") return navigate("reports");
       if (action === "download-report-pdf") return downloadReportPdf();
       if (action === "download-report-png") return downloadReportPng();
+      if (action === "retry-report-pdf") {
+        const report = state.reports.find(item => item.id === state.ui.reportViewId);
+        if (report) return syncReportToDrive(report);
+      }
       if (action === "share-report-whatsapp") return shareReportToWhatsApp();
       if (action === "replace-certificate-logo") return triggerCertificateLogoUpload();
       if (action === "save-report-layout") {
@@ -2926,6 +3239,7 @@ export function initApp(config = {}) {
       if (["toggle-certificate-layer", "lower-certificate-layer", "raise-certificate-layer"].includes(action)) {
         const coach = getCurrentCoach();
         const layout = getReportLayout(coach);
+        if (selectedReportOverlay === "qr") return;
         const target = layout[selectedReportOverlay] || (layout.layers || []).find(layer => layer.id === selectedReportOverlay);
         if (!target) return;
         if (action === "toggle-certificate-layer") target.visible = target.visible === false;
@@ -2937,6 +3251,7 @@ export function initApp(config = {}) {
       if (["toggle-certificate-lock", "duplicate-certificate-layer", "delete-certificate-layer"].includes(action)) {
         const coach = getCurrentCoach();
         const layout = getReportLayout(coach);
+        if (selectedReportOverlay === "qr") return;
         const index = (layout.layers || []).findIndex(layer => layer.id === selectedReportOverlay);
         const selectedLayer = index >= 0 ? layout.layers[index] : null;
         const target = layout[selectedReportOverlay] || selectedLayer;
@@ -2956,15 +3271,25 @@ export function initApp(config = {}) {
         coach.reportLayout = layout;
         return saveReportLayout(coach);
       }
-      if (action === "add-certificate-text" || action === "add-certificate-shape" || action === "add-certificate-image") {
+      if (action === "add-certificate-image") {
+        certificateUploadToLibrary = true;
+        certificateLogoUploadTarget = null;
+        document.getElementById("hiddenCertificateUpload")?.click();
+        return;
+      }
+      if (["add-certificate-text", "add-certificate-shape", "add-certificate-frame"].includes(action)) {
         const coach = getCurrentCoach();
         const layout = getReportLayout(coach);
         const id = `custom-${Date.now()}`;
         const type = action === "add-certificate-text" ? "text" : action === "add-certificate-shape" ? "shape" : "image";
-        layout.layers.push({ id, name: type === "text" ? "New text" : type === "shape" ? "Rectangle" : "New image", type, text: type === "text" ? "Double-click to edit" : "", left: 38, top: 40, width: 24, height: 8, visible: true, zIndex: layout.layers.length + 2, fontFamily: "Arial", fontSize: 2.2, color: "#111111", fill: "#ffffff", opacity: 1 });
+        layout.layers.push({ id, name: type === "text" ? "New text" : type === "shape" ? "Rectangle" : "New image", type, text: "", left: 38, top: 40, width: 24, height: 8, visible: true, zIndex: layout.layers.length + 2, fontFamily: "Arial", fontSize: 2.2, color: "#111111", fill: "transparent", opacity: 1 });
         coach.reportLayout = layout; selectedReportOverlay = id;
-        if (type === "image") document.getElementById("hiddenCertificateUpload")?.click();
-        return saveReportLayout(coach);
+        return saveReportLayout(coach).then(() => {
+          if (type === "text") requestAnimationFrame(() => {
+            const item = document.querySelector(`[data-overlay-id="${id}"]`);
+            if (item) beginCertificateTextEditing(item);
+          });
+        });
       }
       if (action === "upload-admin-photo") return triggerProfileUpload("admin");
       if (action === "upload-coach-photo") return triggerProfileUpload("coach");
@@ -3186,13 +3511,12 @@ export function initApp(config = {}) {
     function renderReportLayoutToolbar(coach) {
       const reportLayout = getReportLayout(coach);
       const layout = reportLayout[selectedReportOverlay] || (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
-      if (!layout) return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
+      if (!layout || selectedReportOverlay === "qr") return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
       const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
       const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image");
       return `<div class="report-layout-toolbar">
         <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
-        ${isTextLayer ? `<label class="toolbar-text toolbar-layer-text toolbar-meta-field"><span>Text</span><input type="text" data-layout-text value="${escapeHtml(selectedLayer?.text || layout.textOverride || "")}" aria-label="Element text" maxlength="500"></label>` : ""}
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${layout.fontStyle === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${layout.textDecoration === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
         <span class="toolbar-divider" aria-hidden="true"></span>
@@ -3204,16 +3528,58 @@ export function initApp(config = {}) {
       </div>`;
     }
 
-    function startReportFlow() {
+    function scheduleDraftSave(draft) {
+      dirtyReportDraftId = draft.id;
+      const revision = (draftRevisions.get(draft.id) || 0) + 1;
+      draftRevisions.set(draft.id, revision);
+      updateReportSaveStatus("Unsaved changes · saving to Google Drive…");
+      clearTimeout(draftSaveTimer);
+      draftSaveTimer = window.setTimeout(() => {
+        draftSaveTimer = null;
+        const current = state.reportDrafts[draft.id];
+        if (!current) return;
+        saveReportRecord({ ...current, recordType: "draft" })
+          .then(() => {
+            if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
+            updateReportSaveStatus("Saved to Google Drive");
+          })
+          .catch(() => {});
+      }, 500);
+    }
+
+    async function flushDraftSave(draft) {
+      clearTimeout(draftSaveTimer);
+      draftSaveTimer = null;
+      const revision = draftRevisions.get(draft.id) || 0;
+      dirtyReportDraftId = draft.id;
+      const saved = await saveReportRecord({ ...draft, recordType: "draft" });
+      if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
+      updateReportSaveStatus("Saved to Google Drive");
+      return saved;
+    }
+
+    window.addEventListener("beforeunload", event => {
+      if (!dirtyReportDraftId && !draftSaveTimer) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
+
+    async function startReportFlow() {
       if (state.auth.role !== "coach") {
         alert("New report generation is available from the Coach account.");
         return;
       }
+      if (reportStoreStatus !== "ready" || state.driveConnection?.status !== "connected") {
+        alert(reportStoreError || "Connect Google Drive and wait for reports to load before starting a report.");
+        return;
+      }
       const coach = getCurrentCoach();
       const now = new Date();
-      const id = `draft-${Date.now()}`;
+      const id = `draft-${crypto.randomUUID()}`;
       const refNumber = state.reports.length + Object.keys(state.reportDrafts).length + 1;
       state.reportDrafts[id] = {
+        schemaVersion: 1,
+        recordType: "draft",
         id,
         ref: `DSM-26-${String(refNumber).padStart(4, "0")}`,
         coachId: coach.id,
@@ -3226,11 +3592,16 @@ export function initApp(config = {}) {
         summary: blankSummary()
       };
       wizardDraftId = id;
-      persist();
+      try {
+        await flushDraftSave(state.reportDrafts[id]);
+      } catch {
+        render();
+        return;
+      }
       render();
     }
 
-    function updateWizardDraftFromInputs() {
+    function updateWizardDraftFromInputs({ schedule = true } = {}) {
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
       const selectedStudent = getStudentById(draft.studentId || "");
@@ -3242,7 +3613,7 @@ export function initApp(config = {}) {
       draft.summary.beforeCoaching = document.getElementById("wizardBeforeCoaching")?.value ?? draft.summary.beforeCoaching;
       draft.summary.nextLesson = document.getElementById("wizardNextLesson")?.value ?? draft.summary.nextLesson;
       draft.summary.remarks = document.getElementById("wizardRemarks")?.value ?? draft.summary.remarks;
-      persist();
+      if (schedule) scheduleDraftSave(draft);
     }
 
     function pickStudent(studentId) {
@@ -3251,14 +3622,29 @@ export function initApp(config = {}) {
       const student = getStudentById(studentId);
       draft.studentId = studentId;
       draft.lessonNumber = student.lessons + 1;
-      persist();
-      render();
+      flushDraftSave(draft).then(render).catch(() => render());
+    }
+
+    async function changeWizardStep(nextStep) {
+      const draft = state.reportDrafts[wizardDraftId];
+      if (!draft) return;
+      updateWizardDraftFromInputs({ schedule: false });
+      const previousStep = draft.step;
+      try {
+        await flushDraftSave(draft);
+        draft.step = nextStep;
+        await flushDraftSave(draft);
+        render();
+      } catch {
+        draft.step = previousStep;
+        render();
+      }
     }
 
     function advanceWizard() {
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
-      updateWizardDraftFromInputs();
+      updateWizardDraftFromInputs({ schedule: false });
       if (draft.step === 1 && !draft.studentId) {
         alert("Select a student before continuing.");
         return;
@@ -3267,40 +3653,34 @@ export function initApp(config = {}) {
         alert("Complete date, time and lesson number.");
         return;
       }
-      draft.step = Math.min(4, draft.step + 1);
-      persist();
-      render();
+      return changeWizardStep(Math.min(4, draft.step + 1));
     }
 
     function retreatWizard() {
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
-      updateWizardDraftFromInputs();
-      draft.step = Math.max(1, draft.step - 1);
-      persist();
-      render();
+      return changeWizardStep(Math.max(1, draft.step - 1));
     }
 
     function goToWizardStep(targetStep) {
       const draft = state.reportDrafts[wizardDraftId];
       const nextStep = Number(targetStep);
       if (!draft || !Number.isInteger(nextStep) || nextStep < 1 || nextStep > draft.step) return;
-      updateWizardDraftFromInputs();
-      draft.step = nextStep;
-      persist();
-      render();
+      return changeWizardStep(nextStep);
     }
 
-    function finalizeWizard() {
+    async function finalizeWizard() {
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
-      updateWizardDraftFromInputs();
+      updateWizardDraftFromInputs({ schedule: false });
       if (!draft.studentId) {
         alert("Select a student first.");
         return;
       }
-      const reportId = `report-${Date.now()}`;
+      const reportId = `report-${draft.id.slice("draft-".length)}`;
       const finalReport = {
+        schemaVersion: 1,
+        recordType: "report",
         id: reportId,
         ref: draft.ref,
         studentId: draft.studentId,
@@ -3313,23 +3693,48 @@ export function initApp(config = {}) {
         generatedAt: new Date().toISOString(),
         summary: { ...draft.summary }
       };
-      state.reports.unshift(finalReport);
+      clearTimeout(draftSaveTimer);
+      draftSaveTimer = null;
+      dirtyReportDraftId = draft.id;
+      let savedReport;
+      try {
+        savedReport = await saveReportRecord(finalReport, { draftId: draft.id });
+      } catch {
+        render();
+        return;
+      }
+      state.reports.unshift(normalizeReport(savedReport));
+      delete state.reportDrafts[draft.id];
+      dirtyReportDraftId = "";
       const student = getStudentById(draft.studentId);
-      student.lessons = Math.max(student.lessons, finalReport.lessonNumber);
-      delete state.reportDrafts[wizardDraftId];
+      if (student) {
+        student.lessons = Math.max(Number(student.lessons) || 0, finalReport.lessonNumber);
+        try {
+          const savedStudent = await saveStudentRecord(student);
+          state.students = state.students.map(item => item.id === savedStudent.id ? savedStudent : item);
+        } catch (error) {
+          console.warn("Report saved to Drive, but the student lesson count was not updated", error);
+        }
+      }
       wizardDraftId = null;
       state.ui.page = "report-view";
       state.ui.reportViewId = reportId;
       persist();
       render();
-      window.requestAnimationFrame(() => syncReportToDrive(finalReport));
+      window.requestAnimationFrame(() => syncReportToDrive(savedReport));
     }
 
-    function closeWizard() {
-      updateWizardDraftFromInputs();
-      wizardDraftId = null;
-      persist();
-      render();
+    async function closeWizard() {
+      const draft = state.reportDrafts[wizardDraftId];
+      if (!draft) return;
+      updateWizardDraftFromInputs({ schedule: false });
+      try {
+        await flushDraftSave(draft);
+        wizardDraftId = null;
+        render();
+      } catch {
+        render();
+      }
     }
 
     function openReportView(reportId) {
@@ -3610,7 +4015,7 @@ export function initApp(config = {}) {
     }
 
     async function syncReportToDrive(report) {
-      if (!supabase || !state.auth.centreId || state.driveConnection?.status !== "connected") return;
+      if (!reportRepository || !state.auth.centreId || state.driveConnection?.status !== "connected") return;
       try {
         const canvas = await getReportExportCanvas(report);
         const jsPDF = await getJsPdfLib();
@@ -3623,18 +4028,13 @@ export function initApp(config = {}) {
           reader.onerror = () => reject(new Error("Unable to prepare report for Drive"));
           reader.readAsDataURL(blob);
         });
-        const result = await invokePrivileged("google-drive-oauth", {
-          action: "sync-report",
-          report_id: report.id,
-          file_name: `${report.ref || report.id}-training-report.pdf`,
-          mime_type: "application/pdf",
-          file_base64: dataUrl
-        });
-        if (result?.file_url) report.driveFileUrl = result.file_url;
+        await reportRepository.savePdf(report.id, dataUrl);
+        reportPdfError = "";
         state.driveConnection = { ...state.driveConnection, status: "connected", last_successful_sync_at: new Date().toISOString(), last_error: null };
-        persist();
       } catch (error) {
-        console.warn("Unable to sync report to Google Drive", error);
+        reportPdfError = error.message || "Report saved, but its PDF could not be saved to Google Drive.";
+        console.warn("Unable to save report PDF to Google Drive", error);
+        if (state.ui.page === "report-view") scheduleRender();
       }
     }
 
@@ -3724,6 +4124,7 @@ export function initApp(config = {}) {
     }
 
     function triggerCertificateLogoUpload() {
+      certificateUploadToLibrary = false;
       certificateLogoUploadTarget = "brand-logo-art";
       document.getElementById("hiddenCertificateUpload")?.click();
     }
@@ -3736,6 +4137,7 @@ export function initApp(config = {}) {
         const layout = getReportLayout(coach);
         const layer = (layout.layers || []).find(entry => entry.id === targetId);
         if (!layer) throw new Error("The logo layer is unavailable.");
+        addCertificateUpload(layout, url, file.name);
         layer.source = url;
         layer.objectFit = "contain";
         layer.objectPosition = "center";
@@ -4130,6 +4532,7 @@ export function initApp(config = {}) {
                 callbackError = error.message || "Unable to connect Google Drive.";
               }
             }
+            await loadReportsFromDrive();
             state.centreProfile = await loadPublicCentreProfile();
           } else {
             state.centreProfile = normalizeCentreProfile(state.centreProfile);

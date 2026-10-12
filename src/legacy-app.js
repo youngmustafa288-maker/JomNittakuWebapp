@@ -1564,6 +1564,7 @@ export function initApp(config = {}) {
               <div class="section-title">
                 <h2>Reports</h2>
               </div>
+              ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">+ New Report</button>` : ""}
             </div>
             <div class="reports-filter-bar">
               <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">

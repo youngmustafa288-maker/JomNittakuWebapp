@@ -1426,7 +1426,7 @@ export function initApp(config = {}) {
       return `
         <div class="topbar">
           <div class="topbar-actions">
-            ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">+ New Report</button>` : ""}
+            <button class="primary-btn" data-action="new-report">+ New Report</button>
             <button class="avatar-btn" data-action="toggle-avatar-menu" ${profile.photo ? `style="background-image:url('${profile.photo}');"` : ""}>
               ${profile.photo ? "" : initials(profile.name)}
             </button>

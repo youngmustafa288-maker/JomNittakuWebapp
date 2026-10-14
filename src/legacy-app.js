@@ -1426,7 +1426,7 @@ export function initApp(config = {}) {
       return `
         <div class="topbar">
           <div class="topbar-actions">
-            <button class="primary-btn" data-action="new-report">+ New Report</button>
+            ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">Generate Report</button>` : ""}
             <button class="avatar-btn" data-action="toggle-avatar-menu" ${profile.photo ? `style="background-image:url('${profile.photo}');"` : ""}>
               ${profile.photo ? "" : initials(profile.name)}
             </button>
@@ -1564,7 +1564,7 @@ export function initApp(config = {}) {
               <div class="section-title">
                 <h2>Reports</h2>
               </div>
-              ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">+ New Report</button>` : ""}
+              ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">Generate Report</button>` : ""}
             </div>
             <div class="reports-filter-bar">
               <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">

@@ -107,25 +107,25 @@ export function createReportDriveRepository(invoke) {
   if (typeof invoke !== "function") throw new TypeError("A Drive action invoker is required");
 
   return {
-    async list() {
-      const result = await invoke({ action: "report-list" });
+    async list({ centreId = "" } = {}) {
+      const result = await invoke({ action: "report-list", centre_id: centreId || undefined });
       if (!Array.isArray(result?.records)) throw new TypeError("Google Drive returned an invalid report list");
       return result.records.map(normalizeReportRecord);
     },
 
-    async save(record, { draftId = "" } = {}) {
+    async save(record, { draftId = "", centreId = "" } = {}) {
       const normalized = normalizeReportRecord(record);
-      const result = await invoke({ action: "report-save", record: normalized, draft_id: draftId || undefined });
+      const result = await invoke({ action: "report-save", record: normalized, draft_id: draftId || undefined, centre_id: centreId || undefined });
       return normalizeReportRecord(result?.record || normalized);
     },
 
-    async savePdf(recordId, dataUrl) {
+    async savePdf(recordId, dataUrl, { centreId = "" } = {}) {
       const id = boundedString(recordId, 128, "id", true);
       if (!/^report-[A-Za-z0-9-]+$/.test(id)) throw new TypeError("Invalid report id");
       if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:application/pdf;base64,")) {
         throw new TypeError("A PDF data URL is required");
       }
-      return invoke({ action: "report-pdf", report_id: id, file_base64: dataUrl });
+      return invoke({ action: "report-pdf", report_id: id, file_base64: dataUrl, centre_id: centreId || undefined });
     }
   };
 }

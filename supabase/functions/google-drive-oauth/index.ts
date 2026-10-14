@@ -220,20 +220,60 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid request" }, 400);
   }
   const action = String(body.action || "");
+  if (action === "admin-report-context") {
+    if (!user || role !== "admin") return json({ error: "Global admin role required" }, 403);
+    const requestedCentreId = String(body.centre_id || "");
+    if (!requestedCentreId) {
+      const [{ data: centres, error: centresError }, { data: connections, error: connectionsError }] = await Promise.all([
+        admin.from("centres").select("id,name,status").order("name"),
+        admin.from("drive_connections").select("centre_id,status,encrypted_refresh_token").eq("status", "connected"),
+      ]);
+      if (centresError || connectionsError) return json({ error: "Unable to load report workspaces" }, 500);
+      const connectedIds = new Set((connections || []).filter(connection => connection.encrypted_refresh_token).map(connection => connection.centre_id));
+      return json({ centres: (centres || []).filter(centre => centre.status === "active" && connectedIds.has(centre.id)).map(({ id, name }) => ({ id, name })) });
+    }
+
+    const [{ data: centre, error: centreError }, { data: connection, error: connectionError }] = await Promise.all([
+      admin.from("centres").select("id,name,status").eq("id", requestedCentreId).maybeSingle(),
+      admin.from("drive_connections").select("centre_id,status,encrypted_refresh_token").eq("centre_id", requestedCentreId).maybeSingle(),
+    ]);
+    if (centreError || connectionError) return json({ error: "Unable to load the selected report workspace" }, 500);
+    if (!centre || centre.status !== "active" || !connection || connection.status !== "connected" || !connection.encrypted_refresh_token) {
+      return json({ error: "The selected centre does not have a connected Google Drive" }, 409);
+    }
+    const { data: memberships, error: membershipsError } = await admin
+      .from("centre_memberships")
+      .select("user_id")
+      .eq("centre_id", requestedCentreId)
+      .eq("role", "coach");
+    if (membershipsError) return json({ error: "Unable to load coaches for this centre" }, 500);
+    const coachIds = (memberships || []).map(membership => membership.user_id);
+    if (!coachIds.length) return json({ centre, coaches: [], students: [] });
+    const [{ data: coaches, error: coachesError }, { data: students, error: studentsError }] = await Promise.all([
+      admin.from("coaches").select("id,name,branch,centre_contact,branch_address,photo,links,report_layout").in("id", coachIds),
+      admin.from("students").select("id,name,coach_id,lessons,photo").in("coach_id", coachIds),
+    ]);
+    if (coachesError || studentsError) return json({ error: "Unable to load report participants" }, 500);
+    return json({ centre: { id: centre.id, name: centre.name }, coaches: coaches || [], students: students || [] });
+  }
   const reportActions = new Set(["report-list", "report-save", "report-pdf"]);
   const isReportAction = reportActions.has(action);
   if (isReportAction) {
     const requestedCentreId = String(body.centre_id || centreId || "");
     if (!user || !requestedCentreId) return json({ error: "Centre membership required" }, 403);
-    const { data: membership, error: membershipError } = await admin
-      .from("centre_memberships")
-      .select("role")
-      .eq("centre_id", requestedCentreId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (membershipError) return json({ error: "Unable to verify centre membership" }, 500);
-    if (!membership || !["coach", "centre_admin"].includes(membership.role)) {
-      return json({ error: "Centre membership required" }, 403);
+    let actorRole = role;
+    if (role !== "admin") {
+      const { data: membership, error: membershipError } = await admin
+        .from("centre_memberships")
+        .select("role")
+        .eq("centre_id", requestedCentreId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (membershipError) return json({ error: "Unable to verify centre membership" }, 500);
+      if (!membership || !["coach", "centre_admin"].includes(membership.role)) {
+        return json({ error: "Centre membership required" }, 403);
+      }
+      actorRole = membership.role;
     }
     const { data: connection, error: connectionError } = await admin
       .from("drive_connections")
@@ -270,7 +310,7 @@ Deno.serve(async (request) => {
           }
         }
         records = records.filter(record => !orphanedDrafts.includes(record));
-        if (membership.role === "coach") records = records.filter(record => record.coachId === user.id);
+        if (actorRole === "coach") records = records.filter(record => record.coachId === user.id);
         return json({ records });
       }
 
@@ -281,7 +321,7 @@ Deno.serve(async (request) => {
         } catch {
           return json({ error: "Invalid report record" }, 400);
         }
-        if (membership.role === "coach" && record.coachId !== user.id) return json({ error: "Coaches may only save their own reports" }, 403);
+        if (actorRole === "coach" && record.coachId !== user.id) return json({ error: "Coaches may only save their own reports" }, 403);
         const { data: coachMembership, error: coachError } = await admin
           .from("centre_memberships")
           .select("role")
@@ -318,7 +358,7 @@ Deno.serve(async (request) => {
             return json({ error: "The report draft could not be found" }, 409);
           }
           const draftRecord = normalizeReportRecord(await readDriveJson(tokens.access_token, String(draftFile.id)));
-          if (draftRecord.coachId !== record.coachId || draftRecord.studentId !== record.studentId || record.id !== `report-${draftId.slice("draft-".length)}` || (membership.role === "coach" && draftRecord.coachId !== user.id)) {
+          if (draftRecord.coachId !== record.coachId || draftRecord.studentId !== record.studentId || record.id !== `report-${draftId.slice("draft-".length)}` || (actorRole === "coach" && draftRecord.coachId !== user.id)) {
             return json({ error: "Report draft does not belong to this coach" }, 403);
           }
           const saved = await saveDriveMedia(
@@ -361,7 +401,7 @@ Deno.serve(async (request) => {
       const reportFile = await reportFiles(tokens.access_token, recordsId, reportId, "report");
       if (!reportFile) return json({ error: "Report not found in this centre" }, 404);
       const report = normalizeReportRecord(await readDriveJson(tokens.access_token, String(reportFile.id)));
-      if (membership.role === "coach" && report.coachId !== user.id) return json({ error: "Report not found in this centre" }, 404);
+      if (actorRole === "coach" && report.coachId !== user.id) return json({ error: "Report not found in this centre" }, 404);
       const encodedFile = String(body.file_base64 || "");
       if (!encodedFile.startsWith("data:application/pdf;base64,") || encodedFile.length > MAX_REPORT_PDF_BASE64) {
         return json({ error: "A valid PDF export is required" }, 413);

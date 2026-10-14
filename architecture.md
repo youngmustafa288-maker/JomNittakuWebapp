@@ -160,7 +160,7 @@ Centre links can fall back to `localStorage` under the key `centre_profile` when
 
 Each centre's connected Google Drive is the durable source of truth for report drafts and finalized reports. The app stores versioned JSON records under the centre root's `Reports/Records` folder and finalized PDF derivatives under `Reports/Exports`. Stable opaque IDs are used for filenames and Drive `appProperties`; student names and report summaries are not placed in metadata. JSON is canonical; PDF upload can be retried independently.
 
-The browser loads report records into memory after centre authentication and Drive connection refresh. Draft saves and finalization go through `google-drive-oauth`; a finalized report is not presented as saved until its JSON write succeeds. Supabase `dashboard_state` serialization excludes report arrays and report-specific view IDs. Realtime hydration preserves the currently loaded in-memory Drive records. Failed Drive writes do not fall back to Supabase or browser storage.
+The browser loads report records into memory after centre authentication and Drive connection refresh. Global admins can choose a connected centre and load that centre's report context through the authenticated `google-drive-oauth` Edge Function. Draft saves and finalization go through `google-drive-oauth`; a finalized report is not presented as saved until its JSON write succeeds. Coaches remain limited to their own reports, centre admins to their membership centre, and global admins use the trusted `app_metadata.role` to select a centre. The Edge Function still verifies each selected coach's membership and each student's coach/centre ownership before saving. Supabase `dashboard_state` serialization excludes report arrays and report-specific view IDs. Realtime hydration preserves the currently loaded in-memory Drive records. Failed Drive writes do not fall back to Supabase or browser storage.
 
 Supabase remains responsible for auth, centre memberships, coach/student/centre profiles, licensing, and encrypted Drive connection/control-plane metadata. The existing student `lessons` profile scalar remains in Supabase as an aggregate; it is not a report record. No historical migration is planned because the user confirmed no report data needs migration. A read-only cutover audit found no report rows, dashboard-state reports, or drafts at implementation time.
 
@@ -198,6 +198,7 @@ Centre-admin Google Drive connection operations, including:
 - queuing a retry sync job
 - listing and saving centre-scoped JSON report records in managed report folders
 - uploading or replacing finalized PDF derivatives idempotently
+- returning connected-centre report context to trusted global admins, including eligible coaches and students
 - checking centre membership and coach/student ownership for every report action
 
 Report content and IDs are not written to Supabase sync jobs, connection metadata, or function logs. The legacy `sync-report` action is rejected; clients use the report repository actions instead.
@@ -220,11 +221,12 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 
 ### Report creation
 
-1. A coach starts a report; its draft is saved to Drive and held in memory while the wizard is open.
-2. Wizard edits are debounced to Drive; step changes and close flush pending edits first.
-3. Finalization writes the canonical JSON report to Drive before moving it into in-memory `state.reports`; the student lesson count remains a Supabase profile aggregate.
-4. The report view renders the fixed certificate artwork plus dynamic overlays.
-5. Layout edits update the coach's `report_layout`.
+1. Any authenticated dashboard role except `dev` can start a report. Coaches report for themselves; centre admins select a coach in their centre; global admins select a connected centre and a coach in that centre.
+2. The selected coach's draft is saved to that centre's Drive and held in memory while the wizard is open. The centre ID is request context and is not stored in canonical report content.
+3. Wizard edits are debounced to Drive; step changes and close flush pending edits first.
+4. Finalization writes the canonical JSON report to Drive before moving it into in-memory `state.reports`; the student lesson count remains a Supabase profile aggregate.
+5. The report view renders the fixed certificate artwork plus dynamic overlays.
+6. Layout edits update the coach's `report_layout`.
 
 ### Report export
 

@@ -150,7 +150,7 @@ export function initApp(config = {}) {
         })
       : null;
     const reportRepository = supabase
-      ? createReportDriveRepository(body => invokePrivileged("google-drive-oauth", { ...body, centre_id: state.auth.centreId }))
+      ? createReportDriveRepository(body => invokePrivileged("google-drive-oauth", body))
       : null;
     let state = createInitialState();
     state.centreProfile = getCentreProfile();
@@ -199,6 +199,12 @@ export function initApp(config = {}) {
     let reportStoreError = "";
     let reportPdfError = "";
     let reportLoadPromise = null;
+    let adminReportCentres = [];
+    let adminReportCentresLoaded = false;
+    let activeReportCentreId = "";
+    let adminReportContext = null;
+    let adminReportContextCentreId = "";
+    let reportStartOpen = false;
     let draftSaveTimer = null;
     let dirtyReportDraftId = "";
     const reportWriteQueues = new Map();
@@ -532,7 +538,7 @@ export function initApp(config = {}) {
         reportStoreError = "";
         updateReportSaveStatus("Saved to Google Drive");
         if (record.recordType === "draft") {
-          state.reportDrafts[saved.id] = normalizeDraft(saved);
+          state.reportDrafts[saved.id] = { ...normalizeDraft(saved), centreId: options.centreId || record.centreId || getReportCentreId() };
         }
         return saved;
       } catch (error) {
@@ -544,7 +550,8 @@ export function initApp(config = {}) {
     }
 
     async function loadReportsFromDrive() {
-      if (!isCentreAccount()) return;
+      const isGlobalAdmin = state.auth.role === "admin";
+      if (!isCentreAccount() && !isGlobalAdmin) return;
       if (reportLoadPromise) return reportLoadPromise;
       reportStoreError = "";
       state.reports = [];
@@ -553,7 +560,37 @@ export function initApp(config = {}) {
         reportStoreStatus = "idle";
         return;
       }
-      if (state.driveConnection?.status !== "connected") {
+      if (isGlobalAdmin && !adminReportCentresLoaded) {
+        reportStoreStatus = "loading";
+        try {
+          const result = await invokePrivileged("google-drive-oauth", { action: "admin-report-context" });
+          adminReportCentres = Array.isArray(result.centres) ? result.centres : [];
+          adminReportCentresLoaded = true;
+        } catch (error) {
+          reportStoreStatus = "error";
+          reportStoreError = error.message || "Unable to load report workspaces.";
+          return;
+        }
+      }
+      const centreId = getReportCentreId();
+      if (isGlobalAdmin && !centreId) {
+        reportStoreStatus = "idle";
+        return;
+      }
+      if (isGlobalAdmin && adminReportContextCentreId !== centreId) {
+        reportStoreStatus = "loading";
+        try {
+          adminReportContext = await invokePrivileged("google-drive-oauth", { action: "admin-report-context", centre_id: centreId });
+          adminReportContext.coaches = (adminReportContext.coaches || []).map(normalizeCoach);
+          adminReportContext.students = (adminReportContext.students || []).map(normalizeStudent);
+          adminReportContextCentreId = centreId;
+        } catch (error) {
+          reportStoreStatus = "error";
+          reportStoreError = error.message || "Unable to load report participants.";
+          return;
+        }
+      }
+      if (!isGlobalAdmin && state.driveConnection?.status !== "connected") {
         reportStoreStatus = "disconnected";
         reportStoreError = "Connect Google Drive to view or create centre reports.";
         return;
@@ -561,11 +598,11 @@ export function initApp(config = {}) {
       reportStoreStatus = "loading";
       reportLoadPromise = (async () => {
         try {
-          const records = await reportRepository.list();
-          state.reports = records.filter(record => record.recordType === "report").map(normalizeReport);
+          const records = await reportRepository.list({ centreId });
+          state.reports = records.filter(record => record.recordType === "report").map(record => ({ ...normalizeReport(record), centreId }));
           state.reportDrafts = Object.fromEntries(records
             .filter(record => record.recordType === "draft")
-            .map(record => [record.id, normalizeDraft(record)]));
+            .map(record => [record.id, { ...normalizeDraft(record), centreId }]));
           reportStoreStatus = "ready";
         } catch (error) {
           reportStoreStatus = "error";
@@ -932,11 +969,52 @@ export function initApp(config = {}) {
     }
 
     function getStudentById(studentId) {
-      return state.students.find(student => student.id === studentId);
+      return state.students.find(student => student.id === studentId)
+        || adminReportContext?.students?.find(student => student.id === studentId);
     }
 
     function getCoachById(coachId) {
-      return state.coaches.find(coach => coach.id === coachId);
+      return state.coaches.find(coach => coach.id === coachId)
+        || adminReportContext?.coaches?.find(coach => coach.id === coachId);
+    }
+
+    function getReportCentreId() {
+      return state.auth.role === "admin" ? activeReportCentreId : state.auth.centreId;
+    }
+
+    function getReportCoaches() {
+      if (state.auth.role === "coach") return [getCurrentCoach()].filter(coach => coach?.id);
+      if (state.auth.role === "admin") return adminReportContext?.coaches || [];
+      return state.coaches.filter(coach => coach.id !== state.auth.userId);
+    }
+
+    function getReportStudents() {
+      return state.auth.role === "admin" ? adminReportContext?.students || [] : state.students;
+    }
+
+    async function selectAdminReportCentre(centreId) {
+      activeReportCentreId = adminReportCentres.some(centre => centre.id === centreId) ? centreId : "";
+      adminReportContext = null;
+      adminReportContextCentreId = "";
+      state.reports = [];
+      state.reportDrafts = {};
+      reportStoreError = "";
+      await loadReportsFromDrive();
+      render();
+    }
+
+    function handleReportCentreChange(centreId) {
+      if (!centreId) {
+        activeReportCentreId = "";
+        adminReportContext = null;
+        adminReportContextCentreId = "";
+        state.reports = [];
+        state.reportDrafts = {};
+        reportStoreStatus = "idle";
+        reportStoreError = "";
+        return render();
+      }
+      return selectAdminReportCentre(centreId);
     }
 
     function statusBadge(status) {
@@ -946,11 +1024,22 @@ export function initApp(config = {}) {
     }
 
     function avatarMarkup(name, photo, size = "avatar") {
-      const content = photo
+      const imageUrl = safeImageUrl(photo);
+      const content = imageUrl
         ? ""
-        : initials(name);
-      const style = photo ? `style="background-image:url('${photo}');"` : "";
+        : escapeHtml(initials(name));
+      const style = imageUrl ? `style="background-image:url(&quot;${escapeHtml(imageUrl)}&quot;);"` : "";
       return `<span class="${size}" ${style}>${content}</span>`;
+    }
+
+    function safeImageUrl(value) {
+      try {
+        const url = new URL(String(value || ""));
+        if (url.protocol !== "https:") return "";
+        return url.href.replace(/[()'";\\\s]/g, character => encodeURIComponent(character));
+      } catch {
+        return "";
+      }
     }
 
     async function signIn() {
@@ -1104,6 +1193,12 @@ export function initApp(config = {}) {
         reportStoreError = "";
         wizardDraftId = null;
         dirtyReportDraftId = "";
+        activeReportCentreId = "";
+        adminReportCentres = [];
+        adminReportCentresLoaded = false;
+        adminReportContext = null;
+        adminReportContextCentreId = "";
+        reportStartOpen = false;
         return;
       }
       const appRole = user.app_metadata?.role;
@@ -1187,6 +1282,12 @@ export function initApp(config = {}) {
         reportStoreError = "";
         wizardDraftId = null;
         dirtyReportDraftId = "";
+        activeReportCentreId = "";
+        adminReportCentres = [];
+        adminReportCentresLoaded = false;
+        adminReportContext = null;
+        adminReportContextCentreId = "";
+        reportStartOpen = false;
       }
       state.auth = {
         role: appRole === "dev" || appRole === "admin"
@@ -1232,6 +1333,12 @@ export function initApp(config = {}) {
       state.ui.reportViewId = null;
       state.reports = [];
       state.reportDrafts = {};
+      activeReportCentreId = "";
+      adminReportCentres = [];
+      adminReportCentresLoaded = false;
+      adminReportContext = null;
+      adminReportContextCentreId = "";
+      reportStartOpen = false;
       reportStoreStatus = "idle";
       reportStoreError = "";
       reportPdfError = "";
@@ -1426,7 +1533,7 @@ export function initApp(config = {}) {
       return `
         <div class="topbar">
           <div class="topbar-actions">
-            ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">Generate Report</button>` : ""}
+            ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report">Generate Report</button>` : ""}
             <button class="avatar-btn" data-action="toggle-avatar-menu" ${profile.photo ? `style="background-image:url('${profile.photo}');"` : ""}>
               ${profile.photo ? "" : initials(profile.name)}
             </button>
@@ -1534,15 +1641,19 @@ export function initApp(config = {}) {
     }
 
     function renderReportsPage() {
-      const studentOptions = state.students
-        .filter(student => state.auth.role === "admin" || student.coachId === getCurrentCoach().id)
-        .map(student => `<option value="${student.id}">${escapeHtml(student.name)}</option>`).join("");
+      const studentOptions = getReportStudents()
+        .filter(student => state.auth.role !== "coach" || student.coachId === getCurrentCoach().id)
+        .map(student => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.name)}</option>`).join("");
       const reportMonths = [...new Set(state.reports.map(report => report.date.slice(0, 7)))].sort().reverse();
       const drafts = Object.values(state.reportDrafts)
         .filter(draft => state.auth.role !== "coach" || draft.coachId === state.auth.coachId)
         .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-      const reportNotice = !isCentreAccount()
-        ? '<p class="report-drive-notice">Reports are available within a centre workspace.</p>'
+      const reportNotice = state.auth.role === "admin" && reportStoreError
+        ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)}</p>`
+        : state.auth.role === "admin" && adminReportCentresLoaded && !adminReportCentres.length
+        ? '<p class="report-drive-notice">No connected centre workspaces are available for reports.</p>'
+        : state.auth.role === "admin" && !activeReportCentreId
+          ? '<p class="report-drive-notice">Select a connected centre to view or generate reports.</p>'
         : reportStoreStatus === "loading"
         ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive…</p>'
         : reportStoreError
@@ -1557,6 +1668,7 @@ export function initApp(config = {}) {
         </section>` : "";
       return `
         <section class="page ${state.ui.page === "reports" ? "active" : ""}">
+          ${state.auth.role === "admin" ? `<div class="reports-filter-bar"><label class="field"><span>Centre</span><select class="filter-select" id="adminReportCentre" aria-label="Report centre"><option value="">Select a connected centre</option>${adminReportCentres.map(centre => `<option value="${escapeHtml(centre.id)}" ${activeReportCentreId === centre.id ? "selected" : ""}>${escapeHtml(centre.name)}</option>`).join("")}</select></label></div>` : ""}
           ${reportNotice}
           ${draftList}
           <div class="table-card">
@@ -1564,7 +1676,7 @@ export function initApp(config = {}) {
               <div class="section-title">
                 <h2>Reports</h2>
               </div>
-              ${state.auth.role === "coach" ? `<button class="primary-btn" data-action="new-report">Generate Report</button>` : ""}
+              ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}
             </div>
             <div class="reports-filter-bar">
               <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">
@@ -2164,20 +2276,32 @@ export function initApp(config = {}) {
     function renderReportWizard() {
       const draft = wizardDraftId ? state.reportDrafts[wizardDraftId] : null;
       if (!draft) {
-        return `<div id="wizardModal" class="modal-backdrop"></div>`;
+        if (!reportStartOpen) return `<div id="wizardModal" class="modal-backdrop"></div>`;
+        const coaches = getReportCoaches();
+        return `
+          <div id="wizardModal" class="modal-backdrop open">
+            <div class="modal-card">
+              <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">Ã—</button></div>
+              <div class="section-title"><h2>Generate Report</h2><p>Select the coach responsible for this lesson.</p></div>
+              <div class="field"><label for="reportStartCoach">Coach</label><select id="reportStartCoach" class="filter-select"><option value="">Select a coach</option>${coaches.map(coach => `<option value="${escapeHtml(coach.id)}">${escapeHtml(coach.name)}</option>`).join("")}</select></div>
+              ${coaches.length ? "" : '<p class="report-drive-notice is-error" role="alert">No eligible coaches are available in this workspace.</p>'}
+              <div class="wizard-footer"><span></span><button class="primary-btn" data-action="confirm-report-start" ${coaches.length ? "" : "disabled"}>Continue</button></div>
+            </div>
+          </div>
+        `;
       }
 
       const coach = getCoachById(draft.coachId);
-      const coachStudents = state.students.filter(student => student.coachId === coach.id);
+      const coachStudents = getReportStudents().filter(student => student.coachId === coach.id);
       const selectedStudent = getStudentById(draft.studentId || "");
       const step = draft.step || 1;
       const coachStudentOptions = coachStudents.map(student => `
-        <button class="student-pick ${draft.studentId === student.id ? "active" : ""}" data-action="pick-student" data-student-id="${student.id}">
+        <button class="student-pick ${draft.studentId === student.id ? "active" : ""}" data-action="pick-student" data-student-id="${escapeHtml(student.id)}">
           <div class="person-cell">
             ${avatarMarkup(student.name, student.photo)}
             <div>
-              <strong>${student.name}</strong>
-              <div class="muted">Lesson count: ${student.lessons}</div>
+              <strong>${escapeHtml(student.name)}</strong>
+              <div class="muted">Lesson count: ${escapeHtml(student.lessons)}</div>
             </div>
           </div>
           <strong>${draft.studentId === student.id ? "Selected" : "Choose"}</strong>
@@ -2855,6 +2979,11 @@ export function initApp(config = {}) {
           }
         });
         app.addEventListener("change", event => {
+          const reportCentre = event.target.closest("#adminReportCentre");
+          if (reportCentre) {
+            handleReportCentreChange(reportCentre.value);
+            return;
+          }
           const filter = event.target.closest("[data-dev-centre-filter]");
           if (!filter) return;
           devCentreCoachFilter = filter.value;
@@ -3329,6 +3458,7 @@ export function initApp(config = {}) {
       }
       if (action === "back-from-profile") return navigate("overview");
       if (action === "new-report") return startReportFlow();
+      if (action === "confirm-report-start") return confirmReportStart();
       if (action === "save-close-wizard") return closeWizard();
       if (action === "wizard-next") return advanceWizard();
       if (action === "wizard-back") return retreatWizard();
@@ -3665,7 +3795,7 @@ export function initApp(config = {}) {
         draftSaveTimer = null;
         const current = state.reportDrafts[draft.id];
         if (!current) return;
-        saveReportRecord({ ...current, recordType: "draft" })
+        saveReportRecord({ ...current, recordType: "draft" }, { centreId: current.centreId || getReportCentreId() })
           .then(() => {
             if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
             updateReportSaveStatus("Saved to Google Drive");
@@ -3679,7 +3809,7 @@ export function initApp(config = {}) {
       draftSaveTimer = null;
       const revision = draftRevisions.get(draft.id) || 0;
       dirtyReportDraftId = draft.id;
-      const saved = await saveReportRecord({ ...draft, recordType: "draft" });
+      const saved = await saveReportRecord({ ...draft, recordType: "draft" }, { centreId: draft.centreId || getReportCentreId() });
       if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
       updateReportSaveStatus("Saved to Google Drive");
       return saved;
@@ -3692,15 +3822,26 @@ export function initApp(config = {}) {
     });
 
     async function startReportFlow() {
-      if (state.auth.role !== "coach") {
-        alert("New report generation is available from the Coach account.");
+      if (!state.auth.role || state.auth.role === "dev") return;
+      if (state.auth.role === "admin" && !activeReportCentreId) {
+        state.ui.page = "reports";
+        await loadReportsFromDrive();
+        render();
         return;
       }
-      if (reportStoreStatus !== "ready" || state.driveConnection?.status !== "connected") {
+      if (reportStoreStatus !== "ready" || (state.auth.role !== "admin" && state.driveConnection?.status !== "connected")) {
         alert(reportStoreError || "Connect Google Drive and wait for reports to load before starting a report.");
         return;
       }
-      const coach = getCurrentCoach();
+      if (state.auth.role !== "coach") {
+        reportStartOpen = true;
+        return render();
+      }
+      return createReportDraft(getCurrentCoach());
+    }
+
+    async function createReportDraft(coach) {
+      if (!coach?.id) return;
       const now = new Date();
       const id = `draft-${crypto.randomUUID()}`;
       const refNumber = state.reports.length + Object.keys(state.reportDrafts).length + 1;
@@ -3709,6 +3850,7 @@ export function initApp(config = {}) {
         recordType: "draft",
         id,
         ref: `DSM-26-${String(refNumber).padStart(4, "0")}`,
+        centreId: getReportCentreId(),
         coachId: coach.id,
         studentId: "",
         date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
@@ -3726,6 +3868,17 @@ export function initApp(config = {}) {
         return;
       }
       render();
+    }
+
+    function confirmReportStart() {
+      const coachId = document.getElementById("reportStartCoach")?.value || "";
+      const coach = getReportCoaches().find(item => item.id === coachId);
+      if (!coach) {
+        alert("Select a coach before continuing.");
+        return;
+      }
+      reportStartOpen = false;
+      return createReportDraft(coach);
     }
 
     function updateWizardDraftFromInputs({ schedule = true } = {}) {
@@ -3747,6 +3900,7 @@ export function initApp(config = {}) {
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
       const student = getStudentById(studentId);
+      if (!student || student.coachId !== draft.coachId) return;
       draft.studentId = studentId;
       draft.lessonNumber = student.lessons + 1;
       flushDraftSave(draft).then(render).catch(() => render());
@@ -3825,12 +3979,12 @@ export function initApp(config = {}) {
       dirtyReportDraftId = draft.id;
       let savedReport;
       try {
-        savedReport = await saveReportRecord(finalReport, { draftId: draft.id });
+        savedReport = await saveReportRecord(finalReport, { draftId: draft.id, centreId: draft.centreId || getReportCentreId() });
       } catch {
         render();
         return;
       }
-      state.reports.unshift(normalizeReport(savedReport));
+      state.reports.unshift({ ...normalizeReport(savedReport), centreId: draft.centreId || getReportCentreId() });
       delete state.reportDrafts[draft.id];
       dirtyReportDraftId = "";
       const student = getStudentById(draft.studentId);
@@ -3852,6 +4006,10 @@ export function initApp(config = {}) {
     }
 
     async function closeWizard() {
+      if (reportStartOpen && !wizardDraftId) {
+        reportStartOpen = false;
+        return render();
+      }
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
       updateWizardDraftFromInputs({ schedule: false });
@@ -4142,7 +4300,8 @@ export function initApp(config = {}) {
     }
 
     async function syncReportToDrive(report) {
-      if (!reportRepository || !state.auth.centreId || state.driveConnection?.status !== "connected") return;
+      const centreId = report?.centreId || getReportCentreId();
+      if (!reportRepository || !centreId || (state.auth.role !== "admin" && state.driveConnection?.status !== "connected")) return;
       try {
         const canvas = await getReportExportCanvas(report);
         const jsPDF = await getJsPdfLib();
@@ -4155,7 +4314,7 @@ export function initApp(config = {}) {
           reader.onerror = () => reject(new Error("Unable to prepare report for Drive"));
           reader.readAsDataURL(blob);
         });
-        await reportRepository.savePdf(report.id, dataUrl);
+        await reportRepository.savePdf(report.id, dataUrl, { centreId });
         reportPdfError = "";
         state.driveConnection = { ...state.driveConnection, status: "connected", last_successful_sync_at: new Date().toISOString(), last_error: null };
       } catch (error) {

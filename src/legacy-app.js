@@ -1461,7 +1461,6 @@ export function initApp(config = {}) {
               <div class="brand-logo-crop">
                 <img class="brand-logo ${requestedCentre?.logo_url ? "centre-logo-overlay" : ""}" src="${escapeHtml(loginLogo)}" alt="${escapeHtml(loginLogoAlt)}">
               </div>
-              ${requestedCentre?.sport ? `<div class="centre-login-sport">${centreSportMarkup(requestedCentre.sport, { emoji: false })}</div>` : ""}
               <p class="brand-system-title">Coach Training Reporting System</p>
               <div class="brand-copy">
                 <h1>${escapeHtml(requestedCentre?.name || "JomNittaku")}</h1>
@@ -2610,7 +2609,7 @@ export function initApp(config = {}) {
             ${renderTopbar()}
             <header class="page-header">
               <div class="header-copy">
-                <h1>Academy Overview 🏓</h1>
+                <h1>Academy Overview ${centreSportEmojiMarkup(requestedCentre?.sport)}</h1>
               <p>${escapeHtml(requestedCentre?.name || "JomNittaku")} Coach Reporting System</p>
               </div>
             </header>
@@ -2727,6 +2726,30 @@ export function initApp(config = {}) {
         : "🏅";
       const emojiMarkup = options.emoji === false ? "" : `<span class="centre-sport-emoji" aria-hidden="true">${emoji}</span>`;
       return `<span class="centre-sport">${emojiMarkup}<span>${escapeHtml(label)}</span></span>`;
+    }
+
+    function centreSportEmojiMarkup(sport) {
+      const key = String(sport || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const emoji = key.includes("badminton") ? "🏸"
+        : key.includes("football") || key.includes("soccer") || key.includes("futsal") ? "⚽"
+        : key.includes("sepak takraw") || key.includes("takraw") || key.includes("volleyball") ? "🏐"
+        : key.includes("table tennis") || key.includes("ping pong") ? "🏓"
+        : key.includes("pickleball") || key.includes("tennis") ? "🎾"
+        : key.includes("basketball") ? "🏀"
+        : key.includes("rugby") ? "🏉"
+        : key.includes("cricket") ? "🏏"
+        : key.includes("hockey") ? "🏑"
+        : key.includes("golf") ? "⛳"
+        : key.includes("bowling") ? "🎳"
+        : key.includes("swim") ? "🏊"
+        : key.includes("cycling") || key.includes("bike") ? "🚴"
+        : key.includes("run") || key.includes("athletic") || key.includes("track") ? "🏃"
+        : key.includes("archery") ? "🏹"
+        : key.includes("boxing") ? "🥊"
+        : key.includes("martial") || key.includes("karate") || key.includes("taekwondo") || key.includes("silat") ? "🥋"
+        : key.includes("gym") || key.includes("fitness") ? "🏋️"
+        : "🏅";
+      return `<span class="dashboard-sport-emoji" aria-label="${escapeHtml(sport || "Sport")}">${emoji}</span>`;
     }
 
     function getLatestCentreLicence(centre) {

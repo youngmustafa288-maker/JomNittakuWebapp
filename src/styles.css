@@ -975,7 +975,8 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .centre-sport-emoji { animation: none; }
+      .centre-sport-emoji,
+      .dashboard-sport-emoji { animation: none; }
     }
 
     .field,
@@ -2709,7 +2710,19 @@
 
     .centre-login-sport { display: flex; justify-content: center; margin-top: -4px; }
     .centre-login-sport .centre-sport { font-size: .92rem; }
-    .dashboard-sport-emoji { display: inline-block; margin-left: .18em; font-size: .82em; vertical-align: .08em; }
+    .dashboard-sport-emoji {
+      display: inline-block;
+      margin-left: .18em;
+      font-size: .82em;
+      vertical-align: .08em;
+      transform-origin: 50% 80%;
+      animation: dashboard-sport-bob 2.8s ease-in-out infinite;
+    }
+
+    @keyframes dashboard-sport-bob {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-3px) rotate(-5deg); }
+    }
     .dev-centre-logo-test { display: inline-grid; place-items: center; width: 58px; height: 42px; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }
     .dev-centre-logo-test img { display: block; width: 100%; height: 100%; max-width: 58px; max-height: 42px; object-fit: contain; }
     .dev-centre-logo-preview { display: block; width: 116px; height: 72px; max-width: 100%; object-fit: contain; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }

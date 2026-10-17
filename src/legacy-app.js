@@ -1372,6 +1372,9 @@ export function initApp(config = {}) {
       state.ui.avatarMenuOpen = false;
       persist();
       scheduleRender();
+      if (page === "reports" && reportRepository) {
+        loadReportsFromDrive().then(() => scheduleRender()).catch(() => scheduleRender());
+      }
     }
 
     function getVisibleCoaches() {

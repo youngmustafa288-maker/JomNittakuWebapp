@@ -43,7 +43,7 @@ export function initApp(config = {}) {
       nextLesson: { left: 55.4, top: 52.8, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       remarks: { left: 10.1, top: 62.4, width: 86, height: 12.9, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.9, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
-      address: { left: 34.55, top: 86.35, width: 31.2, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 }
+      address: { left: 34.55, top: 86.35, width: 31.2, height: 4, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 }
     };
     const ARTWORK_SLICES = {
       "decor-top-left": { left: 1.8, top: 1.2, width: 23, height: 15 },
@@ -3357,7 +3357,6 @@ export function initApp(config = {}) {
       }));
       document.querySelectorAll('[data-overlay-text="true"][data-overlay-id]').forEach(item => item.addEventListener("dblclick", event => {
         event.stopPropagation();
-        event.preventDefault();
         beginCertificateTextEditing(item);
       }));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });

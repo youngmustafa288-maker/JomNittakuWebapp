@@ -3945,13 +3945,11 @@ export function initApp(config = {}) {
         summary: blankSummary()
       };
       wizardDraftId = id;
-      try {
-        await flushDraftSave(state.reportDrafts[id]);
-      } catch {
-        render();
-        return;
-      }
       render();
+      flushDraftSave(state.reportDrafts[id]).catch(error => {
+        reportStoreError = error.message || "Unable to save report draft.";
+        updateReportSaveStatus(reportStoreError);
+      });
     }
 
     function confirmReportStart() {
@@ -3987,23 +3985,25 @@ export function initApp(config = {}) {
       if (!student || student.coachId !== draft.coachId) return;
       draft.studentId = studentId;
       draft.lessonNumber = student.lessons + 1;
-      flushDraftSave(draft).then(render).catch(() => render());
+      render();
+      flushDraftSave(draft).catch(error => {
+        reportStoreError = error.message || "Unable to save report draft.";
+        updateReportSaveStatus(reportStoreError);
+      });
     }
 
-    async function changeWizardStep(nextStep) {
+    function changeWizardStep(nextStep) {
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
       updateWizardDraftFromInputs({ schedule: false });
       const previousStep = draft.step;
-      try {
-        await flushDraftSave(draft);
-        draft.step = nextStep;
-        await flushDraftSave(draft);
-        render();
-      } catch {
+      draft.step = nextStep;
+      render();
+      flushDraftSave(draft).catch(error => {
         draft.step = previousStep;
+        reportStoreError = error.message || "Unable to save report draft.";
         render();
-      }
+      });
     }
 
     function advanceWizard() {

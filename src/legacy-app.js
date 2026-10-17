@@ -137,7 +137,7 @@ export function initApp(config = {}) {
     const PROFILE_IMAGE_BUCKET = "profile-images";
 
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
-    const REPORT_STATUSES = ["Generated", "Pending"];
+    const REPORT_STATUSES = ["Generated"];
     const DEFAULT_COACH_LINKS = [
       { id: "reports", title: "View Reports", url: "/reports", icon: "▦", visible: true, order: 1 },
       { id: "contact", title: "Contact Coach", url: "mailto:", icon: "✉", visible: true, order: 2 }
@@ -406,7 +406,7 @@ export function initApp(config = {}) {
     function normalizeReport(report) {
       return {
         ...report,
-        status: REPORT_STATUSES.includes(report.status) ? report.status : "Pending",
+        status: REPORT_STATUSES.includes(report.status) ? report.status : "Generated",
         summary: normalizeSummary(report.summary)
       };
     }
@@ -1037,8 +1037,8 @@ export function initApp(config = {}) {
     }
 
     function statusBadge(status) {
-      const normalizedStatus = REPORT_STATUSES.includes(status) ? status : "Pending";
-      const key = normalizedStatus === "Generated" ? "green" : "amber";
+      const normalizedStatus = REPORT_STATUSES.includes(status) || status === "Draft" ? status : "Pending";
+      const key = normalizedStatus === "Generated" ? "green" : normalizedStatus === "Draft" ? "grey" : "amber";
       return `<span class="badge ${key}"><span class="dot"></span>${normalizedStatus}</span>`;
     }
 
@@ -1665,13 +1665,13 @@ export function initApp(config = {}) {
     }
 
     function renderReportsPage() {
+      const reportMonths = [...new Set([
+        ...state.reports.map(report => report.date),
+        ...Object.values(state.reportDrafts).map(draft => draft.date)
+      ].filter(date => /^\d{4}-\d{2}/.test(date || "")).map(date => date.slice(0, 7)))].sort().reverse();
       const studentOptions = getReportStudents()
         .filter(student => state.auth.role !== "coach" || student.coachId === getCurrentCoach().id)
         .map(student => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.name)}</option>`).join("");
-      const reportMonths = [...new Set(state.reports.map(report => report.date.slice(0, 7)))].sort().reverse();
-      const drafts = Object.values(state.reportDrafts)
-        .filter(draft => state.auth.role !== "coach" || draft.coachId === state.auth.coachId)
-        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
       const reportNotice = state.auth.role === "admin" && reportStoreError
         ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)}</p>`
         : state.auth.role === "admin" && adminReportCentresLoaded && !adminReportCentres.length
@@ -1683,18 +1683,10 @@ export function initApp(config = {}) {
         : reportStoreError
           ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)}${state.auth.role === "centre_admin" ? ' <button class="secondary-btn" data-action="connect-drive">Connect Google Drive</button>' : ""}</p>`
           : "";
-      const draftList = drafts.length ? `
-        <section class="report-drafts-section" aria-labelledby="reportDraftsHeading">
-          <h3 id="reportDraftsHeading">Drafts</h3>
-          <div class="report-draft-list">
-            ${drafts.map(draft => `<div class="report-draft-row"><div><strong>${escapeHtml(draft.ref || "Untitled report")}</strong><span>${escapeHtml(draft.date || "Date not set")} · ${escapeHtml(draft.time || "Time not set")}</span></div><button class="secondary-btn" data-action="continue-report-draft" data-draft-id="${escapeHtml(draft.id)}">Continue</button></div>`).join("")}
-          </div>
-        </section>` : "";
       return `
         <section class="page ${state.ui.page === "reports" ? "active" : ""}">
           ${state.auth.role === "admin" ? `<div class="reports-filter-bar"><label class="field"><span>Centre</span><select class="filter-select" id="adminReportCentre" aria-label="Report centre"><option value="">Select a connected centre</option>${adminReportCentres.map(centre => `<option value="${escapeHtml(centre.id)}" ${activeReportCentreId === centre.id ? "selected" : ""}>${escapeHtml(centre.name)}</option>`).join("")}</select></label></div>` : ""}
           ${reportNotice}
-          ${draftList}
           <div class="table-card">
             <div class="table-topline">
               <div class="section-title">
@@ -1729,7 +1721,7 @@ export function initApp(config = {}) {
               <select id="reportsStatusFilter" class="filter-select">
                 <option value="">All statuses</option>
                 <option value="Generated">Generated</option>
-                <option value="Pending">Pending</option>
+                <option value="Draft">Draft</option>
               </select>
             </div>
             <div class="table-wrap" style="margin-top:18px;">
@@ -2075,7 +2067,7 @@ export function initApp(config = {}) {
       if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add Text Box</button></div>`;
       if (certificateEditorTool === "uploads") {
         const uploads = getReportLayout(coach).uploads || [];
-        return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Upload an image or drop one here"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Upload image</b><small>Drop an image here or choose a file</small></span></div><button type="button" class="certificate-panel-action" data-action="add-certificate-frame"><span aria-hidden="true">+</span>Add image frame</button>${uploads.length ? `<div class="certificate-upload-list" aria-label="Uploaded images">${uploads.map(asset => `<button type="button" class="certificate-upload-asset ${selectedCertificateUploadId === asset.id ? "is-selected" : ""}" draggable="true" data-certificate-asset-id="${escapeHtml(asset.id)}" aria-pressed="${selectedCertificateUploadId === asset.id}" aria-label="Select or drag ${escapeHtml(asset.name)} to an image frame"><img src="${escapeHtml(asset.source)}" alt=""><span title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</span></button>`).join("")}</div>` : `<p class="certificate-upload-empty">No uploads</p>`}</div>`;
+        return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Upload an image or drop one here"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Upload image</b><small>Drop an image here or choose a file</small></span></div>${uploads.length ? `<div class="certificate-upload-list" aria-label="Uploaded images">${uploads.map(asset => `<button type="button" class="certificate-upload-asset ${selectedCertificateUploadId === asset.id ? "is-selected" : ""}" draggable="true" data-certificate-asset-id="${escapeHtml(asset.id)}" aria-pressed="${selectedCertificateUploadId === asset.id}" aria-label="Select or drag ${escapeHtml(asset.name)} to an image frame"><img src="${escapeHtml(asset.source)}" alt=""><span title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</span></button>`).join("")}</div>` : `<p class="certificate-upload-empty">No uploads</p>`}</div>`;
       }
       if (certificateEditorTool === "position") return `<div class="certificate-tool-panel"><strong>Position</strong><button type="button" class="certificate-panel-action" data-action="raise-certificate-layer">Bring forward</button><button type="button" class="certificate-panel-action" data-action="lower-certificate-layer">Send backward</button><button type="button" class="certificate-panel-action" data-action="toggle-certificate-lock">Lock or unlock</button></div>`;
       return renderCertificateLayerPanel(coach);
@@ -3660,28 +3652,43 @@ export function initApp(config = {}) {
       const dateFrom = document.getElementById("reportsDateFrom")?.value || "";
       const dateTo = document.getElementById("reportsDateTo")?.value || "";
 
-      let reports = getVisibleReports().filter(report => {
+      const drafts = Object.values(state.reportDrafts)
+        .filter(draft => state.auth.role !== "coach" || draft.coachId === state.auth.coachId)
+        .map(draft => ({
+          isDraft: true,
+          id: draft.id,
+          ref: draft.ref || "Untitled report",
+          studentId: draft.studentId,
+          coachId: draft.coachId,
+          lessonLabel: "",
+          lessonNumber: draft.lessonNumber,
+          date: draft.date || "",
+          time: draft.time || "",
+          status: "Draft"
+        }));
+      let rows = [...getVisibleReports(), ...drafts].filter(report => {
         const student = getStudentById(report.studentId);
         const coach = getCoachById(report.coachId);
-        const searchOk = !search || [report.ref, student.name, coach.name, report.lessonLabel, `Lesson ${report.lessonNumber}`].join(" ").toLowerCase().includes(search);
+        const searchOk = !search || [report.ref, student?.name || "", coach?.name || "", report.lessonLabel, `Lesson ${report.lessonNumber}`].join(" ").toLowerCase().includes(search);
         const statusOk = !statusFilter || report.status === statusFilter;
         const studentOk = !studentFilter || report.studentId === studentFilter;
         const dateOk = !dateFilter || withinDateBucket(report.date, dateFilter, dateFrom, dateTo, monthFilter);
         return searchOk && statusOk && studentOk && dateOk;
       });
+      rows.sort((a, b) => `${b.date || ""}T${b.time || ""}`.localeCompare(`${a.date || ""}T${a.time || ""}`));
 
-      tbody.innerHTML = reports.map(report => {
+      tbody.innerHTML = rows.map(report => {
         const student = getStudentById(report.studentId);
         const coach = getCoachById(report.coachId);
         return `
           <tr>
-            <td>${report.ref}</td>
-            <td>${student.name}</td>
-            <td>${coach.name}</td>
-            <td>Lesson ${report.lessonNumber}</td>
-            <td>${formatDate(report.date)}, ${formatTime(report.time)}</td>
+            <td>${escapeHtml(report.ref)}</td>
+            <td>${escapeHtml(student?.name || "Not selected")}</td>
+            <td>${escapeHtml(coach?.name || "Unknown")}</td>
+            <td>${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "—"}</td>
+            <td>${report.date ? `${formatDate(report.date)}, ${formatTime(report.time)}` : "—"}</td>
             <td>${statusBadge(report.status)}</td>
-            <td><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report">→</button></td>
+            <td><button class="icon-btn" data-action="${report.isDraft ? "continue-report-draft" : "view-report"}" data-${report.isDraft ? "draft" : "report"}-id="${escapeHtml(report.id)}" aria-label="${report.isDraft ? "Continue draft" : "View report"}">→</button></td>
           </tr>
         `;
       }).join("");
@@ -3911,6 +3918,14 @@ export function initApp(config = {}) {
 
     async function createReportDraft(coach) {
       if (!coach?.id) return;
+      const reusableDraft = Object.values(state.reportDrafts)
+        .filter(draft => draft.coachId === coach.id && !draft.studentId)
+        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.time || "").localeCompare(String(a.time || "")))[0];
+      if (reusableDraft) {
+        wizardDraftId = reusableDraft.id;
+        render();
+        return;
+      }
       const now = new Date();
       const id = `draft-${crypto.randomUUID()}`;
       const refNumber = state.reports.length + Object.keys(state.reportDrafts).length + 1;

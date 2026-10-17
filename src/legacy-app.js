@@ -506,8 +506,19 @@ export function initApp(config = {}) {
         } catch (parseError) {}
         throw new Error(detail || error.message || "The server rejected this request.");
       }
-      if (data?.error) throw new Error(data.error);
-      return data;
+      // Older Edge Function deployments can return the JSON body as text when
+      // their content type is not propagated through the gateway. Normalize it
+      // here so callers always receive the same object shape.
+      let payload = data;
+      if (typeof payload === "string") {
+        try {
+          payload = JSON.parse(payload);
+        } catch (parseError) {
+          // Preserve the original response for callers that handle plain text.
+        }
+      }
+      if (payload?.error) throw new Error(payload.error);
+      return payload;
     }
 
     function queueReportWrite(record, options) {

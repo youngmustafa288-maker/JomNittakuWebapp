@@ -109,8 +109,17 @@ export function createReportDriveRepository(invoke) {
   return {
     async list({ centreId = "" } = {}) {
       const result = await invoke({ action: "report-list", centre_id: centreId || undefined });
-      if (!Array.isArray(result?.records)) throw new TypeError("Google Drive returned an invalid report list");
-      return result.records.map(normalizeReportRecord);
+      // Accept the current response and the legacy `reports` key while older
+      // centre deployments roll forward to the report repository function.
+      const records = Array.isArray(result)
+        ? result
+        : Array.isArray(result?.records)
+          ? result.records
+          : Array.isArray(result?.reports)
+            ? result.reports
+            : null;
+      if (!records) throw new TypeError("Google Drive returned an invalid report list");
+      return records.map(normalizeReportRecord);
     },
 
     async save(record, { draftId = "", centreId = "" } = {}) {

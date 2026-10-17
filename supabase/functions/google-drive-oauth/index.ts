@@ -81,9 +81,17 @@ async function listDriveFiles(accessToken: string, query: string, fields: string
 
 async function findOrCreateFolder(accessToken: string, parentId: string, name: string) {
   const query = `'${driveQueryValue(parentId)}' in parents and name = '${driveQueryValue(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-  const matches = await listDriveFiles(accessToken, query, "id,name");
-  if (matches.length > 1) throw new Error("Google Drive report folder is ambiguous");
-  if (matches.length === 1) return String(matches[0].id);
+  const matches = await listDriveFiles(accessToken, query, "id,name,createdTime");
+  if (matches.length > 1) {
+    // A previous OAuth retry can leave duplicate managed folders behind. Keep
+    // the oldest folder as canonical so existing records remain discoverable;
+    // never delete or move user data implicitly during a report request.
+    matches.sort((left, right) => {
+      const byCreated = String(left.createdTime || "").localeCompare(String(right.createdTime || ""));
+      return byCreated || String(left.id || "").localeCompare(String(right.id || ""));
+    });
+  }
+  if (matches.length >= 1) return String(matches[0].id);
   const created = await driveJson(accessToken, "https://www.googleapis.com/drive/v3/files?fields=id", {
     method: "POST",
     headers: { "content-type": "application/json" },

@@ -199,6 +199,7 @@ export function initApp(config = {}) {
     let reportStoreError = "";
     let reportPdfError = "";
     let reportLoadPromise = null;
+    let reportLoadedAt = 0;
     let adminReportCentres = [];
     let adminReportCentresLoaded = false;
     let activeReportCentreId = "";
@@ -565,11 +566,13 @@ export function initApp(config = {}) {
       const isGlobalAdmin = state.auth.role === "admin";
       if (!isCentreAccount() && !isGlobalAdmin) return;
       if (reportLoadPromise) return reportLoadPromise;
+      if (reportStoreStatus === "ready" && reportLoadedAt && Date.now() - reportLoadedAt < 15000) return;
       reportStoreError = "";
       state.reports = [];
       state.reportDrafts = {};
       if (/^\/coach\/[^/]+\/?$/i.test(window.location.pathname)) {
         reportStoreStatus = "idle";
+        reportLoadedAt = 0;
         return;
       }
       if (isGlobalAdmin && !adminReportCentresLoaded) {
@@ -587,6 +590,7 @@ export function initApp(config = {}) {
       const centreId = getReportCentreId();
       if (isGlobalAdmin && !centreId) {
         reportStoreStatus = "idle";
+        reportLoadedAt = 0;
         return;
       }
       if (isGlobalAdmin && adminReportContextCentreId !== centreId) {
@@ -616,8 +620,10 @@ export function initApp(config = {}) {
             .filter(record => record.recordType === "draft")
             .map(record => [record.id, { ...normalizeDraft(record), centreId }]));
           reportStoreStatus = "ready";
+          reportLoadedAt = Date.now();
         } catch (error) {
           reportStoreStatus = "error";
+          reportLoadedAt = 0;
           reportStoreError = error.message || "Unable to load reports from Google Drive.";
         }
       })();
@@ -1023,6 +1029,7 @@ export function initApp(config = {}) {
         state.reports = [];
         state.reportDrafts = {};
         reportStoreStatus = "idle";
+        reportLoadedAt = 0;
         reportStoreError = "";
         return render();
       }
@@ -1202,6 +1209,7 @@ export function initApp(config = {}) {
         state.reports = [];
         state.reportDrafts = {};
         reportStoreStatus = "idle";
+        reportLoadedAt = 0;
         reportStoreError = "";
         wizardDraftId = null;
         dirtyReportDraftId = "";
@@ -1352,6 +1360,7 @@ export function initApp(config = {}) {
       adminReportContextCentreId = "";
       reportStartOpen = false;
       reportStoreStatus = "idle";
+      reportLoadedAt = 0;
       reportStoreError = "";
       reportPdfError = "";
       dirtyReportDraftId = "";

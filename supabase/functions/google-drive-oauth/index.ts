@@ -197,14 +197,12 @@ async function listReportRecords(accessToken: string, recordsId: string) {
     `'${driveQueryValue(recordsId)}' in parents and mimeType = 'application/json' and trashed = false`,
     "id,name,mimeType,appProperties,parents",
   );
-  const records = [];
-  for (const file of files) {
-    if (!file.appProperties?.[REPORT_FILE_PROPERTY]) continue;
+  return (await Promise.all(files.map(async file => {
+    if (!file.appProperties?.[REPORT_FILE_PROPERTY]) return null;
     const record = normalizeReportRecord(await readDriveJson(accessToken, String(file.id)));
     if (record.id !== file.appProperties[REPORT_FILE_PROPERTY]) throw new Error("Drive report identity does not match its record");
-    records.push(record);
-  }
-  return records;
+    return record;
+  }))).filter(Boolean);
 }
 
 Deno.serve(async (request) => {

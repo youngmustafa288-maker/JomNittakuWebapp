@@ -3840,10 +3840,16 @@ export function initApp(config = {}) {
         render();
         return;
       }
-      if (reportStoreStatus !== "ready" || (state.auth.role !== "admin" && state.driveConnection?.status !== "connected")) {
+      const driveConnected = state.auth.role === "admin" || state.driveConnection?.status === "connected";
+      const listUnavailable = reportStoreStatus === "error" && reportStoreError === "Google Drive returned an invalid report list";
+      if ((!driveConnected) || (reportStoreStatus !== "ready" && !listUnavailable)) {
         alert(reportStoreError || "Connect Google Drive and wait for reports to load before starting a report.");
         return;
       }
+      // A stale function deployment may fail only while listing old records.
+      // New drafts and finalized reports still use the authenticated Drive
+      // save actions, so let connected users continue creating a report.
+      if (listUnavailable) reportStoreStatus = "ready";
       if (state.auth.role !== "coach") {
         reportStartOpen = true;
         return render();

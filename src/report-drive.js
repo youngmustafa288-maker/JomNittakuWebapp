@@ -108,16 +108,26 @@ export function createReportDriveRepository(invoke) {
 
   return {
     async list({ centreId = "" } = {}) {
-      const result = await invoke({ action: "report-list", centre_id: centreId || undefined });
+      let result = await invoke({ action: "report-list", centre_id: centreId || undefined });
+      if (typeof result === "string") {
+        try {
+          result = JSON.parse(result);
+        } catch (parseError) {
+          // Keep the normal validation error below for non-JSON responses.
+        }
+      }
       // Accept the current response and the legacy `reports` key while older
       // centre deployments roll forward to the report repository function.
-      const records = Array.isArray(result)
-        ? result
-        : Array.isArray(result?.records)
-          ? result.records
-          : Array.isArray(result?.reports)
-            ? result.reports
-            : null;
+      const candidates = [result, result?.data, result?.body, result?.payload];
+      const records = candidates.reduce((found, candidate) => found || (
+        Array.isArray(candidate)
+          ? candidate
+          : Array.isArray(candidate?.records)
+            ? candidate.records
+            : Array.isArray(candidate?.reports)
+              ? candidate.reports
+              : null
+      ), null);
       if (!records) throw new TypeError("Google Drive returned an invalid report list");
       return records.map(normalizeReportRecord);
     },

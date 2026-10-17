@@ -1461,7 +1461,7 @@ export function initApp(config = {}) {
               <div class="brand-logo-crop">
                 <img class="brand-logo ${requestedCentre?.logo_url ? "centre-logo-overlay" : ""}" src="${escapeHtml(loginLogo)}" alt="${escapeHtml(loginLogoAlt)}">
               </div>
-              ${requestedCentre?.sport ? `<div class="centre-login-sport">${centreSportMarkup(requestedCentre.sport)}</div>` : ""}
+              ${requestedCentre?.sport ? `<div class="centre-login-sport">${centreSportMarkup(requestedCentre.sport, { emoji: false })}</div>` : ""}
               <p class="brand-system-title">Coach Training Reporting System</p>
               <div class="brand-copy">
                 <h1>${escapeHtml(requestedCentre?.name || "JomNittaku")}</h1>
@@ -2716,7 +2716,7 @@ export function initApp(config = {}) {
       </section>`;
     }
 
-    function centreSportMarkup(sport) {
+    function centreSportMarkup(sport, options = {}) {
       const label = String(sport || "Not set");
       const key = label.toLowerCase().replace(/\s+/g, " ").trim();
       const emoji = key.includes("badminton") ? "🏸"
@@ -2725,7 +2725,8 @@ export function initApp(config = {}) {
         : key.includes("tennis") ? "🎾"
         : key.includes("basketball") ? "🏀"
         : "🏅";
-      return `<span class="centre-sport"><span class="centre-sport-emoji" aria-hidden="true">${emoji}</span><span>${escapeHtml(label)}</span></span>`;
+      const emojiMarkup = options.emoji === false ? "" : `<span class="centre-sport-emoji" aria-hidden="true">${emoji}</span>`;
+      return `<span class="centre-sport">${emojiMarkup}<span>${escapeHtml(label)}</span></span>`;
     }
 
     function getLatestCentreLicence(centre) {

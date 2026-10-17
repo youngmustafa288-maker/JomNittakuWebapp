@@ -300,6 +300,7 @@ export function initApp(config = {}) {
       const photo = coach.photo || coach.photo_url || coach.photoUrl || coach.image_url || "";
       return {
         ...coach,
+        centreId: coach.centreId ?? coach.centre_id ?? "",
         centreContact: coach.centreContact ?? coach.centre_contact ?? "",
         branchAddress: coach.branchAddress || coach.branch_address || coach.branch || "",
         slug: coach.slug || slugify(coach.name),
@@ -996,7 +997,7 @@ export function initApp(config = {}) {
     function getReportCoaches() {
       if (state.auth.role === "coach") return [getCurrentCoach()].filter(coach => coach?.id);
       if (state.auth.role === "admin") return adminReportContext?.coaches || [];
-      return state.coaches.filter(coach => coach.id !== state.auth.userId);
+      return state.coaches.filter(coach => coach.centreId === state.auth.centreId || coach.id === state.auth.userId);
     }
 
     function getReportStudents() {

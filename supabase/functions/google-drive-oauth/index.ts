@@ -253,7 +253,7 @@ Deno.serve(async (request) => {
       .from("centre_memberships")
       .select("user_id")
       .eq("centre_id", requestedCentreId)
-      .eq("role", "coach");
+      .in("role", ["coach", "centre_admin"]);
     if (membershipsError) return json({ error: "Unable to load coaches for this centre" }, 500);
     const coachIds = (memberships || []).map(membership => membership.user_id);
     if (!coachIds.length) return json({ centre, coaches: [], students: [] });
@@ -337,7 +337,7 @@ Deno.serve(async (request) => {
           .eq("user_id", record.coachId)
           .maybeSingle();
         if (coachError) return json({ error: "Unable to verify report coach" }, 500);
-        if (!coachMembership || coachMembership.role !== "coach") return json({ error: "Report coach is not part of this centre" }, 403);
+        if (!coachMembership || !["coach", "centre_admin"].includes(coachMembership.role)) return json({ error: "Report coach is not part of this centre" }, 403);
         if (record.studentId) {
           const { data: student, error: studentError } = await admin
             .from("students")

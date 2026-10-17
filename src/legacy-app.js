@@ -1461,6 +1461,7 @@ export function initApp(config = {}) {
               <div class="brand-logo-crop">
                 <img class="brand-logo ${requestedCentre?.logo_url ? "centre-logo-overlay" : ""}" src="${escapeHtml(loginLogo)}" alt="${escapeHtml(loginLogoAlt)}">
               </div>
+              ${requestedCentre?.sport ? `<div class="centre-login-sport">${centreSportMarkup(requestedCentre.sport)}</div>` : ""}
               <p class="brand-system-title">Coach Training Reporting System</p>
               <div class="brand-copy">
                 <h1>${escapeHtml(requestedCentre?.name || "JomNittaku")}</h1>
@@ -2701,15 +2702,15 @@ export function initApp(config = {}) {
         <div class="profile-card centre-settings-card">
           <div class="section-title"><h2>Dev licensing console</h2><p>Internal support access is logged and never uses a centre's Drive connection.</p></div>
           <div class="profile-actions"><button class="primary-btn" data-action="open-centre-onboarding">Create centre</button></div>
-          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Sport</th><th>Centre link</th><th>Status</th><th>Licence expiry</th><th>Activation code</th><th>Actions</th></tr></thead><tbody>
+          <div class="table-wrap" style="margin-top:20px;"><table><thead><tr><th>Centre</th><th>Sport</th><th>Logo test</th><th>Centre link</th><th>Status</th><th>Licence expiry</th><th>Activation code</th><th>Actions</th></tr></thead><tbody>
             ${centres.length ? centres.map(centre => {
               const licence = getLatestCentreLicence(centre);
               const key = getLatestActivationKey(centre);
               const loginUrl = centre.login_url || `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`;
               const sport = centre.sport || "Not set";
               const status = String(centre.status || "").toLowerCase() === "active" ? "Active" : "Inactive";
-              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${centreSportMarkup(sport)}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status"><span class="status-pill ${status === "Active" ? "status-active" : "status-inactive"}">${status}</span></td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="icon-btn" data-action="delete-centre" data-centre-id="${centre.id}" title="Delete centre" aria-label="Delete ${escapeHtml(centre.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`;
-            }).join("") : `<tr><td colspan="7" class="muted">No centres yet.</td></tr>`}
+              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${centreSportMarkup(sport)}</td><td data-label="Logo test">${centre.logo_url ? `<a class="dev-centre-logo-test" href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer" aria-label="Test ${escapeHtml(centre.name)} login logo"><img src="${escapeHtml(centre.logo_url)}" alt="${escapeHtml(centre.name)} logo"></a>` : `<span class="muted">No logo</span>`}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status"><span class="status-pill ${status === "Active" ? "status-active" : "status-inactive"}">${status}</span></td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="icon-btn" data-action="delete-centre" data-centre-id="${centre.id}" title="Delete centre" aria-label="Delete ${escapeHtml(centre.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`;
+            }).join("") : `<tr><td colspan="8" class="muted">No centres yet.</td></tr>`}
           </tbody></table></div>
         </div>
       </section>`;
@@ -2761,6 +2762,7 @@ export function initApp(config = {}) {
         <div class="review-card dev-centre-detail-grid">
           <div class="review-row"><strong>Sport</strong><span>${escapeHtml(centre.sport || "Not set")}</span></div>
           <div class="review-row"><strong>Centre logo</strong><span>${centre.logo_url ? "Configured" : "Not configured"}</span></div>
+          ${centre.logo_url ? `<div class="review-row"><strong>Logo preview</strong><img class="dev-centre-logo-preview" src="${escapeHtml(centre.logo_url)}" alt="${escapeHtml(centre.name)} logo preview"></div>` : ""}
           <div class="review-row"><strong>Centre link</strong><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">${escapeHtml(loginUrl)}</a></div>
           <div class="review-row"><strong>Centre status</strong><span>${escapeHtml(centre.status || "Unknown")}</span></div>
           <div class="review-row"><strong>Centre created</strong><span>${centre.created_at ? escapeHtml(new Date(centre.created_at).toLocaleDateString()) : "Not available"}</span></div>
@@ -3252,6 +3254,23 @@ export function initApp(config = {}) {
         });
       }
 
+      const hiddenCentreLogoUpload = document.getElementById("hiddenCentreLogoUpload");
+      hiddenCentreLogoUpload?.addEventListener("change", async event => {
+        const [file] = event.target.files || [];
+        const centreId = event.target.dataset.centreId;
+        if (!file || !centreId) return;
+        try {
+          const logoUrl = await uploadProfileImage(file, "centre-logo", centreId);
+          await invokePrivileged("dev-console", { action: "update-centre-logo", centre_id: centreId, logo_url: logoUrl });
+          await refreshPrivilegedState();
+          render();
+        } catch (error) {
+          alert(error.message || "Unable to upload centre logo.");
+        } finally {
+          event.target.value = "";
+        }
+      });
+
       ["wizardDate", "wizardTime", "wizardLessonNumber", "wizardWhatTaught", "wizardAfterTraining", "wizardBeforeCoaching", "wizardNextLesson", "wizardRemarks"].forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -3408,20 +3427,6 @@ export function initApp(config = {}) {
         delete changes.text;
       }
 
-      const hiddenCentreLogoUpload = document.getElementById("hiddenCentreLogoUpload");
-      if (hiddenCentreLogoUpload) {
-        hiddenCentreLogoUpload.addEventListener("change", event => {
-          const [file] = event.target.files || [];
-          const centreId = event.target.dataset.centreId;
-          if (!file || !centreId) return;
-          uploadProfileImage(file, "centre-logo", centreId).then(async logoUrl => {
-            await invokePrivileged("dev-console", { action: "update-centre-logo", centre_id: centreId, logo_url: logoUrl });
-            await refreshPrivilegedState();
-            event.target.value = "";
-            render();
-          }).catch(error => alert(error.message || "Unable to upload centre logo."));
-        });
-      }
       Object.assign(target, changes);
       if (changes.name && layerTarget) layerTarget.name = changes.name;
       saveReportLayout(coach);
@@ -4773,7 +4778,7 @@ export function initApp(config = {}) {
       if (centrePath && supabase) {
         let slug = "";
         try { slug = decodeURIComponent(centrePath[1]); } catch { slug = ""; }
-        const { data, error } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", slug).maybeSingle();
+        const { data, error } = await supabase.from("centres").select("id,name,slug,sport,status,logo_url,activated_at").eq("slug", slug).maybeSingle();
         if (!error && data?.status === "active") requestedCentre = data;
         else centreRouteUnavailable = true;
       } else if (centrePath) {
@@ -4787,7 +4792,7 @@ export function initApp(config = {}) {
         driveOAuthState = callbackParams.get("state") || "";
         const callbackCentreSlug = callbackParams.get("centre") || driveOAuthState.split("|")[1] || sessionStorage.getItem("pendingCentreSlug");
         if (callbackCentreSlug) {
-          const { data } = await supabase.from("centres").select("id,name,slug,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
+          const { data } = await supabase.from("centres").select("id,name,slug,sport,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
           if (data?.status === "active") {
             requestedCentre = data;
             sessionStorage.removeItem("pendingCentreSlug");

@@ -2706,3 +2706,9 @@
         min-height: 44px;
       }
     }
+
+    .centre-login-sport { display: flex; justify-content: center; margin-top: -4px; }
+    .centre-login-sport .centre-sport { font-size: .92rem; }
+    .dev-centre-logo-test { display: inline-grid; place-items: center; width: 58px; height: 42px; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }
+    .dev-centre-logo-test img { display: block; width: 100%; height: 100%; max-width: 58px; max-height: 42px; object-fit: contain; }
+    .dev-centre-logo-preview { display: block; width: 116px; height: 72px; max-width: 100%; object-fit: contain; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }

@@ -2542,7 +2542,7 @@ export function initApp(config = {}) {
               <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-sport">Sport</label><select id="centre-onboarding-sport" class="text-input"><option value="">Select sport</option>${["Badminton", "Football", "Table tennis", "Tennis", "Basketball", "Other"].map(sport => `<option ${values.sport === sport ? "selected" : ""}>${sport}</option>`).join("")}</select></div></div>
               <div class="onboarding-actions end"><button class="primary-btn" data-action="centre-onboarding-continue">Continue →</button></div>
             ` : step === 2 ? `
-              <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-name">Centre name</label><input id="centre-onboarding-name" class="text-input" autocomplete="organization" value="${escapeHtml(values.name)}" required></div></div>
+              <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-name">Centre name</label><input id="centre-onboarding-name" class="text-input" autocomplete="organization" value="${escapeHtml(values.name)}" required></div><div class="field"><label for="centre-onboarding-logo">Centre logo <span class="muted">(optional)</span></label><input id="centre-onboarding-logo" class="text-input" type="file" accept="image/*"><small class="muted">PNG or JPG, up to 5 MB.</small>${values.logoPreview ? `<img class="dev-centre-logo-preview onboarding-logo-preview" src="${escapeHtml(values.logoPreview)}" alt="Selected centre logo preview">` : ""}</div></div>
               <div class="onboarding-actions"><button class="ghost-btn" data-action="centre-onboarding-back">← Back</button><button class="primary-btn" data-action="centre-onboarding-submit">Create centre</button></div>
             ` : `
               <div class="review-card centre-onboarding-result">
@@ -2709,7 +2709,7 @@ export function initApp(config = {}) {
               const loginUrl = centre.login_url || `${window.location.origin}/centre/${encodeURIComponent(centre.slug || "")}`;
               const sport = centre.sport || "Not set";
               const status = String(centre.status || "").toLowerCase() === "active" ? "Active" : "Inactive";
-              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${centreSportMarkup(sport)}</td><td data-label="Logo test">${centre.logo_url ? `<a class="dev-centre-logo-test" href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer" aria-label="Test ${escapeHtml(centre.name)} login logo"><img src="${escapeHtml(centre.logo_url)}" alt="${escapeHtml(centre.name)} logo"></a>` : `<span class="muted">No logo</span>`}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status"><span class="status-pill ${status === "Active" ? "status-active" : "status-inactive"}">${status}</span></td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="icon-btn" data-action="delete-centre" data-centre-id="${centre.id}" title="Delete centre" aria-label="Delete ${escapeHtml(centre.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`;
+              return `<tr><td data-label="Centre"><strong>${escapeHtml(centre.name)}</strong></td><td data-label="Sport">${centreSportMarkup(sport)}</td><td data-label="Logo test">${centre.logo_url ? `<a class="dev-centre-logo-test" href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer" aria-label="Test ${escapeHtml(centre.name)} login logo"><img src="${escapeHtml(centre.logo_url)}" alt="${escapeHtml(centre.name)} logo"></a>` : `<span class="muted">No logo</span>`}</td><td data-label="Centre link"><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">Open login link</a></td><td data-label="Status"><span class="status-pill ${status === "Active" ? "status-active" : "status-inactive"}">${status}</span></td><td data-label="Licence expiry">${licence?.expires_at ? escapeHtml(new Date(licence.expires_at).toLocaleDateString()) : "No licence"}</td><td data-label="Activation code"><code>${escapeHtml(key?.key_value || "Unavailable")}</code></td><td><button class="secondary-btn" data-action="view-centre-details" data-centre-id="${centre.id}">View details</button><button class="secondary-btn" data-action="upload-centre-logo" data-centre-id="${centre.id}">Upload logo</button><button class="secondary-btn" data-action="renew-centre" data-centre-id="${centre.id}">Renew 1 year</button><button class="icon-btn" data-action="delete-centre" data-centre-id="${centre.id}" title="Delete centre" aria-label="Delete ${escapeHtml(centre.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`;
             }).join("") : `<tr><td colspan="8" class="muted">No centres yet.</td></tr>`}
           </tbody></table></div>
         </div>
@@ -3269,6 +3269,16 @@ export function initApp(config = {}) {
         } finally {
           event.target.value = "";
         }
+      });
+
+      document.getElementById("centre-onboarding-logo")?.addEventListener("change", event => {
+        const [file] = event.target.files || [];
+        if (!file || !centreOnboardingModal) return;
+        if (!file.type.startsWith("image/")) return alert("Choose an image file.");
+        if (file.size > 5 * 1024 * 1024) return alert("Images must be 5 MB or smaller.");
+        centreOnboardingModal.values.logoFile = file;
+        centreOnboardingModal.values.logoPreview = URL.createObjectURL(file);
+        render();
       });
 
       ["wizardDate", "wizardTime", "wizardLessonNumber", "wizardWhatTaught", "wizardAfterTraining", "wizardBeforeCoaching", "wizardNextLesson", "wizardRemarks"].forEach(id => {
@@ -4632,6 +4642,8 @@ export function initApp(config = {}) {
         const input = document.getElementById(id);
         if (input) centreOnboardingModal.values[key] = input.value.trim();
       });
+      const logoInput = document.getElementById("centre-onboarding-logo");
+      if (logoInput?.files?.[0]) centreOnboardingModal.values.logoFile = logoInput.files[0];
     }
 
     function continueCentreOnboarding() {
@@ -4657,6 +4669,10 @@ export function initApp(config = {}) {
           email: `centre-${slug}-${Date.now()}@accounts.jomnittaku.app`,
           password: `${crypto.randomUUID()}${crypto.randomUUID()}`
         });
+        if (values.logoFile && result?.centre?.id) {
+          const logoUrl = await uploadProfileImage(values.logoFile, "centre-logo", result.centre.id);
+          await invokePrivileged("dev-console", { action: "update-centre-logo", centre_id: result.centre.id, logo_url: logoUrl });
+        }
         centreOnboardingModal.result = result;
         centreOnboardingModal.step = 3;
         await refreshPrivilegedState();

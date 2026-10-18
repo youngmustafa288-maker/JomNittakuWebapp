@@ -89,6 +89,12 @@ export function initApp(config = {}) {
       "footer-bar-art": { left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true },
       "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5, locked: true }
     };
+    const ARTWORK_EDITABLE_TEXT = {
+      "brand-name": "Dao Sports Method",
+      "brand-subtitle": "TABLE TENNIS TRAINING",
+      "brand-tagline": "Character Transformation thru Sports",
+      "report-title-art": "THIS IS A TRAINING REPORT"
+    };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
@@ -1136,7 +1142,9 @@ export function initApp(config = {}) {
           const objectTools = reportLayoutEditing && selectedReportOverlay === layer.id && layer.id.startsWith("custom-") && layer.type === "text"
             ? renderCertificateObjectTools(layer)
             : "";
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${escapeHtml(source)}" alt="" style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${layer.source ? "hidden" : ""}>${escapeHtml(layer.textOverride || "")}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+          const artworkText = String(layer.textOverride || ARTWORK_EDITABLE_TEXT[layer.id] || "");
+          const hasArtworkTextOverride = Boolean(layer.textOverride);
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const isCustomText = layer.id.startsWith("custom-") && layer.type === "text";
@@ -2137,12 +2145,15 @@ export function initApp(config = {}) {
       const layer = fullLayout.layers.find(entry => entry.id === item.dataset.overlayId);
       const layout = fullLayout[item.dataset.overlayId] || layer;
       if (!layout || layout.locked === true) return;
-      if (layer && layer.type !== "text" && !layer.type.includes("text") && !(layer.type === "image" && !layer.source)) return;
+      if (layer && layer.type !== "text" && !layer.type.includes("text") && layer.type !== "image") return;
       let editor = item.querySelector(".template-custom-layer-content") || item;
       if (layer?.type === "image") {
         editor = item.querySelector(".template-art-text") || document.createElement("span");
         editor.className = "template-art-text";
         if (!editor.isConnected) item.append(editor);
+        editor.hidden = false;
+        editor.textContent = editor.textContent.trim() || ARTWORK_EDITABLE_TEXT[item.dataset.overlayId] || "";
+        item.classList.add("is-art-text-editing");
       }
       editor.contentEditable = "true";
       editor.setAttribute("contenteditable", "true");
@@ -2179,6 +2190,7 @@ export function initApp(config = {}) {
         editor.contentEditable = "false";
         editor.setAttribute("contenteditable", "false");
         editor.classList.remove("is-text-editing");
+        item.classList.remove("is-art-text-editing");
         editor.removeEventListener("keydown", onKeydown);
         coach.reportLayout = fullLayout;
         saveReportLayout(coach);

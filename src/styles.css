@@ -1938,6 +1938,7 @@
     .template-art-text[hidden] { display:none !important; }
     .template-art-text:not([contenteditable="true"]) { pointer-events:none; }
     .template-art-text[contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; background:transparent; pointer-events:auto; }
+    .template-art-slice.is-art-text-editing > img { visibility:hidden; }
     .report-overlay-item[data-overlay-text="true"][contenteditable="true"],
     .template-custom-layer-content[contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; outline-offset:1px; background:transparent; }
     .report-overlay-item.is-text-editing { cursor:text !important; user-select:text; caret-color:#7c3aed; }

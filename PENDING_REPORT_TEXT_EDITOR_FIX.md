@@ -23,9 +23,8 @@ Migration `20260923_000014_centre_login_isolation.sql` removes the earlier `coac
 
 ## Remaining Work
 
-1. Retest the deployed Certificate Design editor with an authenticated coach session: edit each of the four labels, blur/save, reload, and confirm the text remains. Check the PATCH response succeeds.
-2. Review the visual typography against the artwork. Display mode uses raster image layers, so the current CSS font fallbacks may not exactly reproduce each bitmap's original typeface; choose or derive matching fonts if exact visual fidelity is required.
-3. Run `npm run build` after any additional code changes.
+1. Review the visual typography against the artwork. Display mode uses raster image layers, so the current CSS font fallbacks may not exactly reproduce each bitmap's original typeface; choose or derive matching fonts if exact visual fidelity is required.
+2. Run `npm run build` after any additional code changes.
 
 ## Validation Notes
 
@@ -33,4 +32,5 @@ Migration `20260923_000014_centre_login_isolation.sql` removes the earlier `coac
 - Browser computed styles in edit mode were observed as Georgia/700/normal for the brand name, Arial/300/normal for the subtitle, Georgia/400/italic for the tagline, and Cinzel Decorative/700/normal for the report title.
 - Typing changed the live editor text; persistence failed at the RLS-protected PATCH.
 - The Supabase CLI was unavailable; hosted migration application and verification were completed through Supabase MCP.
-- The hosted migrations are now applied and verified through Supabase MCP. Deployed editor retest remains blocked by the absence of an authenticated browser session in this workspace.
+- The hosted migrations are applied and verified through Supabase MCP.
+- The deployed editor was retested with an authenticated coach session. All four editable labels saved with HTTP 200 PATCH responses, persisted after reload, and were restored to their original text.

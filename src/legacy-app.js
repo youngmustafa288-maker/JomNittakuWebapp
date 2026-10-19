@@ -4608,7 +4608,6 @@ export function initApp(config = {}) {
           email: coach.email || "",
           phone: coach.phone || "",
           slug: coach.slug,
-          role: coach.role || "Table Tennis Coach",
           bio: coach.bio || "",
           photo: coach.photo || "",
           links: Array.isArray(coach.links) ? coach.links : [],

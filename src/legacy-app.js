@@ -95,6 +95,9 @@ export function initApp(config = {}) {
       "brand-tagline": "Character Transformation thru Sports",
       "report-title-art": "THIS IS A TRAINING REPORT"
     };
+    const ARTWORK_TEXT_STYLE = {
+      "report-title-art": { fontFamily: "Cormorant Garamond", fontSize: 4.8, color: "#563719", fontWeight: 700 }
+    };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
@@ -1143,8 +1146,9 @@ export function initApp(config = {}) {
             ? renderCertificateObjectTools(layer)
             : "";
           const artworkText = String(layer.textOverride || ARTWORK_EDITABLE_TEXT[layer.id] || "");
-          const hasArtworkTextOverride = Boolean(layer.textOverride);
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+          const hasArtworkTextOverride = Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string";
+          const textStyle = ARTWORK_TEXT_STYLE[layer.id] || {};
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || textStyle.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || textStyle.fontSize || 2}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${Number(layer.fontWeight) || textStyle.fontWeight || 400};font-style:${escapeHtml(layer.fontStyle || textStyle.fontStyle || "normal")};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const isCustomText = layer.id.startsWith("custom-") && layer.type === "text";
@@ -2152,7 +2156,9 @@ export function initApp(config = {}) {
         editor.className = "template-art-text";
         if (!editor.isConnected) item.append(editor);
         editor.hidden = false;
-        editor.textContent = editor.textContent.trim() || ARTWORK_EDITABLE_TEXT[item.dataset.overlayId] || "";
+        if (!editor.textContent.trim() && !Object.prototype.hasOwnProperty.call(layer, "textOverride")) {
+          editor.textContent = ARTWORK_EDITABLE_TEXT[item.dataset.overlayId] || "";
+        }
         item.classList.add("is-art-text-editing");
       }
       editor.contentEditable = "true";

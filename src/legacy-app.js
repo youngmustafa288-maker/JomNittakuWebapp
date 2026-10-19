@@ -96,7 +96,7 @@ export function initApp(config = {}) {
       "report-title-art": "THIS IS A TRAINING REPORT"
     };
     const ARTWORK_TEXT_STYLE = {
-      "report-title-art": { fontFamily: "Cormorant Garamond", fontSize: 4.8, color: "#563719", fontWeight: 700 }
+      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 4.3, color: "#563719", fontWeight: 700 }
     };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -2150,6 +2150,8 @@ export function initApp(config = {}) {
       const layout = fullLayout[item.dataset.overlayId] || layer;
       if (!layout || layout.locked === true) return;
       if (layer && layer.type !== "text" && !layer.type.includes("text") && layer.type !== "image") return;
+      selectedReportOverlay = item.dataset.overlayId;
+      syncCertificateTextToolbar(layout, layer);
       let editor = item.querySelector(".template-custom-layer-content") || item;
       if (layer?.type === "image") {
         editor = item.querySelector(".template-art-text") || document.createElement("span");
@@ -2226,6 +2228,21 @@ export function initApp(config = {}) {
       requestAnimationFrame(() => {
         if (!selectionIsInsideEditor()) placeCaretAtEnd();
       });
+    }
+
+    function syncCertificateTextToolbar(layout, layer) {
+      const style = ARTWORK_TEXT_STYLE[selectedReportOverlay] || {};
+      const nameInput = document.querySelector("[data-layout-name]");
+      const fontSelect = document.querySelector("[data-layout-font]");
+      const sizeInput = document.querySelector("[data-layout-size]");
+      const colorInput = document.querySelector("[data-layout-color]");
+      if (nameInput) nameInput.value = layout.name || layer?.name || selectedReportOverlay;
+      if (fontSelect) fontSelect.value = layout.fontFamily || style.fontFamily || "Arial";
+      if (sizeInput) sizeInput.value = layout.fontSize ?? style.fontSize ?? 2;
+      if (colorInput) colorInput.value = layout.color || style.color || "#111111";
+      document.querySelector('[data-text-format="bold"]')?.classList.toggle("is-active", Number(layout.fontWeight ?? style.fontWeight) >= 600);
+      document.querySelector('[data-text-format="italic"]')?.classList.toggle("is-active", (layout.fontStyle || style.fontStyle) === "italic");
+      document.querySelector('[data-text-format="underline"]')?.classList.toggle("is-active", (layout.textDecoration || style.textDecoration) === "underline");
     }
 
     function handleCertificateEditorKeydown(event) {
@@ -3861,7 +3878,7 @@ export function initApp(config = {}) {
       const isFixedArtwork = selectedReportOverlay === "decor-bottom-right";
       return `<div class="report-layout-toolbar">
         <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
-        ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia"].map(font => `<option ${layout.fontFamily === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${layout.fontStyle === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${layout.textDecoration === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
+        ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia", "Cinzel Decorative"].map(font => `<option ${(layout.fontFamily || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontFamily) === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${(layout.fontStyle || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontStyle) === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${(layout.textDecoration || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.textDecoration) === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
         <span class="toolbar-divider" aria-hidden="true"></span>
         <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>

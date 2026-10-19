@@ -96,7 +96,10 @@ export function initApp(config = {}) {
       "report-title-art": "THIS IS A TRAINING REPORT"
     };
     const ARTWORK_TEXT_STYLE = {
-      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 4.3, color: "#563719", fontWeight: 700 }
+      "brand-name": { fontFamily: "Georgia", fontSize: 3.1, color: "#171525", fontWeight: 700, fontStyle: "normal" },
+      "brand-subtitle": { fontFamily: "Arial", fontSize: 1.8, color: "#171525", fontWeight: 300, fontStyle: "normal" },
+      "brand-tagline": { fontFamily: "Georgia", fontSize: 2, color: "#171525", fontWeight: 400, fontStyle: "italic" },
+      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 4.3, color: "#563719", fontWeight: 700, fontStyle: "normal" }
     };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -2165,6 +2168,12 @@ export function initApp(config = {}) {
       }
       editor.contentEditable = "true";
       editor.setAttribute("contenteditable", "true");
+      const artworkStyle = ARTWORK_TEXT_STYLE[item.dataset.overlayId];
+      if (artworkStyle && editor.classList.contains("template-art-text")) {
+        editor.style.fontFamily = layer?.fontFamily || artworkStyle.fontFamily;
+        editor.style.fontWeight = layer?.fontWeight || artworkStyle.fontWeight;
+        editor.style.fontStyle = layer?.fontStyle || artworkStyle.fontStyle;
+      }
       editor.classList.add("is-text-editing");
       editor.setAttribute("role", "textbox");
       editor.setAttribute("aria-label", `Edit ${layout.name || layer?.name || item.dataset.overlayId} text`);
@@ -2200,6 +2209,7 @@ export function initApp(config = {}) {
         editor.classList.remove("is-text-editing");
         item.classList.remove("is-art-text-editing");
         editor.removeEventListener("keydown", onKeydown);
+        editor.removeEventListener("input", onInput);
         coach.reportLayout = fullLayout;
         saveReportLayout(coach);
       };
@@ -2212,9 +2222,16 @@ export function initApp(config = {}) {
           event.stopPropagation();
         }
       };
+      const onInput = () => {
+        const value = (editor.innerText || editor.textContent).trim().slice(0, 500);
+        if (layer?.type === "text") layer.text = value;
+        else layout.textOverride = value;
+        coach.reportLayout = fullLayout;
+      };
       activeCertificateEditor = { editor, item, finish };
       editor.addEventListener("keydown", onKeydown);
       editor.addEventListener("beforeinput", onBeforeInput);
+      editor.addEventListener("input", onInput);
       editor.addEventListener("blur", () => {
         if (activeCertificateEditor?.editor === editor) finish();
       }, { once: true });

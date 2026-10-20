@@ -2182,16 +2182,11 @@ export function initApp(config = {}) {
         const selection = window.getSelection();
         return Boolean(selection?.rangeCount && editor.contains(selection.anchorNode) && editor.contains(selection.focusNode));
       };
-      const placeCaretAtEnd = () => {
+      const selectEditorContents = () => {
         if (!editor.isConnected || editor.contentEditable !== "true") return;
         editor.focus({ preventScroll: true });
         const range = document.createRange();
-        const textWalker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
-        let lastTextNode = null;
-        while (textWalker.nextNode()) lastTextNode = textWalker.currentNode;
-        if (lastTextNode) range.setStart(lastTextNode, lastTextNode.textContent.length);
-        else range.selectNodeContents(editor);
-        range.collapse(true);
+        range.selectNodeContents(editor);
         const selection = window.getSelection();
         selection?.removeAllRanges();
         selection?.addRange(range);
@@ -2238,12 +2233,11 @@ export function initApp(config = {}) {
       editor.addEventListener("blur", () => {
         editor.removeEventListener("beforeinput", onBeforeInput);
       }, { once: true });
-      // Keep a browser-provided click selection when it is already inside the
-      // editor; otherwise default to the end immediately. The frame fallback
-      // handles browsers that publish the double-click selection asynchronously.
-      if (!selectionIsInsideEditor()) placeCaretAtEnd();
+      // Select the current label so ordinary typing replaces it. Users can
+      // still place the caret or select a smaller range after editing begins.
+      if (!selectionIsInsideEditor()) selectEditorContents();
       requestAnimationFrame(() => {
-        if (!selectionIsInsideEditor()) placeCaretAtEnd();
+        if (!selectionIsInsideEditor()) selectEditorContents();
       });
     }
 

@@ -93,13 +93,39 @@ export function initApp(config = {}) {
       "brand-name": "Dao Sports Method",
       "brand-subtitle": "TABLE TENNIS TRAINING",
       "brand-tagline": "Character Transformation thru Sports",
-      "report-title-art": "THIS IS A TRAINING REPORT"
+      "report-title-art": "THIS IS A TRAINING REPORT",
+      "session-title": "SESSION DETAILS",
+      "date-label": "Date:",
+      "time-label": "Time:",
+      "centre-label": "Centre:",
+      "coach-label": "Coach Name:",
+      "training-title": "TRAINING SUMMARY",
+      "taught-title": "What Was Taught Today",
+      "before-title": "Before Coaching – Skill Level",
+      "after-title": "After Training – Areas of Improvement",
+      "next-title": "Next Recommended Lesson",
+      "remarks-title-art": "COACH REMARKS",
+      "contact-title-art": "CENTER CONTACT NUMBER",
+      "address-title-art": "ADDRESS"
     };
     const ARTWORK_TEXT_STYLE = {
       "brand-name": { fontFamily: "Georgia", fontSize: 3.1, color: "#171525", fontWeight: 700, fontStyle: "normal" },
       "brand-subtitle": { fontFamily: "Arial", fontSize: 1.8, color: "#171525", fontWeight: 300, fontStyle: "normal" },
       "brand-tagline": { fontFamily: "Georgia", fontSize: 2, color: "#171525", fontWeight: 400, fontStyle: "italic" },
-      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 4.3, color: "#563719", fontWeight: 700, fontStyle: "normal" }
+      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 4.3, color: "#563719", fontWeight: 700, fontStyle: "normal" },
+      "session-title": { fontFamily: "Arial", fontSize: 1.9, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "date-label": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "time-label": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "centre-label": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "coach-label": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "training-title": { fontFamily: "Arial", fontSize: 1.9, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "taught-title": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "before-title": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "after-title": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "next-title": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "remarks-title-art": { fontFamily: "Arial", fontSize: 1.9, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "contact-title-art": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" },
+      "address-title-art": { fontFamily: "Arial", fontSize: 1.7, color: "#111111", fontWeight: 700, fontStyle: "normal" }
     };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -1151,7 +1177,8 @@ export function initApp(config = {}) {
           const artworkText = String(layer.textOverride || ARTWORK_EDITABLE_TEXT[layer.id] || "");
           const hasArtworkTextOverride = Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string";
           const textStyle = ARTWORK_TEXT_STYLE[layer.id] || {};
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || textStyle.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || textStyle.fontSize || 2}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${Number(layer.fontWeight) || textStyle.fontWeight || 400};font-style:${escapeHtml(layer.fontStyle || textStyle.fontStyle || "normal")};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+          const textTarget = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id) ? 'data-overlay-text="true"' : "";
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${textTarget} style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || textStyle.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || textStyle.fontSize || 2}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${Number(layer.fontWeight) || textStyle.fontWeight || 400};font-style:${escapeHtml(layer.fontStyle || textStyle.fontStyle || "normal")};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const isCustomText = layer.id.startsWith("custom-") && layer.type === "text";
@@ -2066,7 +2093,7 @@ export function initApp(config = {}) {
           <aside class="certificate-editor-rail">${renderCertificateToolPanel(coach)}</aside>
           <div class="certificate-editor-main">${renderReportLayoutToolbar(coach)}<main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
         </div>
-        <div class="certificate-design-note">Select a field on the certificate, then drag it to reposition it. Changes save to your coach account.</div>
+        <div class="certificate-design-note">Click text to edit it, or drag any unlocked field to reposition it. Changes save to your coach account.</div>
       </section>`;
     }
 
@@ -2180,7 +2207,13 @@ export function initApp(config = {}) {
       editor.focus({ preventScroll: true });
       const selectionIsInsideEditor = () => {
         const selection = window.getSelection();
-        return Boolean(selection?.rangeCount && editor.contains(selection.anchorNode) && editor.contains(selection.focusNode));
+        return Boolean(
+          selection?.rangeCount
+          && !selection.isCollapsed
+          && selection.toString().length
+          && editor.contains(selection.anchorNode)
+          && editor.contains(selection.focusNode)
+        );
       };
       const selectEditorContents = () => {
         if (!editor.isConnected || editor.contentEditable !== "true") return;
@@ -3370,6 +3403,7 @@ export function initApp(config = {}) {
         const layer = getReportLayout(getCurrentCoach()).layers.find(entry => entry.id === item.dataset.overlayId);
         if (reportLayoutEditing && item.dataset.overlayText === "true") {
           item.classList.add("is-selected");
+          beginCertificateTextEditing(item);
           return;
         }
         if (reportLayoutEditing) render();

@@ -89,15 +89,26 @@ export function initApp(config = {}) {
       "footer-bar-art": { left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true },
       "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5, locked: true }
     };
+    // Printed certificate headings, section titles, table dividers and the
+    // contact box belong to the fixed artwork. Only the report's dynamic
+    // values, student/coach photos and user-added layers can be repositioned.
+    // The replaceable brand logo is intentionally not part of this set.
+    const FIXED_CERTIFICATE_ARTWORK_IDS = new Set(
+      Object.keys(ARTWORK_SLICES).filter(id => id !== "brand-logo-art")
+    );
+    function isFixedCertificateArtwork(id) {
+      return id === "qr" || FIXED_CERTIFICATE_ARTWORK_IDS.has(id);
+    }
     const ARTWORK_EDITABLE_TEXT = {
       "brand-name": "Dao Sports Method",
       "brand-subtitle": "TABLE TENNIS TRAINING",
       "brand-tagline": "Character Transformation thru Sports",
       "report-title-art": "THIS IS A TRAINING REPORT"
     };
-    // Exact original heading lettering is supplied as transparent PNG artwork.
-    // Older editors sometimes stored the unchanged heading text as an override,
-    // accidentally replacing that artwork with a mismatched browser font.
+    // The four headings now use one consistently loaded text font for BOTH
+    // default wording and custom wording. Their older PNGs stay in public/
+    // for rollback but are not displayed over these editable text headings.
+    // This avoids a PNG-to-font switch when a coach edits the wording.
     function isOriginalHeadingText(id, value) {
       if (!Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return false;
       const normalized = text => String(text || "").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -112,11 +123,12 @@ export function initApp(config = {}) {
     }
 
     const ARTWORK_TEXT_STYLE = {
-      // Editable replacements match the dimensions of the supplied artwork.
-      // These sizes are in container-width units (cqw), not px.
-      "brand-name": { fontFamily: "Arial", fontSize: 4.35, color: "#171525", fontWeight: 700, fontStyle: "normal" },
-      "brand-subtitle": { fontFamily: "Arial", fontSize: 2.95, color: "#171525", fontWeight: 400, fontStyle: "normal" },
-      "brand-tagline": { fontFamily: "Georgia", fontSize: 2.65, color: "#171525", fontWeight: 400, fontStyle: "italic" },
+      // The default AND customized heading texts use these same loaded fonts.
+      // Font sizes are in container-width units (cqw), never changed on select.
+      // These are visual approximations, not verified original PNG typefaces.
+      "brand-name": { fontFamily: "Outfit", fontSize: 4.35, color: "#171525", fontWeight: 800, fontStyle: "normal" },
+      "brand-subtitle": { fontFamily: "Montserrat", fontSize: 2.95, color: "#171525", fontWeight: 400, fontStyle: "normal" },
+      "brand-tagline": { fontFamily: "Lato", fontSize: 2.65, color: "#171525", fontWeight: 400, fontStyle: "italic" },
       "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 5.4, color: "#563719", fontWeight: 700, fontStyle: "normal" }
     };
     const DEFAULT_LAYER_GEOMETRY = {
@@ -151,7 +163,7 @@ export function initApp(config = {}) {
       ["nextLesson", "Next lesson", "dynamic-text"], ["remarks", "Coach remarks", "dynamic-text"],
       ["contact", "Centre contact", "dynamic-text"], ["address", "Address", "dynamic-text"],
       ["qr", "QR code", "image"], ["footer-text-overlay", "Footer text", "text"]
-    ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2, ...(DEFAULT_LAYER_GEOMETRY[id] || {}) }));
+    ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2, ...(DEFAULT_LAYER_GEOMETRY[id] || {}), locked: isFixedCertificateArtwork(id) }));
     const RETIRED_CERTIFICATE_LAYER_IDS = new Set([
       "art-brand", "art-session", "art-summary", "art-remarks", "art-badge", "art-contact", "art-footer",
       "brand-title", "brand-logo", "report-title", "remarks", "badge", "footer",
@@ -369,6 +381,18 @@ export function initApp(config = {}) {
               ? { locked: true } : {};
             const headingReset = isOriginalHeadingText(defaultLayer.id, savedLayer.textOverride)
               ? { textOverride: undefined } : {};
+            // Reset previously dragged printed table pieces to the artwork's
+            // original geometry. Do NOT reset the TTAM badge or QR: retain the
+            // user's existing saved position and size for those two markers.
+            const fixedPrintedGeometry = isFixedCertificateArtwork(defaultLayer.id)
+              && !["certification-badge", "qr"].includes(defaultLayer.id)
+              ? {
+                  left: defaultLayer.left, top: defaultLayer.top,
+                  width: defaultLayer.width, height: defaultLayer.height,
+                  zIndex: defaultLayer.zIndex
+                }
+              : {};
+            const fixedLayer = isFixedCertificateArtwork(defaultLayer.id);
             return {
               ...defaultLayer,
               ...savedLayer,
@@ -376,8 +400,10 @@ export function initApp(config = {}) {
               ...fixedDecoration,
               ...fixedMarks,
               ...headingReset,
-              visible: savedLayer.visible !== false,
-              zIndex: defaultLayer.id === "footer-bar-art" ? 1 : defaultLayer.id === "qr" ? DEFAULT_LAYER_GEOMETRY.qr.zIndex : (Number(savedLayer.zIndex) || index + 2)
+              ...fixedPrintedGeometry,
+              locked: fixedLayer ? true : savedLayer.locked === true,
+              visible: fixedLayer ? true : savedLayer.visible !== false,
+              zIndex: defaultLayer.id === "footer-bar-art" ? 1 : defaultLayer.id === "qr" ? DEFAULT_LAYER_GEOMETRY.qr.zIndex : fixedLayer ? defaultLayer.zIndex : (Number(savedLayer.zIndex) || index + 2)
             };
           }).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id) && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)))
         : DEFAULT_CERTIFICATE_LAYERS.map(layer => ({ ...layer }));
@@ -1193,12 +1219,21 @@ export function initApp(config = {}) {
             ? renderCertificateObjectTools(layer)
             : "";
           const isEditableHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id);
-          const hasArtworkTextOverride = isEditableHeading
-            ? hasCustomHeadingText(layer)
-            : Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string";
-          const artworkText = hasArtworkTextOverride ? String(layer.textOverride) : String(ARTWORK_EDITABLE_TEXT[layer.id] || "");
+          // All four printed headings are rendered as text even at their default
+          // wording: this is the same font before, during and after editing.
+          const hasArtworkTextOverride = isEditableHeading ||
+            (Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string");
+          const artworkText = isEditableHeading
+            ? (hasCustomHeadingText(layer) ? String(layer.textOverride) : ARTWORK_EDITABLE_TEXT[layer.id])
+            : (hasArtworkTextOverride ? String(layer.textOverride) : "");
           const textStyle = ARTWORK_TEXT_STYLE[layer.id] || {};
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${isEditableHeading ? 'data-editable-heading="true" title="Double-click to edit this heading"' : ""} ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || textStyle.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || textStyle.fontSize || 2}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${Number(layer.fontWeight) || textStyle.fontWeight || 400};font-style:${escapeHtml(layer.fontStyle || textStyle.fontStyle || "normal")};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+          // Ignore historical saved per-layer font overrides on these headings.
+          // A name edit must never change the current title font.
+          const displayFont = isEditableHeading ? textStyle.fontFamily : (layer.fontFamily || textStyle.fontFamily || "Arial");
+          const displaySize = isEditableHeading ? textStyle.fontSize : (Number(layer.fontSize) || textStyle.fontSize || 2);
+          const displayWeight = isEditableHeading ? textStyle.fontWeight : (Number(layer.fontWeight) || textStyle.fontWeight || 400);
+          const displayStyle = isEditableHeading ? textStyle.fontStyle : (layer.fontStyle || textStyle.fontStyle || "normal");
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${isEditableHeading ? 'data-editable-heading="true" title="Double-click to edit this heading"' : ""} ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(displayFont)};font-size:${displaySize}cqw;color:${escapeHtml(isEditableHeading ? textStyle.color : (layer.color || textStyle.color || "#111111"))};font-weight:${displayWeight};font-style:${escapeHtml(displayStyle)};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const isCustomText = layer.id.startsWith("custom-") && layer.type === "text";
@@ -2117,7 +2152,7 @@ export function initApp(config = {}) {
           <aside class="certificate-editor-rail">${renderCertificateToolPanel(coach)}</aside>
           <div class="certificate-editor-main">${renderReportLayoutToolbar(coach)}<main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
         </div>
-        <div class="certificate-design-note">Select a field on the certificate, then drag it to reposition it. Changes save to your coach account.</div>
+        <div class="certificate-design-note">Printed certificate artwork and its table are fixed. Select dynamic report text or photos to reposition; double-click a top heading to edit its wording. Changes save to your coach account.</div>
       </section>`;
     }
 
@@ -2185,7 +2220,7 @@ export function initApp(config = {}) {
       const layout = getReportLayout(coach);
       const asset = layout.uploads.find(item => item.id === assetId);
       const layer = layout.layers.find(item => item.id === layerId);
-      if (!asset || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[layerId])) return;
+      if (!asset || isFixedCertificateArtwork(layerId) || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[layerId])) return;
       layer.source = asset.source;
       layer.objectFit = "contain";
       layer.objectPosition = "center";
@@ -2201,18 +2236,19 @@ export function initApp(config = {}) {
       if (!coach || !Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return;
       const layout = getReportLayout(coach);
       const layer = layout.layers.find(entry => entry.id === id);
-      if (!layer || layer.locked === true) return;
+      if (!layer) return;
+      // The title remains rendered in the same font while the edit prompt is
+      // open and after the new wording is saved.
       const original = ARTWORK_EDITABLE_TEXT[id];
       const current = hasCustomHeadingText(layer) ? layer.textOverride : original;
       const result = window.prompt("Edit certificate heading (Cancel keeps the current design):", current);
       if (result === null) return;
       const next = result.trim().slice(0, 120);
       if (!next || isOriginalHeadingText(id, next)) {
-        // Restoring the original wording also restores its exact artwork/font.
+        // Reset to the default wording without switching rendering modes.
         delete layer.textOverride;
       } else {
-        // Reworded headings are text. The editor fits them inside the existing
-        // box; exact artwork lettering is only available for the supplied text.
+        // Only the text content changes; typography and box geometry stay put.
         layer.textOverride = next;
       }
       coach.reportLayout = layout;
@@ -2236,8 +2272,8 @@ export function initApp(config = {}) {
 
     function beginCertificateTextEditing(item) {
       if (Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, item.dataset.overlayId)) {
-        // Never turn supplied heading artwork into an HTML contenteditable span
-        // simply by selecting it: that was causing the font change and clipping.
+        // Use the edit prompt for headings. It never substitutes a different
+        // typeface or font-size while the text is being edited.
         editCertificateHeading(item.dataset.overlayId);
         return;
       }
@@ -3082,6 +3118,15 @@ export function initApp(config = {}) {
       if (publicCoach) return;
       attachEvents();
       fitCustomCertificateHeadingText();
+      // Fonts requested by styles.css can finish loading after first paint.
+      // Refit after readiness without changing font size or saved geometry.
+      if (document.fonts?.ready) {
+        void document.fonts.ready.then(() => {
+          requestAnimationFrame(() => {
+            if (app.isConnected) fitCustomCertificateHeadingText();
+          });
+        }).catch(() => {});
+      }
       if (state.auth.role) {
         hydrateReportsTable();
         hydrateCoachesTable();
@@ -3121,8 +3166,11 @@ export function initApp(config = {}) {
         ctx.font = `${style.fontStyle} ${style.fontWeight} ${baseSize}px ${style.fontFamily}`;
         const textWidth = ctx.measureText(span.textContent || "").width;
         const widthScale = textWidth ? (box.clientWidth * 0.96) / textWidth : 1;
-        const heightScale = (box.clientHeight * 0.87) / (baseSize * 1.12);
-        span.style.fontSize = `${Math.max(5, baseSize * Math.min(1, widthScale, heightScale)).toFixed(2)}px`;
+        // Preserve the same font/size on every render. Long titles can fit
+        // horizontally without resizing or moving the certificate elements.
+        span.style.fontSize = "";
+        span.style.transformOrigin = "center center";
+        span.style.transform = widthScale < 1 ? `scaleX(${Math.max(0.5, widthScale).toFixed(3)})` : "";
       }
     }
 
@@ -3634,7 +3682,7 @@ export function initApp(config = {}) {
       const layerTarget = (coach.reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const target = coach.reportLayout[selectedReportOverlay] || layerTarget;
       if (!target) return;
-      if (["qr", "certification-badge"].includes(selectedReportOverlay)) return;
+      if (isFixedCertificateArtwork(selectedReportOverlay)) return;
       if (Object.prototype.hasOwnProperty.call(changes, "text") && !layerTarget?.type?.includes("text")) {
         changes = { ...changes, textOverride: changes.text };
         delete changes.text;
@@ -3767,7 +3815,7 @@ export function initApp(config = {}) {
       if (["toggle-certificate-layer", "lower-certificate-layer", "raise-certificate-layer"].includes(action)) {
         const coach = getCurrentCoach();
         const layout = getReportLayout(coach);
-        if (selectedReportOverlay === "qr") return;
+        if (isFixedCertificateArtwork(selectedReportOverlay)) return;
         const target = layout[selectedReportOverlay] || (layout.layers || []).find(layer => layer.id === selectedReportOverlay);
         if (!target) return;
         if (action === "toggle-certificate-layer") target.visible = target.visible === false;
@@ -3779,7 +3827,7 @@ export function initApp(config = {}) {
       if (["toggle-certificate-lock", "duplicate-certificate-layer", "delete-certificate-layer"].includes(action)) {
         const coach = getCurrentCoach();
         const layout = getReportLayout(coach);
-        if (["qr", "certification-badge"].includes(selectedReportOverlay) || (selectedReportOverlay === "decor-bottom-right" && action === "toggle-certificate-lock")) return;
+        if (isFixedCertificateArtwork(selectedReportOverlay)) return;
         const index = (layout.layers || []).findIndex(layer => layer.id === selectedReportOverlay);
         const selectedLayer = index >= 0 ? layout.layers[index] : null;
         const target = layout[selectedReportOverlay] || selectedLayer;
@@ -4057,19 +4105,23 @@ export function initApp(config = {}) {
       if (!layout || selectedReportOverlay === "qr") return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
       const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
-      const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image");
-      const isFixedArtwork = ["decor-bottom-right", "certification-badge"].includes(selectedReportOverlay);
+      const isHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay);
+      // Keep the typography fixed for these four headings so changing
+      // wording never inadvertently changes the typeface.
+      const isTextLayer = Boolean(!isHeading && (reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image"));
+      const isFixedArtwork = isFixedCertificateArtwork(selectedReportOverlay);
       return `<div class="report-layout-toolbar">
         <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia", "Cinzel Decorative"].map(font => `<option ${(layout.fontFamily || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontFamily) === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${(layout.fontStyle || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontStyle) === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${(layout.textDecoration || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.textDecoration) === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
-        ${Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay) ? '<button type="button" class="certificate-icon-action" data-action="edit-certificate-heading" title="Edit heading text" aria-label="Edit heading text">Edit text</button><button type="button" class="certificate-icon-action" data-action="restore-certificate-heading" title="Restore the original heading lettering" aria-label="Restore original heading artwork">Restore lettering</button>' : ""}
+        ${Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay) ? '<button type="button" class="certificate-icon-action" data-action="edit-certificate-heading" title="Edit heading text" aria-label="Edit heading text">Edit text</button><button type="button" class="certificate-icon-action" data-action="restore-certificate-heading" title="Reset heading to the default wording" aria-label="Reset heading wording">Reset wording</button>' : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
-        <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
-        <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>
-        ${isFixedArtwork ? "" : `<button class="certificate-icon-action" data-action="toggle-certificate-lock" title="${layout.locked === true ? "Unlock" : "Lock"}" aria-label="${layout.locked === true ? "Unlock" : "Lock"}">${layout.locked === true ? "Unlock" : "Lock"}</button>`}
-        ${isCustomLayer ? `<button class="certificate-icon-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate">Duplicate</button><button class="certificate-icon-action is-danger" data-action="delete-certificate-layer" title="Delete" aria-label="Delete">Delete</button>` : ""}
-        <button class="certificate-icon-action" data-action="toggle-certificate-layer">${layout.visible === false ? "Show" : "Hide"}</button>
+        ${isFixedArtwork ? '<span class="certificate-locked-note">Fixed certificate artwork</span>' : `
+          <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
+          <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>
+          <button class="certificate-icon-action" data-action="toggle-certificate-lock" title="${layout.locked === true ? "Unlock" : "Lock"}" aria-label="${layout.locked === true ? "Unlock" : "Lock"}">${layout.locked === true ? "Unlock" : "Lock"}</button>
+          ${isCustomLayer ? `<button type="button" class="certificate-icon-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate">Duplicate</button><button type="button" class="certificate-icon-action is-danger" data-action="delete-certificate-layer" title="Delete" aria-label="Delete">Delete</button>` : ""}
+          <button class="certificate-icon-action" data-action="toggle-certificate-layer">${layout.visible === false ? "Show" : "Hide"}</button>`}
       </div>`;
     }
 

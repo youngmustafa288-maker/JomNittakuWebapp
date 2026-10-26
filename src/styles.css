@@ -1,3 +1,7 @@
+/* Consistent headline fonts: default and edited wording use the SAME
+   loaded typefaces. No switching between PNG art and browser lettering. */
+@import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Lato:ital,wght@0,400;1,400&family=Montserrat:wght@400&family=Outfit:wght@700;800&display=swap");
+
 :root {
       --navy-950: #f8fafc;
       --navy-900: #111827;
@@ -1907,9 +1911,8 @@
     .template-art-slice img { display:block; width:100%; height:100%; object-fit:fill; pointer-events:none; }
     .template-art-slice img[hidden] { display:none !important; }
     .template-art-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:2%; box-sizing:border-box; overflow:hidden; color:inherit; font:inherit; line-height:1.1; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; background:transparent; outline:1px dashed rgba(124,58,237,.5); }
-    /* Default title layers display their supplied transparent artwork exactly.
-       Selecting or double-clicking does not replace the image with a browser font.
-       Reworded headings use fitted text and can be restored from the editor. */
+    /* Default and edited headings are rendered identically as browser text.
+       Selection changes only the box outline, never the title typography. */
     .template-art-slice[data-editable-heading="true"] .template-art-text {
       padding:0 1%;
       white-space:nowrap;
@@ -1917,6 +1920,32 @@
       line-height:1.06;
       border:0;
       outline:0;
+    }
+    /* Consistent copper embossed appearance for default and edited title
+       wording alike. Not a claim of pixel-identical PNG lettering. */
+    .template-art-slice[data-overlay-id="report-title-art"] .template-art-text:not([hidden]) {
+      font-family:"Cinzel Decorative", Georgia, serif;
+      font-weight:700;
+      font-variant:small-caps;
+      letter-spacing:-.035em;
+      color:#814b28;
+      -webkit-text-stroke:.015em #40200e;
+      text-shadow:
+        0 -.027em 0 #e8c28a,
+        0 .029em 0 #3c2113,
+        .018em .055em .028em rgba(49,25,12,.45);
+    }
+    .template-art-slice[data-overlay-id="brand-name"] .template-art-text:not([hidden]) {
+      font-family:"Outfit", Arial, sans-serif;
+      letter-spacing:-.012em;
+    }
+    .template-art-slice[data-overlay-id="brand-subtitle"] .template-art-text:not([hidden]) {
+      font-family:"Montserrat", Arial, sans-serif;
+      letter-spacing:.01em;
+    }
+    .template-art-slice[data-overlay-id="brand-tagline"] .template-art-text:not([hidden]) {
+      font-family:"Lato", Arial, sans-serif;
+      font-style:italic;
     }
     .template-art-text[hidden] { display:none !important; }
     .template-art-text:not([contenteditable="true"]) { pointer-events:none; }
@@ -2713,3 +2742,10 @@
     .dev-centre-logo-test { display: inline-grid; place-items: center; width: 58px; height: 42px; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }
     .dev-centre-logo-test img { display: block; width: 100%; height: 100%; max-width: 58px; max-height: 42px; object-fit: contain; }
     .dev-centre-logo-preview { display: block; width: 116px; height: 72px; max-width: 100%; object-fit: contain; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }
+
+/* Part 5: the printed certificate layout is a fixed template. */
+.certificate-design-page .report-overlay-item.is-locked { cursor: default !important; }
+.certificate-design-page .report-overlay-item.is-locked:hover { outline: 1px solid rgba(124,58,237,.30); }
+.certificate-locked-note { display:inline-flex; align-items:center; font-size:.75rem; font-weight:600; color:#64748b; white-space:nowrap; padding:0 8px; }
+/* Selection highlights must never inherit text-resize or altered font styles. */
+.template-art-slice[data-editable-heading="true"].is-selected > img { transform:none; font-size:inherit; }

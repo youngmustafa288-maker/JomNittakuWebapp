@@ -235,7 +235,7 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 - The browser downloads PNG or PDF blobs locally.
 - `qrcode` generates coach and centre QR images.
 - Report view can open a WhatsApp share composer with report metadata and the reports route.
-- Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket starts at the template geometry and can be repositioned in the layout editor.
+- Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket starts at the template geometry; it and the TTAM certification badge retain their saved position and dimensions and are locked against dragging/resizing.
 
 Google Drive remains the sole durable store for reports, but now records are owned by each coach's connected Google account rather than a shared centre Drive. The Edge Function verifies centre membership and refreshes the corresponding coach token before accessing app-managed files. `coach_drive_connections` stores only connection/control-plane metadata; no report IDs, names, URLs, or content. Old centre-owned reports are not automatically transferred by the per-coach upgrade.
 
@@ -272,3 +272,7 @@ Before handoff, run `pnpm build` (or `npm run build` if the environment only has
 - Keep changes focused; avoid rewriting `legacy-app.js` or `styles.css` wholesale.
 - Do not edit `dist/` or `node_modules/`.
 - Update this document when routes, persistence ownership, roles, Edge Functions, or report generation architecture changes.
+
+## Certificate editor: cumulative Parts 5–7
+
+Printed headings, section labels, divider lines, and the contact frame are fixed at their template positions. The four main headings use a consistent editable text rendering for their original and replacement wording (Outfit, Montserrat, Lato Italic, and Cinzel Decorative respectively, loaded through the stylesheet). The original PNG heading layers remain as project assets for rollback but are not displayed for these four headings. These fonts approximate rather than exactly reproduce the font shapes embedded in the source PNG artwork. The TTAM logo is the certification-badge PNG layer, and it and the QR code preserve their saved size/position.

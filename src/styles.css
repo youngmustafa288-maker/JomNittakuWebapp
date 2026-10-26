@@ -1358,35 +1358,6 @@
       color: #a22626;
     }
 
-    .report-drafts-section {
-      margin: 0 0 18px;
-    }
-
-    .report-drafts-section h3 {
-      margin: 0 0 8px;
-      font-size: 1rem;
-    }
-
-    .report-draft-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--line, #dce2ea);
-    }
-
-    .report-draft-row > div {
-      display: grid;
-      gap: 3px;
-      min-width: 0;
-    }
-
-    .report-draft-row span {
-      color: #64748b;
-      font-size: 0.84rem;
-    }
-
     #reportSaveStatus {
       min-height: 1.25em;
       margin: 0 0 12px;
@@ -1935,6 +1906,24 @@
     .template-art-slice { position:absolute; overflow:hidden; box-sizing:border-box; }
     .template-art-slice img { display:block; width:100%; height:100%; object-fit:fill; pointer-events:none; }
     .template-art-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:2%; box-sizing:border-box; overflow:hidden; color:inherit; font:inherit; line-height:1.1; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; background:transparent; outline:1px dashed rgba(124,58,237,.5); }
+    /* Heading artwork stays full size on selection; editable text replaces it
+       only after actual user input. The replacement uses the same size on
+       focus, blur and export (no selected-state font override). */
+    .template-art-slice[data-editable-heading="true"] .template-art-text {
+      padding:0;
+      white-space:nowrap;
+      overflow-wrap:normal;
+      font-size:inherit;
+      line-height:1.05;
+    }
+    .template-art-slice .template-art-text.is-art-text-ghost {
+      color:transparent !important;
+      -webkit-text-fill-color:transparent;
+      caret-color:#7c3aed;
+    }
+    .template-art-slice .template-art-text.is-art-text-ghost::selection {
+      background:rgba(124,58,237,.28);
+    }
     .template-art-text[hidden] { display:none !important; }
     .template-art-text:not([contenteditable="true"]) { pointer-events:none; }
     .template-art-text[contenteditable="true"] { cursor:text; outline:2px solid #7c3aed; background:transparent; pointer-events:auto; }
@@ -2721,12 +2710,12 @@
       font-size: .82em;
       vertical-align: .08em;
       transform-origin: 50% 80%;
-      animation: dashboard-sport-bob 2.8s ease-in-out infinite;
+      animation: dashboard-sport-bob 2.1s ease-in-out infinite;
     }
 
     @keyframes dashboard-sport-bob {
       0%, 100% { transform: translateY(0) rotate(0deg); }
-      50% { transform: translateY(-3px) rotate(-5deg); }
+      50% { transform: translateY(-7px) rotate(-10deg) scale(1.08); }
     }
     .dev-centre-logo-test { display: inline-grid; place-items: center; width: 58px; height: 42px; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }
     .dev-centre-logo-test img { display: block; width: 100%; height: 100%; max-width: 58px; max-height: 42px; object-fit: contain; }

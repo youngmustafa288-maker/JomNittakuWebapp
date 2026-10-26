@@ -95,7 +95,7 @@ export function normalizeReportRecord(value) {
 }
 
 export function createDashboardStatePayload(state) {
-  const { reports: _reports, reportDrafts: _drafts, ...persisted } = state || {};
+  const { reports: _reports, reportDrafts: _drafts, driveConnection: _connection, ...persisted } = state || {};
   const ui = { ...(persisted.ui || {}) };
   delete ui.reportViewId;
   delete ui.reportDraftId;
@@ -107,7 +107,7 @@ export function createReportDriveRepository(invoke) {
   if (typeof invoke !== "function") throw new TypeError("A Drive action invoker is required");
 
   return {
-    async list({ centreId = "" } = {}) {
+    async list({ centreId = "", onWarnings = null } = {}) {
       let result = await invoke({ action: "report-list", centre_id: centreId || undefined });
       if (typeof result === "string") {
         try {
@@ -129,6 +129,9 @@ export function createReportDriveRepository(invoke) {
               : null
       ), null);
       if (!records) throw new TypeError("Google Drive returned an invalid report list");
+      if (typeof onWarnings === "function") {
+        onWarnings(Array.isArray(result?.warnings) ? result.warnings : []);
+      }
       return records.map(normalizeReportRecord);
     },
 
@@ -138,13 +141,14 @@ export function createReportDriveRepository(invoke) {
       return normalizeReportRecord(result?.record || normalized);
     },
 
-    async savePdf(recordId, dataUrl, { centreId = "" } = {}) {
+    async savePdf(recordId, dataUrl, { centreId = "", coachId = "" } = {}) {
       const id = boundedString(recordId, 128, "id", true);
       if (!/^report-[A-Za-z0-9-]+$/.test(id)) throw new TypeError("Invalid report id");
       if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:application/pdf;base64,")) {
         throw new TypeError("A PDF data URL is required");
       }
-      return invoke({ action: "report-pdf", report_id: id, file_base64: dataUrl, centre_id: centreId || undefined });
+      if (!coachId) throw new TypeError("A report coach is required for the PDF export");
+      return invoke({ action: "report-pdf", report_id: id, coach_id: coachId, file_base64: dataUrl, centre_id: centreId || undefined });
     }
   };
 }

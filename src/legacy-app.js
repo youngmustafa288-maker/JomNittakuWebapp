@@ -96,10 +96,12 @@ export function initApp(config = {}) {
       "report-title-art": "THIS IS A TRAINING REPORT"
     };
     const ARTWORK_TEXT_STYLE = {
-      "brand-name": { fontFamily: "Georgia", fontSize: 3.1, color: "#171525", fontWeight: 700, fontStyle: "normal" },
-      "brand-subtitle": { fontFamily: "Arial", fontSize: 1.8, color: "#171525", fontWeight: 300, fontStyle: "normal" },
-      "brand-tagline": { fontFamily: "Georgia", fontSize: 2, color: "#171525", fontWeight: 400, fontStyle: "italic" },
-      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 4.3, color: "#563719", fontWeight: 700, fontStyle: "normal" }
+      // Editable replacements match the dimensions of the supplied artwork.
+      // These sizes are in container-width units (cqw), not px.
+      "brand-name": { fontFamily: "Arial", fontSize: 4.35, color: "#171525", fontWeight: 700, fontStyle: "normal" },
+      "brand-subtitle": { fontFamily: "Arial", fontSize: 2.95, color: "#171525", fontWeight: 400, fontStyle: "normal" },
+      "brand-tagline": { fontFamily: "Georgia", fontSize: 2.65, color: "#171525", fontWeight: 400, fontStyle: "italic" },
+      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 5.4, color: "#563719", fontWeight: 700, fontStyle: "normal" }
     };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -217,6 +219,7 @@ export function initApp(config = {}) {
     let activeReportCentreId = "";
     let adminReportContext = null;
     let adminReportContextCentreId = "";
+    let connectedCoachDriveIds = [];
     let reportStartOpen = false;
     let draftSaveTimer = null;
     let dirtyReportDraftId = "";
@@ -611,6 +614,7 @@ export function initApp(config = {}) {
           adminReportContext = await invokePrivileged("google-drive-oauth", { action: "admin-report-context", centre_id: centreId });
           adminReportContext.coaches = (adminReportContext.coaches || []).map(normalizeCoach);
           adminReportContext.students = (adminReportContext.students || []).map(normalizeStudent);
+          connectedCoachDriveIds = Array.isArray(adminReportContext.connected_coach_ids) ? adminReportContext.connected_coach_ids : [];
           adminReportContextCentreId = centreId;
         } catch (error) {
           reportStoreStatus = "error";
@@ -618,20 +622,22 @@ export function initApp(config = {}) {
           return;
         }
       }
-      if (!isGlobalAdmin && state.driveConnection?.status !== "connected") {
+      if (state.auth.role === "coach" && state.driveConnection?.status !== "connected") {
         reportStoreStatus = "disconnected";
-        reportStoreError = "Connect Google Drive to view or create centre reports.";
+        reportStoreError = "Connect your Google Drive to view or create your reports.";
         return;
       }
       reportStoreStatus = "loading";
       reportLoadPromise = (async () => {
         try {
-          const records = await reportRepository.list({ centreId });
+          let driveWarnings = [];
+          const records = await reportRepository.list({ centreId, onWarnings: warnings => { driveWarnings = warnings; } });
           state.reports = records.filter(record => record.recordType === "report").map(record => ({ ...normalizeReport(record), centreId }));
           state.reportDrafts = Object.fromEntries(records
             .filter(record => record.recordType === "draft")
             .map(record => [record.id, { ...normalizeDraft(record), centreId }]));
           reportStoreStatus = "ready";
+          reportStoreError = driveWarnings.length ? `Some coach reports could not be loaded: ${driveWarnings.join("; ")}` : "";
           reportLoadedAt = Date.now();
         } catch (error) {
           reportStoreStatus = "error";
@@ -652,10 +658,16 @@ export function initApp(config = {}) {
         const data = await invokePrivileged("dev-console", { action: "list" });
         state.devCentres = data.centres || [];
       } else if (["centre_admin", "coach"].includes(state.auth.role) && state.auth.centreId) {
-        const { data } = await supabase.from("drive_connections")
-          .select("centre_id,google_account_email,root_folder_id,root_folder_name,root_folder_url,token_expires_at,status,last_error,last_successful_sync_at,connected_at,updated_at")
-          .eq("centre_id", state.auth.centreId).maybeSingle();
-        state.driveConnection = data || null;
+        // Drive tokens never leave the Edge Function. Coaches see their own status;
+        // centre admins only see the IDs of connected coaches.
+        const result = await invokePrivileged("google-drive-oauth", { action: "connection-status", centre_id: state.auth.centreId });
+        if (state.auth.role === "coach") {
+          state.driveConnection = result.connection || null;
+          connectedCoachDriveIds = result.connection?.status === "connected" ? [state.auth.userId] : [];
+        } else {
+          state.driveConnection = null;
+          connectedCoachDriveIds = Array.isArray(result.connected_coach_ids) ? result.connected_coach_ids : [];
+        }
       }
     }
 
@@ -1013,9 +1025,12 @@ export function initApp(config = {}) {
     }
 
     function getReportCoaches() {
-      if (state.auth.role === "coach") return [getCurrentCoach()].filter(coach => coach?.id);
-      if (state.auth.role === "admin") return adminReportContext?.coaches || [];
-      return state.coaches.filter(coach => coach.centreId === state.auth.centreId || coach.id === state.auth.userId);
+      if (state.auth.role === "coach") return state.driveConnection?.status === "connected" ? [getCurrentCoach()].filter(coach => coach?.id) : [];
+      const allCoaches = state.auth.role === "admin"
+        ? adminReportContext?.coaches || []
+        : state.coaches.filter(coach => coach.centreId === state.auth.centreId || coach.id === state.auth.userId);
+      const connected = new Set(connectedCoachDriveIds);
+      return allCoaches.filter(coach => connected.has(coach.id));
     }
 
     function getReportStudents() {
@@ -1026,6 +1041,7 @@ export function initApp(config = {}) {
       activeReportCentreId = adminReportCentres.some(centre => centre.id === centreId) ? centreId : "";
       adminReportContext = null;
       adminReportContextCentreId = "";
+      connectedCoachDriveIds = [];
       state.reports = [];
       state.reportDrafts = {};
       reportStoreError = "";
@@ -1137,11 +1153,17 @@ export function initApp(config = {}) {
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
           const height = Number(layer.height ?? slice.height) || slice.height;
-          const source = layer.source || `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=1`;
+          // The default TTAM badge is a high-resolution transparent logo. Use
+          // a new cache key only for this layer so updated deployments do not
+          // display the previous certification seal from browser cache.
+          const assetVersion = layer.id === "certification-badge" ? 2 : 1;
+          const source = layer.source || `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=${assetVersion}`;
           // Keep the footer decoration behind all editable text, even when a
           // previously saved layout assigned it a higher stacking order.
           const zIndex = layer.id === "footer-bar-art" ? 1 : (Number(layer.zIndex) || 2);
-          const objectFit = layer.objectFit || (layer.source ? "contain" : "fill");
+          // Preserve the supplied TTAM logo proportions. The remaining
+          // artwork slices continue to fill their pre-cut template geometry.
+          const objectFit = layer.objectFit || (layer.id === "certification-badge" || layer.source ? "contain" : "fill");
           const imageTarget = reportLayoutEditing && layer.type === "image" && layer.id !== "qr" && layer.locked !== true
             ? `data-certificate-image-target tabindex="0" role="button" aria-label="Replace image in ${escapeHtml(layer.name || layer.id)}"`
             : "";
@@ -1151,7 +1173,8 @@ export function initApp(config = {}) {
           const artworkText = String(layer.textOverride || ARTWORK_EDITABLE_TEXT[layer.id] || "");
           const hasArtworkTextOverride = Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string";
           const textStyle = ARTWORK_TEXT_STYLE[layer.id] || {};
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || textStyle.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || textStyle.fontSize || 2}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${Number(layer.fontWeight) || textStyle.fontWeight || 400};font-style:${escapeHtml(layer.fontStyle || textStyle.fontStyle || "normal")};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+          const isEditableHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id);
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${isEditableHeading ? 'data-editable-heading="true" title="Double-click to edit this heading"' : ""} ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || textStyle.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || textStyle.fontSize || 2}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${Number(layer.fontWeight) || textStyle.fontWeight || 400};font-style:${escapeHtml(layer.fontStyle || textStyle.fontStyle || "normal")};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const isCustomText = layer.id.startsWith("custom-") && layer.type === "text";
@@ -1373,6 +1396,8 @@ export function initApp(config = {}) {
       adminReportCentresLoaded = false;
       adminReportContext = null;
       adminReportContextCentreId = "";
+      connectedCoachDriveIds = [];
+      state.driveConnection = null;
       reportStartOpen = false;
       reportStoreStatus = "idle";
       reportLoadedAt = 0;
@@ -1690,13 +1715,15 @@ export function initApp(config = {}) {
       const reportNotice = state.auth.role === "admin" && reportStoreError
         ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)}</p>`
         : state.auth.role === "admin" && adminReportCentresLoaded && !adminReportCentres.length
-        ? '<p class="report-drive-notice">No connected centre workspaces are available for reports.</p>'
+        ? '<p class="report-drive-notice">No centres have coaches with connected Google Drive accounts.</p>'
         : state.auth.role === "admin" && !activeReportCentreId
-          ? '<p class="report-drive-notice">Select a connected centre to view or generate reports.</p>'
+          ? '<p class="report-drive-notice">Select a centre with connected coach accounts to view or generate reports.</p>'
+        : state.auth.role === "centre_admin" && reportStoreStatus === "ready" && !connectedCoachDriveIds.length
+        ? '<p class="report-drive-notice">No coaches have connected Google Drive yet. Each coach can connect from their own settings.</p>'
         : reportStoreStatus === "loading"
         ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive…</p>'
         : reportStoreError
-          ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)}${state.auth.role === "centre_admin" ? ' <button class="secondary-btn" data-action="connect-drive">Connect Google Drive</button>' : ""}</p>`
+          ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)}${state.auth.role === "coach" ? ' <button class="secondary-btn" data-action="connect-drive">Connect my Google Drive</button>' : ""}</p>`
           : "";
       return `
         <section class="page ${state.ui.page === "reports" ? "active" : ""}">
@@ -1926,7 +1953,7 @@ export function initApp(config = {}) {
     function renderReportViewPage() {
       const report = state.reports.find(item => item.id === state.ui.reportViewId);
       if (!report) {
-        return `<section class="page ${state.ui.page === "report-view" ? "active" : ""}"><div class="report-view-wrap"><p class="report-drive-notice" role="status">${reportStoreStatus === "loading" ? "Loading report from Google Drive…" : "This report is not available in the centre's Google Drive."}</p><button class="ghost-btn" data-action="close-report-view">Back to reports</button></div></section>`;
+        return `<section class="page ${state.ui.page === "report-view" ? "active" : ""}"><div class="report-view-wrap"><p class="report-drive-notice" role="status">${reportStoreStatus === "loading" ? "Loading report from Google Drive…" : "This report is not available in the coach's connected Google Drive."}</p><button class="ghost-btn" data-action="close-report-view">Back to reports</button></div></section>`;
       }
       const student = getStudentById(report.studentId);
       const coach = getCoachById(report.coachId);
@@ -2155,6 +2182,13 @@ export function initApp(config = {}) {
       if (layer && layer.type !== "text" && !layer.type.includes("text") && layer.type !== "image") return;
       selectedReportOverlay = item.dataset.overlayId;
       syncCertificateTextToolbar(layout, layer);
+      // Keep the original full-size bitmap visible while a heading is merely
+      // highlighted/selected. Replace it with editable text on the first edit.
+      // This avoids the apparent sudden shrink on double-click.
+      const preserveHeadingArtwork = layer?.type === "image"
+        && Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id)
+        && !Object.prototype.hasOwnProperty.call(layer, "textOverride");
+      let headingWasChanged = false;
       let editor = item.querySelector(".template-custom-layer-content") || item;
       if (layer?.type === "image") {
         editor = item.querySelector(".template-art-text") || document.createElement("span");
@@ -2164,7 +2198,13 @@ export function initApp(config = {}) {
         if (!editor.textContent.trim() && !Object.prototype.hasOwnProperty.call(layer, "textOverride")) {
           editor.textContent = ARTWORK_EDITABLE_TEXT[item.dataset.overlayId] || "";
         }
-        item.classList.add("is-art-text-editing");
+        if (preserveHeadingArtwork) {
+          // Transparent, selectable text provides caret/editing without hiding
+          // the original-size heading until the user actually changes it.
+          editor.classList.add("is-art-text-ghost");
+        } else {
+          item.classList.add("is-art-text-editing");
+        }
       }
       editor.contentEditable = "true";
       editor.setAttribute("contenteditable", "true");
@@ -2197,11 +2237,18 @@ export function initApp(config = {}) {
         const value = item.classList.contains("template-bullet-group")
           ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
           : (editor.innerText || editor.textContent).trim().slice(0, 500);
-        if (layer?.type === "text") layer.text = value;
-        else layout.textOverride = value;
+        if (preserveHeadingArtwork && !headingWasChanged) {
+          // A selection followed by Escape/blur must not replace the graphic
+          // with a small text substitute or create a needless override.
+          editor.hidden = true;
+        } else if (layer?.type === "text") {
+          layer.text = value;
+        } else {
+          layout.textOverride = value;
+        }
         editor.contentEditable = "false";
         editor.setAttribute("contenteditable", "false");
-        editor.classList.remove("is-text-editing");
+        editor.classList.remove("is-text-editing", "is-art-text-ghost");
         item.classList.remove("is-art-text-editing");
         editor.removeEventListener("keydown", onKeydown);
         editor.removeEventListener("input", onInput);
@@ -2215,9 +2262,17 @@ export function initApp(config = {}) {
         if (handled) {
           event.preventDefault();
           event.stopPropagation();
+          // Manual deletion bypasses the browser's normal input event.
+          // Notify the editor so edits are visible and saved immediately.
+          editor.dispatchEvent(new Event("input", { bubbles: true }));
         }
       };
       const onInput = () => {
+        if (preserveHeadingArtwork && !headingWasChanged) {
+          headingWasChanged = true;
+          editor.classList.remove("is-art-text-ghost");
+          item.classList.add("is-art-text-editing");
+        }
         const value = (editor.innerText || editor.textContent).trim().slice(0, 500);
         if (layer?.type === "text") layer.text = value;
         else layout.textOverride = value;
@@ -2265,6 +2320,7 @@ export function initApp(config = {}) {
         if (handled) {
           event.preventDefault();
           event.stopPropagation();
+          active.editor.dispatchEvent(new Event("input", { bubbles: true }));
         }
       } else if (event.key === "Escape") {
         event.preventDefault();
@@ -2701,11 +2757,11 @@ export function initApp(config = {}) {
       const drive = state.driveConnection || {};
       return `
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
-          ${state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card drive-connection-card ${drive.status === "connected" ? "is-connected" : ""}" style="margin-bottom:16px;">
-            <div class="section-title"><div class="drive-heading"><h2>Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : ""}</div><p>Keep your centre's reports and assets safely stored.</p></div>
-            ${drive.status === "connected" ? `<div class="review-card"><div class="review-row"><strong>Connected account</strong><span>${escapeHtml(drive.google_account_email || "Connected")}</span></div><div class="review-row"><strong>Root folder</strong><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(drive.root_folder_name || "Open Drive folder")}</a></div><div class="review-row"><strong>Last successful sync</strong><span>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString()) : "Not yet"}</span></div></div>
-              <div class="profile-actions"><button class="secondary-btn" data-action="retry-drive-sync">Retry failed sync</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your Google account to keep all centre reports safely backed up.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect Google Drive</span></button>`}
-          </div>` : ""}
+          ${isCoach ? `<div class="profile-card centre-settings-card drive-connection-card ${drive.status === "connected" ? "is-connected" : ""}" style="margin-bottom:16px;">
+            <div class="section-title"><div class="drive-heading"><h2>My Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : ""}</div><p>Your report drafts and PDFs are saved to your own Google Drive. Authorized centre admins can access your centre's reports.</p></div>
+            ${drive.status === "connected" ? `<div class="review-card"><div class="review-row"><strong>Google account</strong><span>${escapeHtml(drive.google_account_email || "Connected")}</span></div><div class="review-row"><strong>Report folder</strong><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(drive.root_folder_name || "Open my Drive folder")}</a></div><div class="review-row"><strong>Last saved</strong><span>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString()) : "Not yet"}</span></div></div>
+              <div class="profile-actions"><button class="secondary-btn" data-action="connect-drive">Reconnect Drive</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your own Google Drive to create and save reports without a centre admin connecting first.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect My Google Drive</span></button>`}
+          </div>` : state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card drive-connection-card" style="margin-bottom:16px;"><div class="section-title"><h2>Coach Google Drives</h2><p>Coaches authorize their own accounts. You do not need to connect a Drive for the centre.</p></div><p class="muted">${connectedCoachDriveIds.length} coach account(s) connected.</p></div>` : ""}
           <div class="profile-card centre-settings-card">
             <div class="section-title"><h2>${isCoach ? "Coach Links" : "Centre Links"}</h2></div>
             <div class="centre-links-editor">
@@ -3541,8 +3597,25 @@ export function initApp(config = {}) {
       }
       if (action === "set-centre-admin" || action === "set-centre-coach") return (async () => { try { await invokePrivileged("dev-console", { action: "update-member-role", centre_id: event.currentTarget.dataset.centreId, user_id: event.currentTarget.dataset.userId, role: action === "set-centre-admin" ? "centre_admin" : "coach" }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update centre role."); } })();
       if (action === "renew-centre") return (async () => { try { await invokePrivileged("dev-console", { action: "renew-licence", centre_id: event.currentTarget.dataset.centreId }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to renew centre licence."); } })();
-      if (action === "connect-drive") return (async () => { try { const result = await invokePrivileged("google-drive-oauth", { action: "connect" }); if (result.authorization_url) window.location.assign(result.authorization_url); } catch (error) { alert(error.message || "Unable to start Google Drive connection."); } })();
-      if (action === "disconnect-drive" || action === "retry-drive-sync") return (async () => { try { await invokePrivileged("google-drive-oauth", { action: action === "disconnect-drive" ? "disconnect" : "retry" }); await refreshPrivilegedState(); render(); } catch (error) { alert(error.message || "Unable to update Drive sync."); } })();
+      if (action === "connect-drive") return (async () => {
+        if (state.auth.role !== "coach") return;
+        try {
+          const result = await invokePrivileged("google-drive-oauth", { action: "connect", centre_id: state.auth.centreId });
+          if (result.authorization_url) window.location.assign(result.authorization_url);
+        } catch (error) { alert(error.message || "Unable to start Google Drive connection."); }
+      })();
+      if (action === "disconnect-drive") return (async () => {
+        if (state.auth.role !== "coach") return;
+        if (!confirm("Disconnect your Google Drive? Existing reports remain in your Google account, but the dashboard will no longer be able to load or save them until you reconnect.")) return;
+        try {
+          await invokePrivileged("google-drive-oauth", { action: "disconnect", centre_id: state.auth.centreId });
+          await refreshPrivilegedState();
+          state.reports = []; state.reportDrafts = {}; reportStoreStatus = "disconnected";
+          reportLoadedAt = 0;
+          reportStoreError = "Connect your Google Drive to view or create your reports.";
+          render();
+        } catch (error) { alert(error.message || "Unable to disconnect Google Drive."); }
+      })();
       if (action === "sign-in") return signIn();
       if (action === "logout") return logout();
       if (action === "toggle-avatar-menu") {
@@ -3585,6 +3658,12 @@ export function initApp(config = {}) {
         const coach = getCurrentCoach();
         if (!coach) return;
         return saveReportLayout(coach);
+      }
+      if (action === "edit-certificate-heading") {
+        const item = [...document.querySelectorAll('[data-editable-heading="true"]')]
+          .find(element => element.dataset.overlayId === selectedReportOverlay);
+        if (item) beginCertificateTextEditing(item);
+        return;
       }
       if (action === "toggle-report-layout") { reportLayoutEditing = !reportLayoutEditing; return render(); }
       if (action === "reset-report-layout") {
@@ -3891,6 +3970,7 @@ export function initApp(config = {}) {
         <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia", "Cinzel Decorative"].map(font => `<option ${(layout.fontFamily || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontFamily) === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${(layout.fontStyle || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontStyle) === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${(layout.textDecoration || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.textDecoration) === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
+        ${Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay) ? '<button type="button" class="certificate-icon-action" data-action="edit-certificate-heading" title="Edit heading text" aria-label="Edit heading text">Edit text</button>' : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
         <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
         <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>
@@ -3944,7 +4024,7 @@ export function initApp(config = {}) {
         render();
         return;
       }
-      const driveConnected = state.auth.role === "admin" || state.driveConnection?.status === "connected";
+      const driveConnected = state.auth.role !== "coach" || state.driveConnection?.status === "connected";
       const listUnavailable = reportStoreStatus === "error" && reportStoreError === "Google Drive returned an invalid report list";
       if ((!driveConnected) || (reportStoreStatus !== "ready" && !listUnavailable)) {
         alert(reportStoreError || "Connect Google Drive and wait for reports to load before starting a report.");
@@ -3954,6 +4034,10 @@ export function initApp(config = {}) {
       // New drafts and finalized reports still use the authenticated Drive
       // save actions, so let connected users continue creating a report.
       if (listUnavailable) reportStoreStatus = "ready";
+      if (state.auth.role !== "coach" && getReportCoaches().length === 0) {
+        alert("No coaches have connected their own Google Drive yet. Ask a coach to connect from their dashboard settings.");
+        return;
+      }
       if (state.auth.role !== "coach") {
         reportStartOpen = true;
         return render();
@@ -3962,7 +4046,7 @@ export function initApp(config = {}) {
     }
 
     async function createReportDraft(coach) {
-      if (!coach?.id) return;
+      if (!coach?.id || !getReportCoaches().some(candidate => candidate.id === coach.id)) return;
       const reusableDraft = Object.values(state.reportDrafts)
         .filter(draft => draft.coachId === coach.id && !draft.studentId)
         .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.time || "").localeCompare(String(a.time || "")))[0];
@@ -4430,7 +4514,7 @@ export function initApp(config = {}) {
 
     async function syncReportToDrive(report) {
       const centreId = report?.centreId || getReportCentreId();
-      if (!reportRepository || !centreId || (state.auth.role !== "admin" && state.driveConnection?.status !== "connected")) return;
+      if (!reportRepository || !centreId || (state.auth.role === "coach" && state.driveConnection?.status !== "connected")) return;
       try {
         const canvas = await getReportExportCanvas(report);
         const jsPDF = await getJsPdfLib();
@@ -4443,9 +4527,9 @@ export function initApp(config = {}) {
           reader.onerror = () => reject(new Error("Unable to prepare report for Drive"));
           reader.readAsDataURL(blob);
         });
-        await reportRepository.savePdf(report.id, dataUrl, { centreId });
+        await reportRepository.savePdf(report.id, dataUrl, { centreId, coachId: report.coachId });
         reportPdfError = "";
-        state.driveConnection = { ...state.driveConnection, status: "connected", last_successful_sync_at: new Date().toISOString(), last_error: null };
+        if (state.auth.role === "coach") state.driveConnection = { ...state.driveConnection, status: "connected", last_successful_sync_at: new Date().toISOString(), last_error: null };
       } catch (error) {
         reportPdfError = error.message || "Report saved, but its PDF could not be saved to Google Drive.";
         console.warn("Unable to save report PDF to Google Drive", error);
@@ -4941,7 +5025,7 @@ export function initApp(config = {}) {
             await refreshPrivilegedState().catch(() => {});
             if (driveOAuthCode && state.auth.centreId) {
               try {
-                const driveResult = await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: driveOAuthState });
+                const driveResult = await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: driveOAuthState, centre_id: state.auth.centreId });
                 // The callback response contains the row written by the Edge
                 // Function. Apply it immediately so the first post-redirect
                 // render cannot show stale disconnected state.

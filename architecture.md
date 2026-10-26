@@ -111,8 +111,8 @@ The frontend resolves these roles:
 
 - `dev` - internal licensing and support console
 - `admin` - legacy/global dashboard administration
-- `centre_admin` - centre management and Google Drive controls
-- `coach` - coach profile, students, reports, and certificate editing
+- `centre_admin` - centre management and report access across coaches with connected Drives
+- `coach` - coach profile, students, report creation, certificate editing, and personal Google Drive authorization
 
 Role resolution uses Supabase user metadata plus `centre_memberships`. A `/centre/:slug` route only renders a dashboard for a `centre_admin` or `coach` whose membership matches that centre; other sessions, including dev sessions, see the centre login page. The frontend uses roles to decide which UI is shown, but database Row Level Security is the actual authorization boundary.
 
@@ -133,8 +133,10 @@ The migrations define and evolve these main areas:
 - `centre_memberships`
 - `centre_licences`
 - `activation_keys`
-- `drive_connections`
-- `drive_sync_jobs`
+- `drive_connections` (legacy centre-level configuration, retained for compatibility)
+- `drive_sync_jobs` (legacy centre sync jobs)
+- `coach_drive_connections` (per-coach Google Drive connection metadata and encrypted refresh token)
+- `coach_drive_oauth_states` (one-time, expiring OAuth state bound to coach and centre)
 - `audit_logs`
 
 `centres.logo_url` stores the public centre branding asset URL and `centres.activated_at` records the first successful activation. `activation_keys` stores both the redemption hash and the generated code needed by the privileged dev console; the code is only returned through the service-role-backed dev function.
@@ -146,7 +148,7 @@ The current dashboard also persists a large JSON payload in `dashboard_state`.
 - Global data uses the ID `dashboard`.
 - Centre accounts use `centre:<centre-id>`.
 - Auth values are stripped before writing.
-- Reports, drafts, and report-view identifiers are stripped before writing and are never hydrated from this payload.
+- Reports, drafts, report-view identifiers, and transient Drive connection state are stripped before writing and are never hydrated from this payload.
 - Browser-specific auth and UI values are carried over when realtime payloads are applied.
 - Writes are debounced by approximately 250 ms.
 
@@ -156,13 +158,15 @@ Supabase Realtime listens for changes to `dashboard_state`, `coaches`, `students
 
 Centre links can fall back to `localStorage` under the key `centre_profile` when Supabase is unavailable. Report content is never placed in browser persistent storage.
 
-### Centre report records
+### Coach-owned Google Drive report records
 
-Each centre's connected Google Drive is the durable source of truth for report drafts and finalized reports. The app stores versioned JSON records under the centre root's `Reports/Records` folder and finalized PDF derivatives under `Reports/Exports`. Stable opaque IDs are used for filenames and Drive `appProperties`; student names and report summaries are not placed in metadata. JSON is canonical; PDF upload can be retried independently.
+Every coach independently authorizes a Google Drive account from Settings → My Google Drive. Centre admins do not need to connect an account. Each coach's Google account contains a managed root folder for that coach, with canonical versioned JSON report records under `Reports/Records` and finalized PDF derivatives under `Reports/Exports`. Stable opaque IDs are used for filenames and Drive `appProperties`, and personal names/summaries are never written into Drive metadata. The JSON record is canonical, and PDF upload may be retried independently.
 
-The browser loads report records into memory after centre authentication and Drive connection refresh. Global admins can choose a connected centre and load that centre's report context through the authenticated `google-drive-oauth` Edge Function. Draft saves and finalization go through `google-drive-oauth`; a finalized report is not presented as saved until its JSON write succeeds. Coaches remain limited to their own reports, centre admins to their membership centre, and global admins use the trusted `app_metadata.role` to select a centre. The Edge Function still verifies each selected coach's membership and each student's coach/centre ownership before saving. Supabase `dashboard_state` serialization excludes report arrays and report-specific view IDs. Realtime hydration preserves the currently loaded in-memory Drive records. Failed Drive writes do not fall back to Supabase or browser storage.
+The browser loads reports into memory after centre authentication and Drive status refresh. Coaches see only reports from their own Drive. Centre admins' reports view aggregates records from connected coaches in that centre using the authenticated `google-drive-oauth` Edge Function. Global admins can select a centre with connected coaches and obtain its eligible coach/student context. Each report read/save is restricted by centre membership, coach ownership, and student ownership. An unavailable coach Drive results in an explicit warning when other coach Drives are readable.
 
-Supabase remains responsible for auth, centre memberships, coach/student/centre profiles, licensing, and encrypted Drive connection/control-plane metadata. The existing student `lessons` profile scalar remains in Supabase as an aggregate; it is not a report record. No historical migration is planned because the user confirmed no report data needs migration. A read-only cutover audit found no report rows, dashboard-state reports, or drafts at implementation time.
+A coach can connect, disconnect, or reconnect. Reconnecting the same verified Google account reuses its existing managed root folder where possible; switching Google accounts creates a new root folder and does not migrate prior records. OAuth state is single-use, bound to the initiating user/centre, and expires after 10 minutes. `coach_drive_connections` is accessible only via the service-role Edge Function, and its refresh tokens are never returned to the browser.
+
+Supabase still owns authentication, memberships, profiles, licensing, student `lessons` aggregate, encrypted Drive connection metadata, and control-plane data. Supabase `dashboard_state` excludes report arrays and transient Drive connection state. Failed Drive writes do not fall back to Supabase or browser storage. The old `drive_connections` and `drive_sync_jobs` remain for compatibility, but new coach reports use `coach_drive_connections`. **This upgrade does not migrate previously saved centre-owned Drive records.** Any existing centre Drive reports require a separately approved migration strategy.
 
 ## Supabase Storage
 
@@ -187,23 +191,19 @@ It validates a dev-role token and uses the service-role key only inside the Edge
 
 ### `supabase/functions/google-drive-oauth`
 
-Centre-admin Google Drive connection operations, including:
+Per-coach Google Drive operations, including:
 
-- starting OAuth
-- exchanging an OAuth callback code
-- carrying the centre ID and slug in OAuth state so the callback preserves the centre route
-- creating a Google Drive root folder named after the centre before marking the connection as connected
-- encrypting and storing refresh tokens
-- disconnecting Drive
-- queuing a retry sync job
-- listing and saving centre-scoped JSON report records in managed report folders
-- uploading or replacing finalized PDF derivatives idempotently
-- returning connected-centre report context to trusted global admins, including eligible coaches and students
-- checking centre membership and coach/student ownership for every report action
+- verifying centre membership for centre admins/coaches and trusted metadata for global admins
+- generating coach-bound, one-time OAuth state and exchanging callbacks for the originating coach account
+- requesting Drive file and Google identity/email OAuth scopes
+- reusing the managed coach root folder when reconnecting the same verified account, or creating a new folder for a different account
+- AES-GCM encryption of refresh tokens in service-role-only `coach_drive_connections`
+- coach self-service connection status and disconnect, and centre-admin view of connected coach IDs
+- aggregating coach-scoped Drive JSON reports for their centre and trusted global admins
+- saving canonical JSON reports and PDF derivatives to the **report owner's** Drive account
+- verifying membership, coach/student ownership, and source connection on every report action
 
-Report content and IDs are not written to Supabase sync jobs, connection metadata, or function logs. The legacy `sync-report` action is rejected; clients use the report repository actions instead.
-
-Google client secrets, encryption keys, and service-role credentials must remain Edge Function secrets.
+Report content and IDs are not written to Supabase connection metadata, sync jobs, or function logs. Legacy centre-level Drive credentials are not used for new report writes. Google secrets and service-role credentials remain in Edge Function secrets, never browser code.
 
 ## Main User Workflows
 
@@ -222,7 +222,7 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 ### Report creation
 
 1. Any authenticated dashboard role except `dev` can start a report. Coaches report for themselves; centre admins select a coach in their centre; global admins select a connected centre and a coach in that centre.
-2. The selected coach's draft is saved to that centre's Drive and held in memory while the wizard is open. The centre ID is request context and is not stored in canonical report content.
+2. The selected coach must have independently connected Google Drive. Their draft is saved to **that coach's** Drive and held in memory while the wizard is open. The centre ID is request context and is not stored in canonical report content.
 3. Wizard edits are debounced to Drive; step changes and close flush pending edits first.
 4. Finalization writes the canonical JSON report to Drive before moving it into in-memory `state.reports`; the student lesson count remains a Supabase profile aggregate.
 5. The report view renders the fixed certificate artwork plus dynamic overlays.
@@ -231,13 +231,13 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 ### Report export
 
 - `html2canvas` creates the report canvas and `jsPDF` wraps it in a PDF.
-- Finalized PDF derivatives are saved to the centre Drive and can be retried without duplicating the canonical JSON record.
+- Finalized PDF derivatives are saved to the report coach's Google Drive and can be retried without duplicating the canonical JSON record.
 - The browser downloads PNG or PDF blobs locally.
 - `qrcode` generates coach and centre QR images.
 - Report view can open a WhatsApp share composer with report metadata and the reports route.
 - Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket starts at the template geometry and can be repositioned in the layout editor.
 
-Google Drive is the sole durable store for centre report drafts and records. The Edge Function refreshes the encrypted Drive token, authorizes the caller's centre membership, and reads/writes app-managed files. `drive_connections` may record generic connection status and successful-sync timestamps, but not report IDs, names, URLs, or content. No migration is planned for historical reports.
+Google Drive remains the sole durable store for reports, but now records are owned by each coach's connected Google account rather than a shared centre Drive. The Edge Function verifies centre membership and refreshes the corresponding coach token before accessing app-managed files. `coach_drive_connections` stores only connection/control-plane metadata; no report IDs, names, URLs, or content. Old centre-owned reports are not automatically transferred by the per-coach upgrade.
 
 ## Database and Security Rules
 

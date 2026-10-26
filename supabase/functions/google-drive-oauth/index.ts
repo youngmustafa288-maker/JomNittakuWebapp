@@ -205,6 +205,53 @@ async function listReportRecords(accessToken: string, recordsId: string) {
   }))).filter(Boolean);
 }
 
+// Only the Edge Function's service-role client can read encrypted tokens.
+const PUBLIC_CONNECTION_FIELDS = "coach_id,centre_id,google_account_email,root_folder_id,root_folder_name,root_folder_url,token_expires_at,status,last_error,last_successful_sync_at,connected_at,updated_at";
+
+async function membershipRole(centreId: string, userId: string) {
+  const { data, error } = await admin.from("centre_memberships").select("role")
+    .eq("centre_id", centreId).eq("user_id", userId).maybeSingle();
+  if (error) throw new Error("Unable to verify centre membership");
+  return ["coach", "centre_admin"].includes(data?.role || "") ? data!.role as string : "";
+}
+
+async function connectedCoachRows(centreId: string) {
+  const [{ data: memberships, error: memberError }, { data: connections, error: connectionError }] = await Promise.all([
+    admin.from("centre_memberships").select("user_id,role").eq("centre_id", centreId).eq("role", "coach"),
+    admin.from("coach_drive_connections").select("coach_id,centre_id,root_folder_id,encrypted_refresh_token,status")
+      .eq("centre_id", centreId).eq("status", "connected"),
+  ]);
+  if (memberError || connectionError) throw new Error("Unable to load connected coach accounts");
+  const eligible = new Set((memberships || []).map(m => String(m.user_id)));
+  return (connections || []).filter(row => eligible.has(String(row.coach_id)) && row.encrypted_refresh_token && row.root_folder_id);
+}
+
+async function connectionAccess(row: { encrypted_refresh_token: string; root_folder_id: string }) {
+  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+  const secret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+  const key = Deno.env.get("DRIVE_TOKEN_ENCRYPTION_KEY");
+  if (!clientId || !secret || !key) throw new Error("Drive OAuth is not configured");
+  const refreshToken = await decryptRefreshToken(row.encrypted_refresh_token, key);
+  const token = await getDriveAccessToken(refreshToken, clientId, secret);
+  const folders = await getReportFolders(token.access_token, row.root_folder_id);
+  return { accessToken: token.access_token as string, ...folders };
+}
+
+async function hashNonce(value: string) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function driveAccountEmail(accessToken: string) {
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) throw new Error("Unable to verify the connected Google account");
+  const profile = await response.json();
+  if (!profile.email || !profile.email_verified) throw new Error("Google account email is not verified");
+  return String(profile.email).trim().toLowerCase();
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
@@ -213,7 +260,7 @@ Deno.serve(async (request) => {
   const user = userData.user;
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 32 * 1024 * 1024) return json({ error: "Request is too large" }, 413);
-  const centreId = user?.app_metadata?.centre_id;
+  const metadataCentreId = String(user?.app_metadata?.centre_id || "");
   const role = user?.app_metadata?.role;
   let body: Record<string, unknown>;
   try {
@@ -226,41 +273,64 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid request" }, 400);
   }
   const action = String(body.action || "");
+  // Coach roles and centre IDs are resolved from the verified membership table.
+  // Google-created coach accounts may not have app_metadata.centre_id/role yet.
+  let centreId = String(body.centre_id || "") || metadataCentreId;
+  if (!centreId && action === "callback") centreId = String(body.state || "").split("|")[0];
+  if (!centreId && user && role !== "admin" && role !== "dev") {
+    const { data: memberships, error: membershipsError } = await admin.from("centre_memberships")
+      .select("centre_id").eq("user_id", user.id).limit(2);
+    if (membershipsError) return json({ error: "Unable to resolve coach centre" }, 500);
+    if (memberships?.length === 1) centreId = memberships[0].centre_id;
+  }
+  if (action === "connection-status") {
+    if (!user || !centreId) return json({ error: "Centre membership required" }, 403);
+    try {
+      const membership = await membershipRole(centreId, user.id);
+      if (!membership) return json({ error: "Centre membership required" }, 403);
+      if (membership === "coach") {
+        const { data, error } = await admin.from("coach_drive_connections").select(PUBLIC_CONNECTION_FIELDS)
+          .eq("centre_id", centreId).eq("coach_id", user.id).maybeSingle();
+        if (error) throw error;
+        return json({ connection: data || null });
+      }
+      const { data, error } = await admin.from("coach_drive_connections").select("coach_id,status")
+        .eq("centre_id", centreId).eq("status", "connected");
+      if (error) throw error;
+      const connected = await connectedCoachRows(centreId);
+      const approved = new Set(connected.map(item => item.coach_id));
+      return json({ connected_coach_ids: (data || []).map(item => item.coach_id).filter(id => approved.has(id)) });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : "Unable to load Drive status" }, 500);
+    }
+  }
   if (action === "admin-report-context") {
     if (!user || role !== "admin") return json({ error: "Global admin role required" }, 403);
     const requestedCentreId = String(body.centre_id || "");
     if (!requestedCentreId) {
       const [{ data: centres, error: centresError }, { data: connections, error: connectionsError }] = await Promise.all([
         admin.from("centres").select("id,name,status").order("name"),
-        admin.from("drive_connections").select("centre_id,status,encrypted_refresh_token").eq("status", "connected"),
+        admin.from("coach_drive_connections").select("centre_id,encrypted_refresh_token,status").eq("status", "connected"),
       ]);
       if (centresError || connectionsError) return json({ error: "Unable to load report workspaces" }, 500);
-      const connectedIds = new Set((connections || []).filter(connection => connection.encrypted_refresh_token).map(connection => connection.centre_id));
-      return json({ centres: (centres || []).filter(centre => centre.status === "active" && connectedIds.has(centre.id)).map(({ id, name }) => ({ id, name })) });
+      const eligibleIds = new Set((connections || []).filter(item => item.encrypted_refresh_token).map(item => item.centre_id));
+      return json({ centres: (centres || []).filter(item => item.status === "active" && eligibleIds.has(item.id)).map(({ id, name }) => ({ id, name })) });
     }
-
-    const [{ data: centre, error: centreError }, { data: connection, error: connectionError }] = await Promise.all([
+    const [{ data: centre, error: centreError }, { data: members, error: memberError }] = await Promise.all([
       admin.from("centres").select("id,name,status").eq("id", requestedCentreId).maybeSingle(),
-      admin.from("drive_connections").select("centre_id,status,encrypted_refresh_token").eq("centre_id", requestedCentreId).maybeSingle(),
+      admin.from("centre_memberships").select("user_id").eq("centre_id", requestedCentreId).eq("role", "coach"),
     ]);
-    if (centreError || connectionError) return json({ error: "Unable to load the selected report workspace" }, 500);
-    if (!centre || centre.status !== "active" || !connection || connection.status !== "connected" || !connection.encrypted_refresh_token) {
-      return json({ error: "The selected centre does not have a connected Google Drive" }, 409);
-    }
-    const { data: memberships, error: membershipsError } = await admin
-      .from("centre_memberships")
-      .select("user_id")
-      .eq("centre_id", requestedCentreId)
-      .in("role", ["coach", "centre_admin"]);
-    if (membershipsError) return json({ error: "Unable to load coaches for this centre" }, 500);
-    const coachIds = (memberships || []).map(membership => membership.user_id);
-    if (!coachIds.length) return json({ centre, coaches: [], students: [] });
+    if (centreError || memberError || !centre || centre.status !== "active") return json({ error: "Unable to load this centre" }, 409);
+    const connected = await connectedCoachRows(requestedCentreId);
+    const connectedIds = new Set(connected.map(item => item.coach_id));
+    const coachIds = (members || []).map(member => member.user_id);
+    if (!coachIds.length) return json({ centre, coaches: [], students: [], connected_coach_ids: [] });
     const [{ data: coaches, error: coachesError }, { data: students, error: studentsError }] = await Promise.all([
       admin.from("coaches").select("id,name,branch,centre_contact,branch_address,photo,links,report_layout").in("id", coachIds),
       admin.from("students").select("id,name,coach_id,lessons,photo").in("coach_id", coachIds),
     ]);
     if (coachesError || studentsError) return json({ error: "Unable to load report participants" }, 500);
-    return json({ centre: { id: centre.id, name: centre.name }, coaches: coaches || [], students: students || [] });
+    return json({ centre: { id: centre.id, name: centre.name }, coaches: coaches || [], students: students || [], connected_coach_ids: [...connectedIds] });
   }
   const reportActions = new Set(["report-list", "report-save", "report-pdf"]);
   const isReportAction = reportActions.has(action);
@@ -281,14 +351,73 @@ Deno.serve(async (request) => {
       }
       actorRole = membership.role;
     }
-    const { data: connection, error: connectionError } = await admin
-      .from("drive_connections")
-      .select("centre_id,root_folder_id,encrypted_refresh_token,status")
-      .eq("centre_id", requestedCentreId)
-      .maybeSingle();
-    if (connectionError) return json({ error: "Unable to load the centre Drive connection" }, 500);
+    if (action === "report-list") {
+      try {
+        const allConnections = await connectedCoachRows(requestedCentreId);
+        const connections = actorRole === "coach" ? allConnections.filter(row => row.coach_id === user.id) : allConnections;
+        if (actorRole === "coach" && connections.length === 0) return json({ error: "Connect your Google Drive to view or create your reports" }, 409);
+        const results: Record<string, unknown>[] = [];
+        const warnings: string[] = [];
+        let successfulConnections = 0;
+        // Read a few coach Drives concurrently to avoid one slow account delaying all others.
+        for (let offset = 0; offset < connections.length; offset += 4) {
+          await Promise.all(connections.slice(offset, offset + 4).map(async owner => {
+            try {
+              const { accessToken, recordsId } = await connectionAccess(owner);
+              const [records, studentResult] = await Promise.all([
+                listReportRecords(accessToken, recordsId),
+                admin.from("students").select("id,centre_id").eq("coach_id", owner.coach_id),
+              ]);
+              if (studentResult.error) throw new Error("Unable to validate report student ownership");
+              const eligibleStudents = new Set((studentResult.data || [])
+                .filter(student => !student.centre_id || student.centre_id === requestedCentreId)
+                .map(student => String(student.id)));
+              const finalizedIds = new Set(records.filter(record => record.recordType === "report").map(record => String(record.id)));
+              for (const record of records) {
+                if (record.coachId !== owner.coach_id) throw new Error("Drive record has a mismatched coach owner");
+                if (record.studentId && !eligibleStudents.has(String(record.studentId))) {
+                  warnings.push("One coach's Drive contains a report for a student not assigned to that coach");
+                  continue;
+                }
+                if (record.recordType === "draft" && finalizedIds.has(`report-${String(record.id).slice(6)}`)) continue;
+                results.push(record);
+              }
+              successfulConnections += 1;
+            } catch (error) {
+              // Do not silently claim a complete view if one coach's account fails.
+              warnings.push(`One coach's Drive could not be loaded (${error instanceof Error ? error.message : "unknown error"})`);
+            }
+          }));
+        }
+        if (warnings.length && !successfulConnections) return json({ error: warnings.join("; ") }, 502);
+        return json({ records: results, warnings, connected_coach_ids: connections.map(row => row.coach_id) });
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : "Unable to load coach reports" }, 502);
+      }
+    }
+    // Route both saves and PDF derivatives to the report's own coach account.
+    let ownerId = "";
+    if (action === "report-save") {
+      try {
+        ownerId = String(normalizeReportRecord(body.record).coachId);
+      } catch {
+        return json({ error: "Invalid report record" }, 400);
+      }
+    } else {
+      ownerId = String(body.coach_id || "");
+    }
+    if (!ownerId || (actorRole === "coach" && ownerId !== user.id)) return json({ error: "Invalid report coach" }, 403);
+    try {
+      if (await membershipRole(requestedCentreId, ownerId) !== "coach") return json({ error: "Report coach is not in this centre" }, 403);
+    } catch {
+      return json({ error: "Unable to verify report coach" }, 500);
+    }
+    const { data: connection, error: connectionError } = await admin.from("coach_drive_connections")
+      .select("coach_id,centre_id,root_folder_id,encrypted_refresh_token,status")
+      .eq("centre_id", requestedCentreId).eq("coach_id", ownerId).maybeSingle();
+    if (connectionError) return json({ error: "Unable to load coach Drive connection" }, 500);
     if (!connection || connection.status !== "connected" || !connection.encrypted_refresh_token) {
-      return json({ error: "Google Drive is not connected for this centre" }, 409);
+      return json({ error: "This coach has not connected Google Drive" }, 409);
     }
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
@@ -298,28 +427,6 @@ Deno.serve(async (request) => {
       const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, encryptionKey);
       const tokens = await getDriveAccessToken(refreshToken, clientId, clientSecret);
       const { recordsId, exportsId } = await getReportFolders(tokens.access_token, connection.root_folder_id);
-      if (action === "report-list") {
-        let records = await listReportRecords(tokens.access_token, recordsId);
-        const finalizedIds = new Set(records.filter(record => record.recordType === "report").map(record => record.id));
-        const orphanedDrafts = records.filter(record => record.recordType === "draft" && finalizedIds.has(`report-${record.id.slice("draft-".length)}`));
-        for (const draft of orphanedDrafts) {
-          const draftFile = await reportFiles(tokens.access_token, recordsId, draft.id, "draft");
-          if (draftFile) {
-            try {
-              await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(String(draftFile.id))}`, {
-                method: "DELETE",
-                headers: { authorization: `Bearer ${tokens.access_token}` },
-              });
-            } catch {
-              // The finalized JSON remains authoritative; a later list can retry cleanup.
-            }
-          }
-        }
-        records = records.filter(record => !orphanedDrafts.includes(record));
-        if (actorRole === "coach") records = records.filter(record => record.coachId === user.id);
-        return json({ records });
-      }
-
       if (action === "report-save") {
         let record: Record<string, unknown>;
         try {
@@ -347,7 +454,13 @@ Deno.serve(async (request) => {
             return json({ error: "Report student is not part of this centre and coach" }, 403);
           }
         }
-        const existing = await reportFiles(tokens.access_token, recordsId, record.id, record.recordType);
+        const existing = await reportFiles(tokens.access_token, recordsId, String(record.id), String(record.recordType));
+        if (existing) {
+          const saved = normalizeReportRecord(await readDriveJson(tokens.access_token, String(existing.id)));
+          if (saved.coachId !== record.coachId || (saved.studentId && saved.studentId !== record.studentId)) {
+            return json({ error: "Report identifier is already owned by a different record" }, 409);
+          }
+        }
         if (record.recordType === "report" && body.draft_id) {
           const draftId = String(body.draft_id);
           if (!/^draft-[A-Za-z0-9-]+$/.test(draftId)) return json({ error: "Invalid draft identifier" }, 400);
@@ -383,7 +496,7 @@ Deno.serve(async (request) => {
             method: "DELETE",
             headers: { authorization: `Bearer ${tokens.access_token}` },
           });
-          await admin.from("drive_connections").update({ last_successful_sync_at: new Date().toISOString(), last_error: null }).eq("centre_id", requestedCentreId);
+          await admin.from("coach_drive_connections").update({ last_successful_sync_at: new Date().toISOString(), last_error: null }).eq("centre_id", requestedCentreId).eq("coach_id", ownerId);
           return json({ record, file_id: saved.id });
         }
         const saved = await saveDriveMedia(
@@ -398,7 +511,7 @@ Deno.serve(async (request) => {
           new TextEncoder().encode(JSON.stringify(record)),
           "application/json",
         );
-        await admin.from("drive_connections").update({ last_successful_sync_at: new Date().toISOString(), last_error: null }).eq("centre_id", requestedCentreId);
+        await admin.from("coach_drive_connections").update({ last_successful_sync_at: new Date().toISOString(), last_error: null }).eq("centre_id", requestedCentreId).eq("coach_id", ownerId);
         return json({ record, file_id: saved.id });
       }
 
@@ -407,7 +520,7 @@ Deno.serve(async (request) => {
       const reportFile = await reportFiles(tokens.access_token, recordsId, reportId, "report");
       if (!reportFile) return json({ error: "Report not found in this centre" }, 404);
       const report = normalizeReportRecord(await readDriveJson(tokens.access_token, String(reportFile.id)));
-      if (actorRole === "coach" && report.coachId !== user.id) return json({ error: "Report not found in this centre" }, 404);
+      if (report.coachId !== ownerId) return json({ error: "Report is not owned by the selected coach" }, 403);
       const encodedFile = String(body.file_base64 || "");
       if (!encodedFile.startsWith("data:application/pdf;base64,") || encodedFile.length > MAX_REPORT_PDF_BASE64) {
         return json({ error: "A valid PDF export is required" }, 413);
@@ -428,7 +541,7 @@ Deno.serve(async (request) => {
         bytes,
         "application/pdf",
       );
-      await admin.from("drive_connections").update({ last_successful_sync_at: new Date().toISOString(), last_error: null }).eq("centre_id", requestedCentreId);
+      await admin.from("coach_drive_connections").update({ last_successful_sync_at: new Date().toISOString(), last_error: null }).eq("centre_id", requestedCentreId).eq("coach_id", ownerId);
       return json({ ok: true, file_id: saved.id });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Google Drive report operation failed";
@@ -436,71 +549,109 @@ Deno.serve(async (request) => {
     }
   }
   if (action === "sync-report") return json({ error: "Report sync has moved to the Drive report repository. Refresh the app and retry." }, 410);
-  const allowedRoles = ["centre_admin", "dev"];
-  if (!user || !centreId || !allowedRoles.includes(role)) return json({ error: "Centre admin role required" }, 403);
-  if (body.action === "callback") {
+  if (!user || !centreId) return json({ error: "Coach centre membership required" }, 403);
+  let verifiedRole = "";
+  try { verifiedRole = await membershipRole(centreId, user.id); }
+  catch { return json({ error: "Unable to verify coach membership" }, 500); }
+  if (verifiedRole !== "coach") return json({ error: "Active coach membership required" }, 403);
+  if (action === "disconnect") {
+    const { error } = await admin.from("coach_drive_connections")
+      .update({ status: "disconnected", encrypted_refresh_token: null }).eq("centre_id", centreId).eq("coach_id", user.id);
+    if (error) return json({ error: "Unable to disconnect coach Google Drive" }, 500);
+    await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "coach_drive.disconnected", metadata: {} });
+    return json({ ok: true });
+  }
+  if (action === "callback") {
     const code = String(body.code || "");
-    if (!code) return json({ error: "OAuth code is required" }, 400);
+    const stateValue = String(body.state || "");
+    const match = /^([a-f0-9-]{36})\|([a-z0-9-]+)\|([a-f0-9-]{72})$/.exec(stateValue);
+    if (!code || !match || match[1] !== centreId) return json({ error: "Invalid Google OAuth callback state" }, 400);
+    const stateHash = await hashNonce(match[3]);
+    // Atomically consume the state before exchanging the code; a state cannot be replayed.
+    const { data: pending, error: stateError } = await admin.from("coach_drive_oauth_states")
+      .delete().eq("nonce_hash", stateHash).eq("centre_id", centreId)
+      .eq("user_id", user.id).gt("expires_at", new Date().toISOString()).select("nonce_hash").maybeSingle();
+    if (stateError || !pending) return json({ error: "Google authorization expired or belongs to a different coach" }, 403);
+    const { data: centre, error: centreError } = await admin.from("centres")
+      .select("name,slug,status").eq("id", centreId).maybeSingle();
+    if (centreError || !centre || centre.status !== "active" || centre.slug !== match[2]) {
+      return json({ error: "Centre authorization context no longer matches" }, 403);
+    }
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
     const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
     const encryptionKey = Deno.env.get("DRIVE_TOKEN_ENCRYPTION_KEY");
     if (!clientId || !clientSecret || !redirectUri || !encryptionKey) return json({ error: "Drive OAuth is not configured" }, 503);
-    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }) });
-    const tokens = await tokenResponse.json();
-    if (!tokenResponse.ok || !tokens.refresh_token) return json({ error: "Google token exchange failed" }, 502);
-    const { data: centre } = await admin.from("centres").select("name").eq("id", centreId).maybeSingle();
-    const folderName = String(centre?.name || "Centre").trim() || "Centre";
-    let rootFolderId = "";
-    let rootFolderUrl = "https://drive.google.com";
-    if (tokens.access_token) {
-      const folderResponse = await fetch("https://www.googleapis.com/drive/v3/files", {
-        method: "POST",
-        headers: { authorization: `Bearer ${tokens.access_token}`, "content-type": "application/json" },
-        body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" }),
+    try {
+      const response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }),
       });
-      const folder = await folderResponse.json();
-      if (!folderResponse.ok || !folder.id) return json({ error: "Google Drive folder creation failed" }, 502);
-      rootFolderId = folder.id;
-      rootFolderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(folder.id)}`;
+      const tokens = await response.json();
+      if (!response.ok || !tokens.access_token || !tokens.refresh_token) return json({ error: "Google token exchange failed. Please reconnect." }, 502);
+      const accountEmail = await driveAccountEmail(tokens.access_token);
+      const { data: existing } = await admin.from("coach_drive_connections")
+        .select("google_account_email,root_folder_id,root_folder_name,root_folder_url")
+        .eq("coach_id", user.id).maybeSingle();
+      const { data: coach } = await admin.from("coaches").select("name").eq("id", user.id).maybeSingle();
+      const folderName = `Dao Sports Method - ${centre.name} - ${coach?.name || "Coach"}`.slice(0, 180);
+      let rootFolderId = "";
+      let rootFolderUrl = "";
+      let rootFolderName = folderName;
+      if (existing?.google_account_email?.toLowerCase() === accountEmail && existing.root_folder_id && existing.root_folder_id !== "pending") {
+        // Reconnecting the same Google account preserves its existing reports.
+        try {
+          await driveJson(tokens.access_token, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(existing.root_folder_id)}?fields=id`);
+          rootFolderId = existing.root_folder_id;
+          rootFolderUrl = existing.root_folder_url;
+          rootFolderName = existing.root_folder_name;
+        } catch { /* Folder was removed; start a new managed root. */ }
+      }
+      if (!rootFolderId) {
+        const folder = await driveJson(tokens.access_token, "https://www.googleapis.com/drive/v3/files?fields=id", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" }),
+        });
+        if (!folder.id) return json({ error: "Unable to create coach Google Drive folder" }, 502);
+        rootFolderId = String(folder.id);
+        rootFolderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(rootFolderId)}`;
+      }
+      const key = await crypto.subtle.importKey("raw", Uint8Array.from(atob(encryptionKey), c => c.charCodeAt(0)), "AES-GCM", false, ["encrypt"]);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const sealedBytes = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(tokens.refresh_token)));
+      const sealed = `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...sealedBytes))}`;
+      const { data: connection, error: connectionError } = await admin.from("coach_drive_connections")
+        .upsert({ coach_id: user.id, centre_id: centreId, google_account_email: accountEmail,
+          root_folder_id: rootFolderId, root_folder_url: rootFolderUrl, root_folder_name: rootFolderName,
+          encrypted_refresh_token: sealed, status: "connected", last_error: null,
+          token_expires_at: tokens.expires_in ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString() : null })
+        .select(PUBLIC_CONNECTION_FIELDS).single();
+      if (connectionError || !connection) return json({ error: connectionError?.message || "Unable to save coach Drive connection" }, 500);
+      await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "coach_drive.connected", metadata: {} });
+      return json({ ok: true, connection });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : "Unable to connect Google Drive" }, 502);
     }
-    const keyBytes = Uint8Array.from(atob(encryptionKey), (character) => character.charCodeAt(0));
-    const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["encrypt"]);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, new TextEncoder().encode(tokens.refresh_token));
-    const sealed = `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...new Uint8Array(encrypted)))}`;
-    const { data: connection, error: connectionError } = await admin
-      .from("drive_connections")
-      .upsert({ centre_id: centreId, google_account_email: String(body.google_account_email || "Connected Google account"), root_folder_id: rootFolderId || String(body.root_folder_id || "pending"), root_folder_name: folderName, root_folder_url: rootFolderUrl, encrypted_refresh_token: sealed, status: "connected", token_expires_at: tokens.expires_in ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString() : null })
-      .select("centre_id,google_account_email,root_folder_id,root_folder_name,root_folder_url,token_expires_at,status,last_error,last_successful_sync_at,connected_at,updated_at")
-      .single();
-    if (connectionError || !connection) return json({ error: connectionError?.message || "Unable to save the Google Drive connection" }, 500);
-    const { error: auditError } = await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "drive.connected", metadata: { token_stored: true } });
-    if (auditError) return json({ error: auditError.message || "Unable to record the Google Drive connection" }, 500);
-    return json({ ok: true, connection });
   }
-  if (body.action === "disconnect") {
-    await admin.from("drive_connections").update({ status: "disconnected", encrypted_refresh_token: null }).eq("centre_id", centreId);
-    await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "drive.disconnected", metadata: {} });
-    return json({ ok: true });
-  }
-  if (body.action === "retry") {
-    await admin.from("drive_sync_jobs").insert({ centre_id: centreId, kind: "manual-retry", status: "queued" });
-    return json({ ok: true });
-  }
-  // OAuth exchange and token encryption belong here. Secrets are read only from
-  // Edge Function environment variables and never sent to the browser.
+  if (action !== "connect") return json({ error: "Unknown coach Drive action" }, 400);
   const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
   const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
   if (!clientId || !redirectUri) return json({ error: "Drive OAuth is not configured" }, 503);
+  const { data: centre, error: centreError } = await admin.from("centres")
+    .select("slug,status").eq("id", centreId).maybeSingle();
+  if (centreError || !centre || centre.status !== "active" || !centre.slug) return json({ error: "Centre is unavailable" }, 403);
+  const nonce = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+  const { error: pendingError } = await admin.from("coach_drive_oauth_states")
+    .insert({ nonce_hash: await hashNonce(nonce), user_id: user.id, centre_id: centreId,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() });
+  if (pendingError) return json({ error: "Unable to start Drive authorization" }, 500);
   const authorizationUrl = new URL(Deno.env.get("GOOGLE_OAUTH_AUTHORIZE_URL") || "https://accounts.google.com/o/oauth2/v2/auth");
   authorizationUrl.searchParams.set("client_id", clientId);
   authorizationUrl.searchParams.set("redirect_uri", redirectUri);
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("access_type", "offline");
   authorizationUrl.searchParams.set("prompt", "consent");
-  authorizationUrl.searchParams.set("scope", "https://www.googleapis.com/auth/drive.file");
-  const { data: centre } = await admin.from("centres").select("slug").eq("id", centreId).maybeSingle();
-  authorizationUrl.searchParams.set("state", `${centreId}|${centre?.slug || ""}|${crypto.randomUUID()}`);
+  authorizationUrl.searchParams.set("scope", "https://www.googleapis.com/auth/drive.file openid email");
+  authorizationUrl.searchParams.set("state", `${centreId}|${centre.slug}|${nonce}`);
   return json({ authorization_url: authorizationUrl.toString() });
 });

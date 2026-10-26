@@ -79,7 +79,7 @@ export function initApp(config = {}) {
       "remark-line-3": { left: 9.7, top: 68.8, width: 80, height: 0.7 },
       "remark-line-4": { left: 9.7, top: 71, width: 80, height: 0.7 },
       "remark-line-5": { left: 9.7, top: 73.2, width: 80, height: 0.7 },
-      "certification-badge": { left: 5, top: 75.8, width: 18, height: 15 },
+      "certification-badge": { left: 5, top: 75.8, width: 18, height: 15, locked: true },
       "contact-frame": { left: 34.4, top: 76, width: 31.8, height: 14.2 },
       "contact-title-art": { left: 35.6, top: 77, width: 29.5, height: 2.5 },
       "address-title-art": { left: 42.5, top: 82.5, width: 15, height: 2.6 },
@@ -95,6 +95,22 @@ export function initApp(config = {}) {
       "brand-tagline": "Character Transformation thru Sports",
       "report-title-art": "THIS IS A TRAINING REPORT"
     };
+    // Exact original heading lettering is supplied as transparent PNG artwork.
+    // Older editors sometimes stored the unchanged heading text as an override,
+    // accidentally replacing that artwork with a mismatched browser font.
+    function isOriginalHeadingText(id, value) {
+      if (!Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return false;
+      const normalized = text => String(text || "").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+      return normalized(value) === normalized(ARTWORK_EDITABLE_TEXT[id]);
+    }
+
+    function hasCustomHeadingText(layer) {
+      return Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id)
+        && typeof layer.textOverride === "string"
+        && layer.textOverride.trim() !== ""
+        && !isOriginalHeadingText(layer.id, layer.textOverride);
+    }
+
     const ARTWORK_TEXT_STYLE = {
       // Editable replacements match the dimensions of the supplied artwork.
       // These sizes are in container-width units (cqw), not px.
@@ -107,7 +123,7 @@ export function initApp(config = {}) {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
-      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50 },
+      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50, locked: true },
       "footer-text-overlay": {
         left: 27,
         top: 91.55,
@@ -341,19 +357,25 @@ export function initApp(config = {}) {
       const layers = Array.isArray(saved?.layers)
         ? DEFAULT_CERTIFICATE_LAYERS.map((defaultLayer, index) => {
             const savedLayer = saved.layers.find(layer => layer.id === defaultLayer.id) || {};
-            const movableQr = defaultLayer.id === "qr" ? { locked: false } : {};
             // The footer is part of the fixed certificate frame. Do not let a
             // prior drag move its opaque strip over the report content.
             const fixedFooter = defaultLayer.id === "footer-bar-art" ? {
               left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true
             } : {};
             const fixedDecoration = defaultLayer.id === "decor-bottom-right" ? { locked: true } : {};
+            // Preserve the positions/sizes from existing saved layouts, but
+            // prevent accidental dragging of the TTAM logo and QR code.
+            const fixedMarks = ["certification-badge", "qr"].includes(defaultLayer.id)
+              ? { locked: true } : {};
+            const headingReset = isOriginalHeadingText(defaultLayer.id, savedLayer.textOverride)
+              ? { textOverride: undefined } : {};
             return {
               ...defaultLayer,
               ...savedLayer,
-              ...movableQr,
               ...fixedFooter,
               ...fixedDecoration,
+              ...fixedMarks,
+              ...headingReset,
               visible: savedLayer.visible !== false,
               zIndex: defaultLayer.id === "footer-bar-art" ? 1 : defaultLayer.id === "qr" ? DEFAULT_LAYER_GEOMETRY.qr.zIndex : (Number(savedLayer.zIndex) || index + 2)
             };
@@ -1156,7 +1178,7 @@ export function initApp(config = {}) {
           // The default TTAM badge is a high-resolution transparent logo. Use
           // a new cache key only for this layer so updated deployments do not
           // display the previous certification seal from browser cache.
-          const assetVersion = layer.id === "certification-badge" ? 2 : 1;
+          const assetVersion = layer.id === "certification-badge" ? 2 : (Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id) ? 5 : 1);
           const source = layer.source || `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=${assetVersion}`;
           // Keep the footer decoration behind all editable text, even when a
           // previously saved layout assigned it a higher stacking order.
@@ -1170,10 +1192,12 @@ export function initApp(config = {}) {
           const objectTools = reportLayoutEditing && selectedReportOverlay === layer.id && layer.id.startsWith("custom-") && layer.type === "text"
             ? renderCertificateObjectTools(layer)
             : "";
-          const artworkText = String(layer.textOverride || ARTWORK_EDITABLE_TEXT[layer.id] || "");
-          const hasArtworkTextOverride = Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string";
-          const textStyle = ARTWORK_TEXT_STYLE[layer.id] || {};
           const isEditableHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id);
+          const hasArtworkTextOverride = isEditableHeading
+            ? hasCustomHeadingText(layer)
+            : Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string";
+          const artworkText = hasArtworkTextOverride ? String(layer.textOverride) : String(ARTWORK_EDITABLE_TEXT[layer.id] || "");
+          const textStyle = ARTWORK_TEXT_STYLE[layer.id] || {};
           return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${isEditableHeading ? 'data-editable-heading="true" title="Double-click to edit this heading"' : ""} ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || textStyle.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || textStyle.fontSize || 2}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${Number(layer.fontWeight) || textStyle.fontWeight || 400};font-style:${escapeHtml(layer.fontStyle || textStyle.fontStyle || "normal")};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
@@ -1548,7 +1572,7 @@ export function initApp(config = {}) {
     function renderEditableQr(layer) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY.qr;
-      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links"></div>`;
+      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""} is-locked" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links"></div>`;
     }
 
     function renderSidebar() {
@@ -2172,7 +2196,51 @@ export function initApp(config = {}) {
       return saveReportLayout(coach);
     }
 
+    function editCertificateHeading(id) {
+      const coach = getCurrentCoach();
+      if (!coach || !Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return;
+      const layout = getReportLayout(coach);
+      const layer = layout.layers.find(entry => entry.id === id);
+      if (!layer || layer.locked === true) return;
+      const original = ARTWORK_EDITABLE_TEXT[id];
+      const current = hasCustomHeadingText(layer) ? layer.textOverride : original;
+      const result = window.prompt("Edit certificate heading (Cancel keeps the current design):", current);
+      if (result === null) return;
+      const next = result.trim().slice(0, 120);
+      if (!next || isOriginalHeadingText(id, next)) {
+        // Restoring the original wording also restores its exact artwork/font.
+        delete layer.textOverride;
+      } else {
+        // Reworded headings are text. The editor fits them inside the existing
+        // box; exact artwork lettering is only available for the supplied text.
+        layer.textOverride = next;
+      }
+      coach.reportLayout = layout;
+      saveReportLayout(coach);
+    }
+
+    function restoreCertificateHeading(id) {
+      const coach = getCurrentCoach();
+      if (!coach || !Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return;
+      const layout = getReportLayout(coach);
+      const layer = layout.layers.find(entry => entry.id === id);
+      if (!layer) return;
+      delete layer.textOverride;
+      // Remove old web-font overrides left behind by the previous editor.
+      for (const field of ["fontFamily", "fontSize", "color", "fontWeight", "fontStyle", "textDecoration"]) {
+        delete layer[field];
+      }
+      coach.reportLayout = layout;
+      saveReportLayout(coach);
+    }
+
     function beginCertificateTextEditing(item) {
+      if (Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, item.dataset.overlayId)) {
+        // Never turn supplied heading artwork into an HTML contenteditable span
+        // simply by selecting it: that was causing the font change and clipping.
+        editCertificateHeading(item.dataset.overlayId);
+        return;
+      }
       const coach = getCurrentCoach();
       if (!coach || item.dataset.overlayId === "qr" || item.contentEditable === "true" || item.querySelector('[contenteditable="true"]')) return;
       const fullLayout = getReportLayout(coach);
@@ -3013,6 +3081,7 @@ export function initApp(config = {}) {
       app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
       if (publicCoach) return;
       attachEvents();
+      fitCustomCertificateHeadingText();
       if (state.auth.role) {
         hydrateReportsTable();
         hydrateCoachesTable();
@@ -3038,6 +3107,22 @@ export function initApp(config = {}) {
             }
           }
         }
+      }
+    }
+
+    function fitCustomCertificateHeadingText() {
+      for (const span of document.querySelectorAll('.template-art-slice[data-editable-heading="true"] .template-art-text:not([hidden])')) {
+        const box = span.parentElement;
+        if (!box || !box.clientWidth || !box.clientHeight) continue;
+        const style = window.getComputedStyle(box);
+        const baseSize = Number.parseFloat(style.fontSize) || 18;
+        const ctx = document.createElement("canvas").getContext("2d");
+        if (!ctx) continue;
+        ctx.font = `${style.fontStyle} ${style.fontWeight} ${baseSize}px ${style.fontFamily}`;
+        const textWidth = ctx.measureText(span.textContent || "").width;
+        const widthScale = textWidth ? (box.clientWidth * 0.96) / textWidth : 1;
+        const heightScale = (box.clientHeight * 0.87) / (baseSize * 1.12);
+        span.style.fontSize = `${Math.max(5, baseSize * Math.min(1, widthScale, heightScale)).toFixed(2)}px`;
       }
     }
 
@@ -3549,6 +3634,7 @@ export function initApp(config = {}) {
       const layerTarget = (coach.reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const target = coach.reportLayout[selectedReportOverlay] || layerTarget;
       if (!target) return;
+      if (["qr", "certification-badge"].includes(selectedReportOverlay)) return;
       if (Object.prototype.hasOwnProperty.call(changes, "text") && !layerTarget?.type?.includes("text")) {
         changes = { ...changes, textOverride: changes.text };
         delete changes.text;
@@ -3602,7 +3688,12 @@ export function initApp(config = {}) {
         try {
           const result = await invokePrivileged("google-drive-oauth", { action: "connect", centre_id: state.auth.centreId });
           if (result.authorization_url) window.location.assign(result.authorization_url);
-        } catch (error) { alert(error.message || "Unable to start Google Drive connection."); }
+        } catch (error) {
+          const message = error.message || "Unable to start Google Drive connection.";
+          alert(/centre admin role required/i.test(message)
+            ? "The deployed google-drive-oauth Edge Function is outdated. Deploy the index.ts supplied in Part 4 using the Supabase CLI, then try again."
+            : message);
+        }
       })();
       if (action === "disconnect-drive") return (async () => {
         if (state.auth.role !== "coach") return;
@@ -3660,9 +3751,11 @@ export function initApp(config = {}) {
         return saveReportLayout(coach);
       }
       if (action === "edit-certificate-heading") {
-        const item = [...document.querySelectorAll('[data-editable-heading="true"]')]
-          .find(element => element.dataset.overlayId === selectedReportOverlay);
-        if (item) beginCertificateTextEditing(item);
+        editCertificateHeading(selectedReportOverlay);
+        return;
+      }
+      if (action === "restore-certificate-heading") {
+        restoreCertificateHeading(selectedReportOverlay);
         return;
       }
       if (action === "toggle-report-layout") { reportLayoutEditing = !reportLayoutEditing; return render(); }
@@ -3686,7 +3779,7 @@ export function initApp(config = {}) {
       if (["toggle-certificate-lock", "duplicate-certificate-layer", "delete-certificate-layer"].includes(action)) {
         const coach = getCurrentCoach();
         const layout = getReportLayout(coach);
-        if (selectedReportOverlay === "qr" || (selectedReportOverlay === "decor-bottom-right" && action === "toggle-certificate-lock")) return;
+        if (["qr", "certification-badge"].includes(selectedReportOverlay) || (selectedReportOverlay === "decor-bottom-right" && action === "toggle-certificate-lock")) return;
         const index = (layout.layers || []).findIndex(layer => layer.id === selectedReportOverlay);
         const selectedLayer = index >= 0 ? layout.layers[index] : null;
         const target = layout[selectedReportOverlay] || selectedLayer;
@@ -3965,12 +4058,12 @@ export function initApp(config = {}) {
       const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
       const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image");
-      const isFixedArtwork = selectedReportOverlay === "decor-bottom-right";
+      const isFixedArtwork = ["decor-bottom-right", "certification-badge"].includes(selectedReportOverlay);
       return `<div class="report-layout-toolbar">
         <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
         ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia", "Cinzel Decorative"].map(font => `<option ${(layout.fontFamily || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontFamily) === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${(layout.fontStyle || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontStyle) === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${(layout.textDecoration || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.textDecoration) === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
-        ${Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay) ? '<button type="button" class="certificate-icon-action" data-action="edit-certificate-heading" title="Edit heading text" aria-label="Edit heading text">Edit text</button>' : ""}
+        ${Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay) ? '<button type="button" class="certificate-icon-action" data-action="edit-certificate-heading" title="Edit heading text" aria-label="Edit heading text">Edit text</button><button type="button" class="certificate-icon-action" data-action="restore-certificate-heading" title="Restore the original heading lettering" aria-label="Restore original heading artwork">Restore lettering</button>' : ""}
         <span class="toolbar-divider" aria-hidden="true"></span>
         <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
         <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>

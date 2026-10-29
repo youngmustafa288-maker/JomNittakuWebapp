@@ -1,0 +1,4 @@
+.certificate-reference-tools .certificate-object-toolbar{display:none!important}
+.certificate-original-editor .certificate-editor-status{display:none;color:#60708f;font-size:.8rem}
+.certificate-original-editor .certificate-editor-status.visible{display:block}
+.certificate-design-page .certificate-reference-toolbar.is-empty{visibility:hidden}

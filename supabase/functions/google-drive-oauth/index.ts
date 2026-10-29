@@ -1,8 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeCertificateDesign } from "../_shared/certificate-design.js";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 // Exposed on every response so a deployed coach-aware function is identifiable.
-const DRIVE_API_VERSION = "coach-v2";
+const DRIVE_API_VERSION = "coach-v3-templates";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -129,8 +130,8 @@ function normalizeReportRecord(value: unknown) {
   const studentId = String(source.studentId || "");
   if (!coachId || coachId.length > 128 || studentId.length > 128) throw new Error("Invalid report owner");
   const allowedFields = recordType === "draft"
-    ? ["id", "ref", "coachId", "studentId", "date", "time", "lessonNumber", "step", "status", "summary"]
-    : ["id", "ref", "coachId", "studentId", "lessonLabel", "lessonNumber", "date", "time", "status", "generatedAt", "summary"];
+    ? ["id", "ref", "coachId", "studentId", "date", "time", "lessonNumber", "step", "status", "summary", "certificateDesign"]
+    : ["id", "ref", "coachId", "studentId", "lessonLabel", "lessonNumber", "date", "time", "status", "generatedAt", "summary", "certificateDesign"];
   const record: Record<string, unknown> = {};
   for (const field of allowedFields) if (field in source) record[field] = source[field];
   const summarySource = source.summary && typeof source.summary === "object" && !Array.isArray(source.summary)
@@ -151,6 +152,7 @@ function normalizeReportRecord(value: unknown) {
   record.time = String(source.time || "").slice(0, 12);
   record.lessonNumber = Number.isFinite(Number(source.lessonNumber)) && source.lessonNumber !== "" ? Number(source.lessonNumber) : "";
   record.summary = summary;
+  if (source.certificateDesign != null) record.certificateDesign = normalizeCertificateDesign(source.certificateDesign);
   if (recordType === "draft") {
     record.step = Math.min(4, Math.max(1, Number.parseInt(String(source.step || 1), 10) || 1));
     record.status = "Pending";
@@ -346,7 +348,7 @@ export async function handleDriveRequest(request: Request) {
     if (coachesError || studentsError) return json({ error: "Unable to load report participants" }, 500);
     return json({ centre: { id: centre.id, name: centre.name }, coaches: coaches || [], students: students || [], connected_coach_ids: [...connectedIds] });
   }
-  const reportActions = new Set(["report-list", "report-save", "report-pdf"]);
+  const reportActions = new Set(["report-list", "report-save", "report-pdf", "report-template-capabilities"]);
   const isReportAction = reportActions.has(action);
   if (isReportAction) {
     const requestedCentreId = String(body.centre_id || centreId || "");
@@ -365,6 +367,7 @@ export async function handleDriveRequest(request: Request) {
       }
       actorRole = membership.role;
     }
+    if (action === "report-template-capabilities") return json({ certificateDesignVersion: 1 });
     if (action === "report-list") {
       try {
         const allConnections = await connectedCoachRows(requestedCentreId);

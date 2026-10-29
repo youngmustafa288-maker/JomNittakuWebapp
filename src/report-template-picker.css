@@ -1,0 +1,11 @@
+.report-template-picker{border:0;padding:0;margin:20px 0 0;min-width:0}
+.report-template-picker legend{font-size:13px;font-weight:700;color:var(--navy-900);margin-bottom:10px}
+.report-template-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-height:310px;overflow-y:auto;padding:3px}
+.report-template-option{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px 7px;position:relative;border:1px solid var(--slate-200);border-radius:12px;background:#fff;padding:10px;cursor:pointer;min-width:0}
+.report-template-option.is-selected{border-color:var(--red-500);box-shadow:0 0 0 1px var(--red-500);background:rgba(200,30,69,.04)}
+.report-template-option:focus-within{outline:2px solid var(--red-500);outline-offset:3px}
+.report-template-option input{grid-column:1;grid-row:2;margin:1px 0 0;width:15px;height:15px;accent-color:var(--red-500)}
+.report-template-thumbnail{grid-column:1/-1;display:block;width:100%;max-width:150px;justify-self:center;overflow:hidden;aspect-ratio:896/1200;background:#f3f5f8;border-radius:5px;pointer-events:none}
+.report-template-thumbnail .template-report-shell{width:100%;border-radius:0;box-shadow:none;pointer-events:none}
+.report-template-name{grid-column:2;grid-row:2;font-size:12px;font-weight:700;line-height:18px;overflow-wrap:anywhere;color:var(--navy-900)}
+@media(max-width:480px){.report-template-options{grid-template-columns:repeat(2,minmax(0,1fr))}}

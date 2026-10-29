@@ -228,8 +228,8 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 2. The selected coach must have independently connected Google Drive. Their draft is saved to **that coach's** Drive and held in memory while the wizard is open. The centre ID is request context and is not stored in canonical report content.
 3. Wizard edits are debounced to Drive; step changes and close flush pending edits first.
 4. Finalization writes the canonical JSON report to Drive before moving it into in-memory `state.reports`; the student lesson count remains a Supabase profile aggregate.
-5. The report view renders certificate layers plus dynamic report overlays at their saved positions.
-6. Layout edits update the coach's `report_layout`.
+5. The last wizard step offers the three templates and the selected coach's saved designs. A draft stores its chosen `certificateDesign` snapshot and retains it on resume.
+6. Finalization stores the snapshot with the report. The report view and PDF/PNG exports use that layout. Legacy records without a snapshot use the coach's current layout. Template editing remains in Certificate Design and updates `coaches.report_layout`.
 
 ### Report export
 
@@ -289,3 +289,24 @@ Heading fitting measures the complete glyph width and line height, reserves spac
 `tests/drive-backend.cjs` adds 11 isolated handler regressions for coach connect, verified sessions, cross-centre denial, public-only connection metadata, encrypted token storage, expired/replayed/concurrent OAuth state, same-account reconnect, account switching, missing configuration and report ownership. It uses Node 24's TypeScript stripping with Supabase/Google mocks.
 
 `tests/regressions.cjs` provides 13 focused, dependency-free Node regressions for layout migration/round-tripping, inline heading edits, formatting, escaping, pointer dragging/resizing, optional locks, title fitting and callback handling. DOM and Supabase behavior are mocked; this does not replace browser QA, a production build, or live Google authorization testing.
+
+
+## Certificate template studio
+
+The Certificate Design gallery offers Classic, Performance and Heritage, plus saved custom designs. `certificate-templates.js` contains the presets. `certificate-studio.js` renders the gallery and provides the isolated preview storage adapter. `certificate-editor.js` renders the editor frame and controls.
+
+The editor toolset follows the supplied reference: Text and Uploads in the rail; font, minus/size/plus, text colour and bold/italic/underline in the toolbar. It keeps double-click text editing, dragging and resize handles. Additional editing menus and floating actions are not rendered. Template selection and custom background uploads remain in the gallery, reached from the Templates header action. QR codes remain report elements and can also be uploaded as images.
+
+Layout metadata stays in `coaches.report_layout`: `templateId`, `baseTemplateId`, `designName`, `backgroundSource`, `qrUrl`, `designs`, `variants` and the shared upload tray. Variant snapshots exclude nested collections. Legacy layouts default to Classic. Image bytes use the existing profile-images bucket; reports retain their existing Google Drive ownership.
+
+The gallery stylesheet is scoped to `.certificate-design-page.studio-page`. The editor uses the original global stylesheet. Other app screens and navigation keep their supplied UI.
+
+`preview.html` and `preview-main.js` use sample data with no backend configuration. The preview stores design data in IndexedDB and never connects to live auth or Drive.
+
+The report wizard uses `report-template-picker.js` and its scoped stylesheet. Options resolve from the report's coach, including coach variants and saved custom designs. Native radios preserve keyboard focus. Drafts and final records add an optional `certificateDesign: { templateId, name, layout }` under schema version 1. Collection metadata is excluded, the snapshot is limited to 384 KiB, and the shared `supabase/functions/_shared/certificate-design.js` validator runs in both the browser repository and the supplied Edge Function.
+
+Deploy the included `google-drive-oauth` function and shared validator before the frontend. The client checks the authenticated `report-template-capabilities` action before writing records with a snapshot; older services fail before saving. Existing report ownership checks and the 512 KiB canonical record limit remain. No database migration is required. The preview's report writes stay in memory and skip real student/profile and Drive updates.
+
+Validation for template selection: 19 dependency-free tests cover real presets, saved choices, snapshot rendering, frontend/backend record round-trips, legacy fallback, validation bounds and capability handling. DOM QA covers selection, Back/Next, close/resume, generation, and preserving generated designs after changing the coach template. Browser visual QA and live authenticated Drive/PDF validation remain unavailable in this environment.
+
+Commands: `npm run build` builds the hosted preview; `npm run build:app` builds the authenticated app; `npm run dev:studio` opens the preview. The source handoff preserves the original app commands and adds `build:studio`. Run `node --test tests/certificate-studio.test.mjs` for the eight layout regressions. Live authenticated upload and report-export verification still belongs in the original staging environment.

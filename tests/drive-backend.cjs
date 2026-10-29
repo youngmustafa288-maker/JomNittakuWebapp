@@ -126,7 +126,7 @@ test('coach membership authorizes connect without admin metadata and binds state
   const response = await f.request({ action: 'connect', coach_id: secondCoachId });
   assert.equal(response.status, 200, 'centre resolves from verified membership');
   assert.equal(f.tables.coach_drive_oauth_states.at(-1).user_id, coachId);
-  assert.equal(response.headers.get('x-dao-drive-api-version'), 'coach-v2');
+  assert.match(response.headers.get('x-dao-drive-api-version'), /^coach-v/);
 });
 
 test('missing, malformed and expired sessions are rejected before any database or Google operations', async () => {

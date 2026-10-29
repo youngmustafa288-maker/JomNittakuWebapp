@@ -1,5 +1,9 @@
+import { renderCertificateEditor, renderCertificateEditorTools, renderCertificateEditorToolbar } from "./certificate-editor.js";
+import { REPORT_TEMPLATES, makeTemplateLayout, layoutSnapshot, studioIcon } from "./certificate-templates.js";
+import { renderStudio, previewLayoutStore } from "./certificate-studio.js";
 import { createClient } from "@supabase/supabase-js";
 import { createDashboardStatePayload, createReportDriveRepository, normalizeReportRecord } from "./report-drive.js";
+import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
 const CENTRE_PROFILE_KEY = "centre_profile";
@@ -181,6 +185,7 @@ export function initApp(config = {}) {
     let state = createInitialState();
     state.centreProfile = getCentreProfile();
     let wizardDraftId = null;
+    let reportGenerating = false;
     let onboardingModal = null;
     let centreOnboardingModal = null;
     let studentEditModal = null;
@@ -240,9 +245,170 @@ export function initApp(config = {}) {
     const draftRevisions = new Map();
     let reportLayoutEditing = false;
     let selectedReportOverlay = "date";
-    let certificateEditorTool = "text";
+    let certificateEditorTool = "templates";
     let reportOverlayDragged = false;
     let activeCertificateEditor = null;
+    // Studio state is UI-only; reusable geometry stays in coaches.report_layout.
+    let studioView = "templates";
+    let studioFilter = "all";
+    let studioHelpOpen = false;
+    let studioPreview = false;
+    let studioZoom = 70;
+    let studioPictureTarget = "";
+    const isCertificatePreview = config.certificatePreview === true && !SUPABASE_URL && !SUPABASE_KEY;
+
+    function studioToast(message) {
+      const toast = document.getElementById("studioToast");
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.add("visible");
+      clearTimeout(studioToast.timer);
+      studioToast.timer = setTimeout(() => toast.classList.remove("visible"), 4500);
+    }
+    function defaultStudioLayout(id = "classic") {
+      return makeTemplateLayout(normalizeReportLayout(), id);
+    }
+    function studioLayoutForId(id) {
+      const current = getReportLayout(getCurrentCoach());
+      if (id === current.templateId) return current;
+      return normalizeReportLayout(current.variants?.[id] || defaultStudioLayout(id));
+    }
+    function getDraftTemplateOptions(draft) {
+      return reportTemplateOptions(getReportLayout(getCoachById(draft.coachId)), defaultStudioLayout, draft.certificateDesign);
+    }
+    function ensureDraftCertificateDesign(draft) {
+      if (!draft.certificateDesign) {
+        const currentId = getReportLayout(getCoachById(draft.coachId)).templateId;
+        draft.certificateDesign = getDraftTemplateOptions(draft).find(option => option.templateId === currentId);
+      }
+      return draft.certificateDesign;
+    }
+    function renderDraftTemplatePicker(draft) {
+      const selected = ensureDraftCertificateDesign(draft);
+      const editing = reportLayoutEditing;
+      const selection = selectedReportOverlay;
+      reportLayoutEditing = false;
+      selectedReportOverlay = "";
+      try {
+        return renderReportTemplateChoices(getDraftTemplateOptions(draft), selected.templateId,
+          (option, index) => renderReportTemplate(draft, option.layout, `report-choice-${index}`), escapeHtml);
+      } finally {
+        reportLayoutEditing = editing;
+        selectedReportOverlay = selection;
+      }
+    }
+    function selectDraftTemplate(templateId) {
+      if (reportGenerating) return;
+      const draft = state.reportDrafts[wizardDraftId];
+      if (!draft) return;
+      const selected = getDraftTemplateOptions(draft).find(option => option.templateId === templateId);
+      if (!selected) return;
+      updateWizardDraftFromInputs({ schedule: false });
+      draft.certificateDesign = selected;
+      scheduleDraftSave(draft);
+      // Keep the radio group in place for native arrow-key navigation.
+      document.querySelectorAll('input[name="reportTemplate"]').forEach(input => {
+        input.checked = input.value === templateId;
+        input.closest(".report-template-option")?.classList.toggle("is-selected", input.checked);
+      });
+    }
+    async function selectStudioTemplate(id) {
+      const coach = getCurrentCoach();
+      const current = getReportLayout(coach);
+      const variants = { ...(current.variants || {}), [current.templateId]: layoutSnapshot(current) };
+      const next = normalizeReportLayout(variants[id] || defaultStudioLayout(id));
+      coach.reportLayout = { ...next, variants, designs: current.designs || [], uploads: current.uploads || [] };
+      studioView = "editor"; studioPreview = false; selectedReportOverlay = "date"; certificateEditorTool = "text";
+      await saveReportLayout(coach);
+    }
+    function renderStudioMini(id) {
+      const prior = reportLayoutEditing;
+      const selection = selectedReportOverlay;
+      reportLayoutEditing = false; selectedReportOverlay = "";
+      const html = renderReportTemplate(getCertificateDesignPreviewReport(getCurrentCoach()), studioLayoutForId(id), `studio-mini-${id}`);
+      reportLayoutEditing = prior; selectedReportOverlay = selection;
+      return html;
+    }
+    function renderStudioPanel(coach) {
+      const layout = getReportLayout(coach);
+      if (certificateEditorTool === "templates") return `<div class="studio-panel-title"><h3>Templates</h3></div><div class="studio-mini-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="${layout.templateId===t.id?'active':''}" data-studio-template="${escapeHtml(t.id)}"><span class="studio-mini-thumb">${renderStudioMini(t.id)}</span><strong>${escapeHtml(t.name)}</strong>${layout.templateId===t.id?studioIcon('check'):''}</button>`).join('')}</div><button class="studio-panel-upload" data-action="studio-upload-background">${studioIcon('upload')}Upload design</button>`;
+      if (certificateEditorTool === "qr") return `<div class="studio-panel-title"><h3>QR code</h3></div><label class="studio-field">URL<input id="studioQrUrl" type="url" value="${escapeHtml(layout.qrUrl)}" placeholder="https://..." maxlength="600"></label><p id="studioQrError" class="studio-field-error" role="alert"></p><button class="primary-btn studio-btn studio-full" data-action="studio-apply-qr">Apply</button><button class="studio-panel-upload" data-action="studio-toggle-qr">${layout.layers.find(l=>l.id==='qr')?.visible===false?'Show QR':'Hide QR'}</button>`;
+      if (certificateEditorTool === "uploads") return `<div class="studio-panel-title"><h3>Photos</h3></div><button class="studio-dropzone" data-action="studio-upload-picture">${studioIcon('upload')}<strong>Upload photo</strong><small>PNG, JPG, WebP · 5 MB</small></button><div class="studio-photo-targets"><button data-action="studio-upload-student" aria-label="Upload student photo">Student</button><button data-action="studio-upload-coach" aria-label="Upload coach photo">Coach</button></div>${layout.uploads.length?`<div class="studio-asset-grid">${layout.uploads.map(a=>`<button data-studio-asset="${escapeHtml(a.id)}" aria-label="Add ${escapeHtml(a.name)}"><img src="${escapeHtml(a.source)}" alt="${escapeHtml(a.name)}"><span>${escapeHtml(a.name)}</span></button>`).join('')}</div>`:'<div class="studio-empty-assets"><p>No photos</p></div>'}`;
+      if (certificateEditorTool === "text") return `<div class="studio-panel-title"><h3>Text</h3></div><button class="studio-text-add" data-action="add-certificate-text">${studioIcon('plus')}Add text</button>`;
+      return renderCertificateToolPanel(coach);
+    }
+    function attachStudioEvents() {
+      document.querySelectorAll('[data-studio-template]').forEach(el => el.addEventListener('click',()=>selectStudioTemplate(el.dataset.studioTemplate).catch(e=>studioToast(e.message))));
+      document.querySelectorAll('[data-studio-filter]').forEach(el=>el.addEventListener('click',()=>{studioFilter=el.dataset.studioFilter;render();}));
+      document.querySelector('[data-studio-name]')?.addEventListener('change',event=>{const coach=getCurrentCoach();coach.reportLayout=getReportLayout(coach);coach.reportLayout.designName=event.target.value.trim() || 'Untitled design';saveReportLayout(coach);});
+      document.querySelectorAll('[data-studio-zoom]').forEach(el=>el.addEventListener('click',()=>{studioZoom=el.dataset.studioZoom==='fit'?70:Math.min(130,Math.max(40,studioZoom+Number(el.dataset.studioZoom)));render();}));
+      document.getElementById('studioBackgroundUpload')?.addEventListener('change',event=>{const file=event.target.files[0];if(file) uploadStudioBackground(file).catch(e=>studioToast(e.message));});
+      document.getElementById('studioPictureUpload')?.addEventListener('change',event=>{const file=event.target.files[0];if(file) uploadStudioPicture(file).catch(e=>studioToast(e.message));});
+      document.querySelectorAll('[data-studio-asset]').forEach(el=>el.addEventListener('click',()=>{const coach=getCurrentCoach();const layout=getReportLayout(coach);const asset=layout.uploads.find(a=>a.id===el.dataset.studioAsset);if(asset) addStudioPicture(layout,asset.source,asset.name);coach.reportLayout=layout;saveReportLayout(coach);}));
+    }
+    function addStudioPicture(layout, source, name) {
+      const id = `custom-${crypto.randomUUID()}`;
+      layout.layers.push({id,name,type:'image',source,left:35,top:32,width:25,height:18.67,visible:true,locked:false,zIndex:Math.max(...layout.layers.map(l=>Number(l.zIndex)||0))+1,objectFit:'contain'});
+      selectedReportOverlay=id;
+    }
+    async function studioUpload(file) {
+      if (!['image/png','image/jpeg','image/webp'].includes(file.type)) throw new Error('Choose a PNG, JPG or WebP image.');
+      if (file.size>5*1024*1024) throw new Error('Please choose an image under 5 MB.');
+      const bitmap=await createImageBitmap(file).catch(()=>null);
+      if (!bitmap) throw new Error('This image could not be opened. Please choose another file.');
+      bitmap.close();
+      return uploadProfileImage(file,'certificate',getCurrentCoach().id);
+    }
+    async function uploadStudioBackground(file) {
+      studioToast('Uploading…');
+      const source=await studioUpload(file);
+      const coach=getCurrentCoach(); const old=getReportLayout(coach);
+      const id=`design-${crypto.randomUUID()}`;const name=file.name.replace(/\.[^.]+$/,'').slice(0,80) || 'My design';
+      const next=defaultStudioLayout('classic');
+      Object.assign(next,{templateId:id,designName:name,backgroundSource:source,designs:[...old.designs,{id,name}],uploads:old.uploads,variants:{...old.variants,[old.templateId]:layoutSnapshot(old)}});
+      coach.reportLayout=next;studioView='editor';certificateEditorTool='uploads';selectedReportOverlay='';
+      if (await saveReportLayout(coach)) studioToast('Design added');
+    }
+    async function uploadStudioPicture(file) {
+      const source=await studioUpload(file);const coach=getCurrentCoach();const layout=getReportLayout(coach);
+      addCertificateUpload(layout,source,file.name);
+      if (studioPictureTarget) {const layer=layout.layers.find(l=>l.id===studioPictureTarget);Object.assign(layer,{source,visible:true,objectFit:'cover'});selectedReportOverlay=layer.id;studioPictureTarget='';}
+      else addStudioPicture(layout,source,file.name);
+      coach.reportLayout=layout;if(await saveReportLayout(coach)) studioToast('Photo added');
+    }
+    async function handleStudioAction(action) {
+      try {
+        if(action==='studio-gallery'){studioView='templates';studioPreview=false;return render();}
+        if(action==='studio-editor'){studioView='editor';return render();}
+        if(action==='studio-help'){studioHelpOpen=!studioHelpOpen;return render();}
+        if(action==='studio-preview'){studioPreview=!studioPreview;return render();}
+        if(action==='studio-demo-nav')return studioToast('This preview focuses on Certificate Design. Choose a template to get started.');
+        if(action==='studio-upload-background')return document.getElementById('studioBackgroundUpload')?.click();
+        if(['studio-upload-picture','studio-upload-student','studio-upload-coach'].includes(action)){studioPictureTarget=action==='studio-upload-student'?'student-photo':action==='studio-upload-coach'?'coach-photo':'';return document.getElementById('studioPictureUpload')?.click();}
+        if(action==='studio-export'){
+          const wasPreview=studioPreview;studioPreview=true;render();
+          try {const canvas=await renderReportCanvas();const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw new Error('Unable to create image.');const link=document.createElement('a');const url=URL.createObjectURL(blob);link.href=url;link.download=`${getReportLayout(getCurrentCoach()).designName.replace(/[^a-z0-9]+/gi,'-')}.png`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+          finally {studioPreview=wasPreview;render();}return;
+        }
+        const coach=getCurrentCoach();const layout=getReportLayout(coach);
+        if(action==='studio-apply-qr'){
+          const input=document.getElementById('studioQrUrl');const value=input?.value.trim();let valid=false;
+          try{const url=new URL(value);valid=['https:','http:'].includes(url.protocol)&&!!url.hostname&&value.length<=600;}catch{}
+          if(!valid){document.getElementById('studioQrError').textContent='Enter a valid URL';input?.focus();return;}
+          layout.qrUrl=value;layout.layers.find(l=>l.id==='qr').visible=true;selectedReportOverlay='qr';
+        }
+        if(action==='studio-toggle-qr'){const layer=layout.layers.find(l=>l.id==='qr');layer.visible=layer.visible===false;selectedReportOverlay='qr';}
+        if(action==='studio-save'||action==='studio-save-copy'){
+          if(REPORT_TEMPLATES.some(t=>t.id===layout.templateId)||action==='studio-save-copy'){
+            const name=layout.designName+(action==='studio-save-copy'?' copy':' — my design');layout.templateId=`design-${crypto.randomUUID()}`;layout.designName=name.slice(0,80);layout.designs=[...layout.designs,{id:layout.templateId,name:layout.designName}];
+          }else layout.designs=layout.designs.map(d=>d.id===layout.templateId?{...d,name:layout.designName}:d);
+          layout.variants={...layout.variants,[layout.templateId]:layoutSnapshot(layout)};
+        }
+        coach.reportLayout=layout;
+        if(await saveReportLayout(coach)) studioToast(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?'Updated':'Saved');
+      } catch(error){studioToast(error.message || 'Unable to save. Please try again.');}
+    }
+
 
     async function getQrCodeLib() {
       if (!qrCodeModulePromise) {
@@ -349,6 +515,13 @@ export function initApp(config = {}) {
       };
     }
 
+    function validStudioImageSource(source) {
+      return typeof source === "string" && (/^https:\/\//i.test(source) || /^\/certificate-templates\/(performance|heritage)\.svg$/.test(source) || source === REPORT_TEMPLATE_SRC || source === "/Certificate%20Template.jpg?v=4" || (isCertificatePreview && /^data:image\/(png|jpeg|webp);base64,/.test(source)));
+    }
+    function validStudioQrUrl(source) {
+      try { const u=new URL(source); return ["https:","http:"].includes(u.protocol) && !!u.hostname && source.length<=600; } catch { return false; }
+    }
+
     function normalizeReportLayout(saved = {}) {
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
       const legacyLayout = saved?.editorVersion !== 2;
@@ -378,15 +551,23 @@ export function initApp(config = {}) {
         && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)
       ));
       const uploads = Array.isArray(saved?.uploads)
-        ? saved.uploads.filter(asset => asset && typeof asset.source === "string" && /^https:\/\//i.test(asset.source))
+        ? saved.uploads.filter(asset => asset && typeof asset.source === "string" && validStudioImageSource(asset.source))
           .slice(-40)
           .map((asset, index) => ({
             id: String(asset.id || `upload-${index + 1}`).slice(0, 128),
             name: String(asset.name || "Uploaded image").slice(0, 120),
-            source: asset.source.slice(0, 2048)
+            source: isCertificatePreview ? asset.source : asset.source.slice(0, 2048)
           }))
         : [];
-      return { ...keyed, layers, uploads, editorVersion: 2 };
+      return { ...keyed, layers, uploads, editorVersion: 2,
+        templateId: String(saved?.templateId || "classic"),
+        baseTemplateId: ["classic","performance","heritage"].includes(saved?.baseTemplateId) ? saved.baseTemplateId : (["performance","heritage"].includes(saved?.templateId) ? saved.templateId : "classic"),
+        designName: String(saved?.designName || "Classic").slice(0,80),
+        backgroundSource: validStudioImageSource(saved?.backgroundSource) ? saved.backgroundSource : REPORT_TEMPLATE_SRC,
+        qrUrl: validStudioQrUrl(saved?.qrUrl) ? saved.qrUrl : "https://jom-nittaku-webapp.vercel.app/centre",
+        designs: Array.isArray(saved?.designs) ? saved.designs.filter(d=>d && /^design-[a-z0-9-]+$/i.test(d.id)).slice(-30).map(d=>({id:d.id,name:String(d.name || "My design").slice(0,80)})) : [],
+        variants: saved?.variants && typeof saved.variants === "object" ? Object.fromEntries(Object.entries(saved.variants).filter(([key,v])=>/^(classic|performance|heritage|design-[a-z0-9-]+)$/i.test(key) && v && typeof v==='object').slice(-35).map(([key,value])=>[key,layoutSnapshot(value)])) : {}
+      };
     }
 
     function getReportLayout(coach) {
@@ -557,6 +738,7 @@ export function initApp(config = {}) {
     }
 
     function queueReportWrite(record, options) {
+      if (isCertificatePreview) return Promise.resolve(structuredClone(record));
       const normalized = normalizeReportRecord(record);
       const previous = reportWriteQueues.get(normalized.id) || Promise.resolve();
       const current = previous.catch(() => {}).then(() => reportRepository.save(normalized, options));
@@ -575,15 +757,16 @@ export function initApp(config = {}) {
     }
 
     async function saveReportRecord(record, options = {}) {
+      const draftBeforeSave = record.recordType === "draft" ? JSON.stringify(state.reportDrafts[record.id]) : "";
       reportStoreError = "";
       reportStoreStatus = "saving";
-      updateReportSaveStatus("Saving to Google Drive…");
+      updateReportSaveStatus(isCertificatePreview ? "Saving preview…" : "Saving to Google Drive…");
       try {
         const saved = await queueReportWrite(record, options);
         reportStoreStatus = "ready";
         reportStoreError = "";
-        updateReportSaveStatus("Saved to Google Drive");
-        if (record.recordType === "draft") {
+        updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
+        if (record.recordType === "draft" && JSON.stringify(state.reportDrafts[record.id]) === draftBeforeSave) {
           state.reportDrafts[saved.id] = { ...normalizeDraft(saved), centreId: options.centreId || record.centreId || getReportCentreId() };
         }
         return saved;
@@ -965,10 +1148,11 @@ export function initApp(config = {}) {
     }
 
     function renderPlainBulletOverlays(lines, positions, layout, field) {
+      if(layout.visible===false)return "";
       const rowHeight = 100 / positions.length;
       const displayLines = String(layout.textOverride ?? lines.join("\n")).split(/\n+/).slice(0, positions.length);
       lines = displayLines;
-      return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" data-overlay-text="true" style="${overlayStyle(layout)}">
+      return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" data-overlay-text="true" style="${overlayStyle(layout)}">
         ${positions.map((_position, index) => `<div class="template-text template-bullet ${lines[index] ? "" : "empty"}" style="left:0;top:${index * rowHeight}%;width:100%;max-height:${rowHeight}%;"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
         ${reportLayoutEditing ? renderCertificateResizeHandles() : ""}
       </div>`;
@@ -982,9 +1166,9 @@ export function initApp(config = {}) {
         .slice(0, limit);
     }
 
-    function renderReportTemplate(report) {
+    function renderReportTemplate(report, layoutOverride = null, previewId = "reportTemplatePreview") {
       const data = getReportTemplateData(report);
-      const layout = getReportLayout(data.coach);
+      const layout = layoutOverride || report.certificateDesign?.layout || getReportLayout(data.coach);
       const footerTop = data.remarksLines.length
         ? Math.min(
             REPORT_TEMPLATE_FOOTER_TOP_DEFAULT,
@@ -992,20 +1176,20 @@ export function initApp(config = {}) {
           )
         : REPORT_TEMPLATE_FOOTER_TOP_DEFAULT;
       return `
-        <div class="template-report-shell" id="reportTemplatePreview">
-          <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
+        <div class="template-report-shell studio-report-${escapeHtml(layout.baseTemplateId || layout.templateId)}" id="${escapeHtml(previewId)}">
+          <img class="template-report-base" src="${escapeHtml(layout.backgroundSource || REPORT_TEMPLATE_SRC)}" alt="Training report template">
           <div class="template-report-overlay" aria-hidden="${reportLayoutEditing ? "false" : "true"}">
             ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
             ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
             ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
             ${renderEditableOverlay("coach", escapeHtml(data.session.coachName), layout.coach, "white-space:nowrap;")}
 
-            ${renderEditablePhoto("student-photo", data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"))}
-            ${renderEditablePhoto("coach-photo", data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"))}
+            ${renderEditablePhoto("student-photo", layout.layers.find(l=>l.id==="student-photo")?.source || data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"))}
+            ${renderEditablePhoto("coach-photo", layout.layers.find(l=>l.id==="coach-photo")?.source || data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"))}
 
-            ${REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
+            ${layout.baseTemplateId === "classic" ? REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
-            `).join("")}
+            `).join("") : ""}
 
             ${renderPlainBulletOverlays(data.bullets.whatTaught, [
               { left: 11.8, top: 44.9, width: 35.2, height: 4.4 },
@@ -1030,7 +1214,7 @@ export function initApp(config = {}) {
             ${renderEditableOverlay("address", escapeHtml(data.address).replace(/\n/g, "<br>"), layout.address)}
             ${renderCustomCertificateLayers(layout)}
           </div>
-          ${renderEditableQr(layout.layers.find(layer => layer.id === "qr"))}
+          ${renderEditableQr(layout.layers.find(layer => layer.id === "qr"), layout.qrUrl)}
         </div>
       `;
     }
@@ -1050,6 +1234,7 @@ export function initApp(config = {}) {
     }
 
     function getReportCoaches() {
+      if (isCertificatePreview) return [getCurrentCoach()];
       if (state.auth.role === "coach") return state.driveConnection?.status === "connected" ? [getCurrentCoach()].filter(coach => coach?.id) : [];
       const allCoaches = state.auth.role === "admin"
         ? adminReportContext?.coaches || []
@@ -1161,7 +1346,7 @@ export function initApp(config = {}) {
     function renderEditableOverlay(id, content, layout, extra = "") {
       if (layout.visible === false) return "";
       const displayContent = layout.textOverride !== undefined ? escapeHtml(String(layout.textOverride)).replace(/\n/g, "<br>") : content;
-      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" data-overlay-text="true" style="${overlayStyle(layout, extra)}">${displayContent}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+      return `<div class="template-text report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === id ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" data-overlay-text="true" style="${overlayStyle(layout, extra)}">${displayContent}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
     }
 
     function renderCustomCertificateLayers(layout) {
@@ -1174,7 +1359,7 @@ export function initApp(config = {}) {
       return (layout.layers || []).filter(layer => !builtInLayerIds.has(layer.id) && layer.id !== "footer-bar-art" && layer.visible !== false).map(layer => {
         const isEditableHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id);
         const slice = ARTWORK_SLICES[layer.id];
-        if (slice && !isEditableHeading) {
+        if (slice && !isEditableHeading && layer.type !== "text") {
           const left = Number(layer.left ?? slice.left) || 0;
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
@@ -1198,7 +1383,7 @@ export function initApp(config = {}) {
           const displaySize = Number(layer.fontSize) || textStyle.fontSize || 2;
           const displayWeight = Number(layer.fontWeight) || textStyle.fontWeight || 400;
           const displayStyle = layer.fontStyle || textStyle.fontStyle || "normal";
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${hasArtworkTextOverride ? 'data-overlay-text="true"' : ""} style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(displayFont)};font-size:${displaySize}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${displayWeight};font-style:${escapeHtml(displayStyle)};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${hasArtworkTextOverride ? 'data-overlay-text="true"' : ""} style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(displayFont)};font-size:${displaySize}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${displayWeight};font-style:${escapeHtml(displayStyle)};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const isCustomText = layer.type === "text" && !isFooterText;
@@ -1212,7 +1397,7 @@ export function initApp(config = {}) {
               return `<span class="template-footer-title">${escapeHtml(title)}</span><span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>`;
             })()
           : escapeHtml(layer.text || "");
-        const isSelected = selectedReportOverlay === layer.id;
+        const isSelected = reportLayoutEditing && selectedReportOverlay === layer.id;
         const objectTools = reportLayoutEditing && isSelected && isCustomText ? renderCertificateObjectTools(layer) : "";
         const innerContent = isCustomText ? `<span class="template-custom-layer-content">${content}</span>` : content;
         const imageTarget = reportLayoutEditing && layer.type === "image" && layer.locked !== true
@@ -1567,13 +1752,13 @@ export function initApp(config = {}) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY[id];
       const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;`;
-      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
     }
 
-    function renderEditableQr(layer) {
+    function renderEditableQr(layer, qrUrl) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY.qr;
-      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === "qr" ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre data-qr-url="${escapeHtml(qrUrl || "https://jom-nittaku-webapp.vercel.app/centre")}" src="" alt="Scan to open the report QR link">${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
     }
 
     function renderSidebar() {
@@ -1982,6 +2167,7 @@ export function initApp(config = {}) {
       }
       const student = getStudentById(report.studentId);
       const coach = getCoachById(report.coachId);
+      if (report.certificateDesign) reportLayoutEditing = false;
       return `
         <section class="page ${state.ui.page === "report-view" ? "active" : ""}">
           <div class="report-view-wrap">
@@ -1996,7 +2182,7 @@ export function initApp(config = {}) {
                 </div>
                 <div class="report-actions">
                   ${reportPdfError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportPdfError)}</p><button class="secondary-btn" data-action="retry-report-pdf">Retry Drive PDF save</button>` : ""}
-                  ${state.auth.role === "coach" ? `<button class="secondary-btn" data-action="toggle-report-layout">${reportLayoutEditing ? "Done Editing" : "Edit Layout"}</button>` : ""}
+                  ${state.auth.role === "coach" && !report.certificateDesign ? `<button class="secondary-btn" data-action="toggle-report-layout">${reportLayoutEditing ? "Done Editing" : "Edit Layout"}</button>` : ""}
                   <button class="primary-btn" data-action="download-report-pdf">Download PDF</button>
                   <button class="secondary-btn" data-action="download-report-png">Export PNG</button>
                   <button class="secondary-btn whatsapp-share-btn" data-action="share-report-whatsapp" aria-label="Share report to WhatsApp">Share to WhatsApp</button>
@@ -2108,31 +2294,36 @@ export function initApp(config = {}) {
     }
 
     function renderCertificateDesignPage() {
-      const coach = getCurrentCoach();
-      const previewReport = getCertificateDesignPreviewReport(coach);
-      reportLayoutEditing = true;
-      return `<section class="page certificate-design-page ${state.ui.page === "certificate-design" ? "active" : ""}">
-        <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2><p>Personalise the overlay used on your training certificates.</p></div><div class="certificate-header-actions"><button class="secondary-btn" data-action="reset-report-layout">Reset</button><button class="primary-btn" data-action="save-report-layout">Save</button></div></div>
-        <div class="certificate-editor-workspace">
-          ${renderCertificateToolStrip()}
-          <aside class="certificate-editor-rail">${renderCertificateToolPanel(coach)}</aside>
-          <div class="certificate-editor-main">${renderReportLayoutToolbar(coach)}<main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
-        </div>
-        <div class="certificate-design-note">Drag any certificate element to reposition it. Double-click text to edit it; use the handles to resize. Lock an element only when you want to keep it in place. Changes save to your coach account.</div>
-      </section>`;
+      const coach=getCurrentCoach();
+      reportLayoutEditing=studioView==="editor";
+      if (studioView==="editor") return renderCertificateEditor({
+        renderStrip:()=>renderCertificateToolStrip(),
+        renderPanel:()=>renderCertificateToolPanel(coach),
+        renderToolbar:()=>renderReportLayoutToolbar(coach),
+        renderCanvas:()=>renderReportTemplate(getCertificateDesignPreviewReport(coach), getReportLayout(coach))
+      });
+      return renderStudio({layout:getReportLayout(coach),view:"templates",filter:studioFilter,preview:false,zoom:studioZoom,tool:certificateEditorTool,isDemo:isCertificatePreview,escape:escapeHtml,renderMini:renderStudioMini});
     }
 
     function renderCertificateToolStrip() {
-      const tools = [["text", "T", "Text"], ["uploads", "+", "Uploads"], ["layers", "≡", "Layers"], ["position", "↕", "Position"]];
-      return `<nav class="certificate-tool-strip" aria-label="Certificate editor tools">${tools.map(([id, icon, label]) => `<button type="button" class="certificate-tool-button ${certificateEditorTool === id ? "is-active" : ""}" data-certificate-tool="${id}" aria-pressed="${certificateEditorTool === id}"><span aria-hidden="true">${icon}</span><small>${label}</small></button>`).join("")}</nav>`;
+      return renderCertificateEditorTools(certificateEditorTool);
     }
 
     function renderCertificateToolPanel(coach) {
+      if (certificateEditorTool === "templates") {
+        const layout=getReportLayout(coach);
+        return `<div class="certificate-tool-panel"><strong>Templates</strong><div class="certificate-template-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="certificate-template-choice ${layout.templateId===t.id?'is-selected':''}" data-studio-template="${escapeHtml(t.id)}"><span class="certificate-template-thumbnail">${renderStudioMini(t.id)}</span><span>${escapeHtml(t.name)}</span></button>`).join('')}</div><button class="certificate-panel-action certificate-template-upload" data-action="studio-upload-background">Upload design</button></div>`;
+      }
+      if (certificateEditorTool === "qr") {
+        const layout=getReportLayout(coach);
+        return `<div class="certificate-tool-panel"><strong>QR code</strong><label class="certificate-qr-field">URL<input class="text-input" id="studioQrUrl" type="url" value="${escapeHtml(layout.qrUrl)}" placeholder="https://..." maxlength="600"></label><p class="certificate-qr-error" id="studioQrError" role="alert"></p><button class="certificate-panel-action" data-action="studio-apply-qr">Apply</button><button class="certificate-panel-action" data-action="studio-toggle-qr">${layout.layers.find(l=>l.id==='qr')?.visible===false?'Show QR':'Hide QR'}</button></div>`;
+      }
+
       if (certificateEditorTool === "elements") return `<div class="certificate-tool-panel"><strong>Elements</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-shape"><span aria-hidden="true">□</span>Add shape</button></div>`;
       if (certificateEditorTool === "text") return `<div class="certificate-tool-panel"><strong>Text</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-text"><span aria-hidden="true">T</span>Add Text Box</button></div>`;
       if (certificateEditorTool === "uploads") {
         const uploads = getReportLayout(coach).uploads || [];
-        return `<div class="certificate-tool-panel"><strong>Uploads</strong><div class="certificate-logo-dropzone" data-logo-dropzone tabindex="0" role="button" aria-label="Upload an image or drop one here"><span class="certificate-logo-dropzone-icon" aria-hidden="true">+</span><span><b>Upload image</b><small>Drop an image here or choose a file</small></span></div>${uploads.length ? `<div class="certificate-upload-list" aria-label="Uploaded images">${uploads.map(asset => `<button type="button" class="certificate-upload-asset ${selectedCertificateUploadId === asset.id ? "is-selected" : ""}" draggable="true" data-certificate-asset-id="${escapeHtml(asset.id)}" aria-pressed="${selectedCertificateUploadId === asset.id}" aria-label="Select or drag ${escapeHtml(asset.name)} to an image frame"><img src="${escapeHtml(asset.source)}" alt=""><span title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</span></button>`).join("")}</div>` : `<p class="certificate-upload-empty">No uploads</p>`}</div>`;
+        return `<div class="certificate-tool-panel"><strong>Uploads</strong><button class="certificate-panel-action" data-action="studio-upload-picture">Upload image</button>${uploads.length ? `<div class="certificate-upload-list" aria-label="Uploaded images">${uploads.map(asset => `<button type="button" class="certificate-upload-asset ${selectedCertificateUploadId === asset.id ? "is-selected" : ""}" draggable="true" data-certificate-asset-id="${escapeHtml(asset.id)}" aria-pressed="${selectedCertificateUploadId === asset.id}" aria-label="Select or drag ${escapeHtml(asset.name)} to an image frame"><img src="${escapeHtml(asset.source)}" alt=""><span title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</span></button>`).join("")}</div>` : `<p class="certificate-upload-empty">No uploads</p>`}</div>`;
       }
       if (certificateEditorTool === "position") return `<div class="certificate-tool-panel"><strong>Position</strong><button type="button" class="certificate-panel-action" data-action="raise-certificate-layer">Bring forward</button><button type="button" class="certificate-panel-action" data-action="lower-certificate-layer">Send backward</button><button type="button" class="certificate-panel-action" data-action="toggle-certificate-lock">Lock or unlock</button></div>`;
       return renderCertificateLayerPanel(coach);
@@ -2143,11 +2334,12 @@ export function initApp(config = {}) {
       const layers = reportLayout.layers || [];
       return `<div class="certificate-layer-panel" aria-label="Certificate layers">
         <strong>Layers</strong>
-        <div class="certificate-layer-list">${layers.map(layer => `<button type="button" class="certificate-layer-row ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-layer-select="${escapeHtml(layer.id)}"><span>${escapeHtml(layer.name || layer.id)}</span><small>${(reportLayout[layer.id] || layer).locked === true ? "Locked" : escapeHtml(layer.type || "layer")}</small></button>`).join("")}</div>
+        <div class="certificate-layer-list">${layers.map(layer => `<button type="button" class="certificate-layer-row ${reportLayoutEditing && selectedReportOverlay === layer.id ? "is-selected" : ""}" data-layer-select="${escapeHtml(layer.id)}"><span>${escapeHtml(layer.name || layer.id)}</span><small>${(reportLayout[layer.id] || layer).locked === true ? "Locked" : escapeHtml(layer.type || "layer")}</small></button>`).join("")}</div>
       </div>`;
     }
 
     function renderCertificateObjectTools(layer) {
+      if(state.ui.page==="certificate-design"&&studioView==="editor")return "";
       const locked = layer.locked === true;
       return `<span class="certificate-object-toolbar" role="group" aria-label="Text box actions"><button type="button" class="certificate-object-action" data-action="toggle-certificate-lock" title="${locked ? "Unlock" : "Lock"}" aria-label="${locked ? "Unlock" : "Lock"}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button><button type="button" class="certificate-object-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button><button type="button" class="certificate-object-action is-danger" data-action="delete-certificate-layer" title="Delete text box" aria-label="Delete text box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v7m6-7v7"/></svg></button></span>`;
     }
@@ -2157,7 +2349,7 @@ export function initApp(config = {}) {
     }
 
     function addCertificateUpload(layout, source, name = "Uploaded image") {
-      if (!/^https:\/\//i.test(source)) throw new Error("The uploaded image URL is invalid.");
+      if (!validStudioImageSource(source)) throw new Error("The uploaded image URL is invalid.");
       const existing = (layout.uploads || []).find(asset => asset.source === source);
       if (existing) return existing;
       const asset = {
@@ -2185,7 +2377,7 @@ export function initApp(config = {}) {
       const layout = getReportLayout(coach);
       const asset = layout.uploads.find(item => item.id === assetId);
       const layer = layout.layers.find(item => item.id === layerId);
-      if (!asset || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[layerId])) return;
+      if (!asset || layer?.locked === true || !(layer?.type === "image" || layer?.type === "photo" || ARTWORK_SLICES[layerId])) return;
       layer.source = asset.source;
       layer.objectFit = "contain";
       layer.objectPosition = "center";
@@ -2262,6 +2454,7 @@ export function initApp(config = {}) {
         selection?.addRange(range);
       };
       const finish = () => {
+        const keepDom=activeCertificateEditor?.editor===editor&&activeCertificateEditor.keepDomOnBlur===true;
         if (activeCertificateEditor?.editor === editor) activeCertificateEditor = null;
         if (!item.isConnected) return;
         const value = item.classList.contains("template-bullet-group")
@@ -2279,7 +2472,7 @@ export function initApp(config = {}) {
         editor.removeEventListener("keydown", onKeydown);
         editor.removeEventListener("input", onInput);
         coach.reportLayout = fullLayout;
-        saveReportLayout(coach);
+        saveReportLayout(coach,{render:!keepDom});
       };
       const onKeydown = event => handleCertificateEditorKeydown(event);
       const onBeforeInput = event => {
@@ -2452,7 +2645,7 @@ export function initApp(config = {}) {
         <div id="wizardModal" class="modal-backdrop open">
           <div class="modal-card">
             <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
-            <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || "Saved to Google Drive")}</p>
+            <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || (isCertificatePreview ? "Preview" : "Saved to Google Drive"))}</p>
             <div class="wizard-steps">
               ${[
                 ["Step 1", "Select Student"],
@@ -2519,6 +2712,7 @@ export function initApp(config = {}) {
                 Lesson: ${draft.lessonNumber || "-"}<br>
                 Session: ${draft.date ? formatDate(draft.date) : "-"} ${draft.time ? `· ${formatTime(draft.time)}` : ""}
               </div>
+              ${step === 4 ? renderDraftTemplatePicker(draft) : ""}
             </div>
 
             <div class="wizard-footer">
@@ -3114,7 +3308,7 @@ export function initApp(config = {}) {
       });
       document.querySelectorAll("[data-qr-centre]").forEach(image => {
         if (image.dataset.qrReady === "true") return;
-        loadCentreQrDataUrl().then(dataUrl => {
+        getQrCodeLib().then(QRCode=>QRCode.toDataURL(image.dataset.qrUrl || "https://jom-nittaku-webapp.vercel.app/centre", {width:320,margin:4,errorCorrectionLevel:"M"})).then(dataUrl => {
           image.src = dataUrl;
           image.dataset.qrReady = "true";
         }).catch(() => {});
@@ -3181,6 +3375,10 @@ export function initApp(config = {}) {
           }
         });
         app.addEventListener("change", event => {
+          if (event.target.matches('input[name="reportTemplate"]')) {
+            selectDraftTemplate(event.target.value);
+            return;
+          }
           const reportCentre = event.target.closest("#adminReportCentre");
           if (reportCentre) {
             handleReportCentreChange(reportCentre.value);
@@ -3216,7 +3414,7 @@ export function initApp(config = {}) {
           if (!target || (!types.includes("application/x-certificate-asset") && !types.includes("text/plain"))) return;
           const layout = getReportLayout(getCurrentCoach());
           const layer = layout.layers.find(item => item.id === target.dataset.overlayId);
-          if (target.dataset.overlayId === "qr" || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[target.dataset.overlayId])) return;
+          if (target.dataset.overlayId === "qr" || layer?.locked === true || !(layer?.type === "image" || layer?.type === "photo" || ARTWORK_SLICES[target.dataset.overlayId])) return;
           event.preventDefault();
           target.classList.add("is-image-drop-target");
           event.dataTransfer.dropEffect = "copy";
@@ -3469,7 +3667,7 @@ export function initApp(config = {}) {
         event.stopPropagation();
         if (selectedCertificateUploadId) {
           const targetLayer = getReportLayout(getCurrentCoach()).layers.find(layer => layer.id === item.dataset.overlayId);
-          if (targetLayer?.type === "image" && targetLayer.locked !== true && item.dataset.overlayId !== "qr") {
+          if ((targetLayer?.type === "image" || targetLayer?.type === "photo") && targetLayer.locked !== true && item.dataset.overlayId !== "qr") {
             const assetId = selectedCertificateUploadId;
             selectedCertificateUploadId = "";
             applyCertificateUpload(assetId, item.dataset.overlayId);
@@ -3495,7 +3693,7 @@ export function initApp(config = {}) {
         }
       });
       document.querySelectorAll("[data-layer-select]").forEach(item => item.addEventListener("click", () => { selectedReportOverlay = item.dataset.layerSelect; render(); }));
-      document.querySelectorAll("[data-certificate-tool]").forEach(item => item.addEventListener("click", () => {
+      document.querySelectorAll(".certificate-tool-button[data-certificate-tool]").forEach(item => item.addEventListener("click", () => {
         certificateEditorTool = item.dataset.certificateTool;
         render();
       }));
@@ -3520,6 +3718,7 @@ export function initApp(config = {}) {
         beginCertificateTextEditing(item);
       }));
       attachCertificateToolbarEvents();
+      attachStudioEvents();
       document.getElementById("hiddenCertificateUpload")?.addEventListener("change", event => {
         const [file] = event.target.files || [];
         if (!file) return;
@@ -3575,6 +3774,9 @@ export function initApp(config = {}) {
     }
 
     function attachCertificateToolbarEvents() {
+      document.querySelectorAll(".certificate-reference-toolbar select, .certificate-reference-toolbar input").forEach(control=>control.addEventListener("mousedown",()=>{if(activeCertificateEditor)activeCertificateEditor.keepDomOnBlur=true;}));
+      document.querySelectorAll(".certificate-reference-toolbar [data-certificate-tool]").forEach(button=>button.addEventListener("click",()=>{certificateEditorTool=button.dataset.certificateTool;render();}));
+      document.querySelectorAll(".certificate-reference-toolbar button, .certificate-reference-toolbar summary").forEach(button=>button.addEventListener("mousedown",event=>event.preventDefault()));
       document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
       document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));
       document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
@@ -3608,7 +3810,7 @@ export function initApp(config = {}) {
       const coach = getCurrentCoach();
       const layout = getReportLayout(coach);
       document.querySelectorAll("[data-overlay-id]").forEach(item => {
-        const selected = item.dataset.overlayId === selectedReportOverlay;
+        const selected = reportLayoutEditing && item.dataset.overlayId === selectedReportOverlay;
         item.classList.toggle("is-selected", selected);
         item.querySelector(".certificate-object-toolbar")?.remove();
         const layer = layout.layers.find(entry => entry.id === item.dataset.overlayId);
@@ -3638,17 +3840,48 @@ export function initApp(config = {}) {
       saveReportLayout(coach);
     }
 
-    async function saveReportLayout(coach) {
-      persist();
-      if (supabase && coach?.id && state.auth.role === "coach") {
-        const savedCoach = await saveCoachRecord(coach).catch(() => null);
-        if (savedCoach) state.coaches = state.coaches.map(item => item.id === savedCoach.id ? savedCoach : item);
+    async function saveReportLayout(coach,options={}) {
+      try {
+        if (isCertificatePreview) await previewLayoutStore("save", coach.reportLayout);
+        else if (supabase && coach?.id && state.auth.role === "coach") {
+          const savedCoach=await saveCoachRecord(coach);
+          state.coaches=state.coaches.map(item=>item.id===savedCoach.id?savedCoach:item);
+          persist();
+        } else persist();
+        if(options.render!==false)render(); return true;
+      } catch(error) { if(options.render!==false)render(); studioToast(error.message || "Your design could not be saved. Please try again."); return false; }
+    }
+
+    async function copyCertificateEditorLayer() {
+      const coach=getCurrentCoach();const layout=getReportLayout(coach);
+      const layer=layout.layers.find(l=>l.id===selectedReportOverlay);const target=layout[selectedReportOverlay]||layer;
+      if(!target||selectedReportOverlay==="qr")return;
+      const data=getReportTemplateData(getCertificateDesignPreviewReport(coach));
+      const values={date:data.session.date,time:data.session.time,centre:data.session.centre,coach:data.session.coachName,whatTaught:data.bullets.whatTaught.join("\n"),beforeCoaching:data.bullets.beforeCoaching.join("\n"),afterTraining:data.bullets.afterTraining.join("\n"),nextLesson:data.bullets.nextLesson.join("\n"),remarks:data.remarksLines.join("\n"),contact:data.centreContact,address:data.address};
+      const id=`custom-${crypto.randomUUID()}`;
+      const copy={...layer,...target,id,name:`${layer?.name||"Element"} copy`,visible:true,locked:false,left:Math.min(100-Number(target.width||10),Number(target.left||0)+2),top:Math.min(100-Number(target.height||4),Number(target.top||0)+2),height:Number(target.height)||4,zIndex:Math.max(...layout.layers.map(l=>Number(l.zIndex)||1),1)+1};
+      if(layout[selectedReportOverlay]||layer?.type?.includes("text")||typeof target.textOverride==="string"){
+        copy.type="text";copy.text=target.textOverride??target.text??values[selectedReportOverlay]??"";delete copy.textOverride;
+      }else{
+        copy.type="image";copy.source=target.source||(selectedReportOverlay==="student-photo"?data.studentPhoto:selectedReportOverlay==="coach-photo"?data.coachPhoto:ARTWORK_SLICES[selectedReportOverlay]?`${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(selectedReportOverlay)}.png?v=1`:"");
+        if(!copy.source)copy.source=`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`;
       }
-      render();
+      layout.layers.push(copy);coach.reportLayout=layout;selectedReportOverlay=id;return saveReportLayout(coach);
+    }
+    async function deleteCertificateEditorLayer() {
+      const coach=getCurrentCoach();const layout=getReportLayout(coach);
+      const layer=layout.layers.find(l=>l.id===selectedReportOverlay);const target=layout[selectedReportOverlay]||layer;
+      if(!target||target.locked)return;
+      if(selectedReportOverlay.startsWith("custom-"))layout.layers=layout.layers.filter(l=>l.id!==selectedReportOverlay);
+      else{target.visible=false;if(layer)layer.visible=false;}
+      coach.reportLayout=layout;selectedReportOverlay="";return saveReportLayout(coach);
     }
 
     function handleAction(event) {
       const action = event.currentTarget.dataset.action;
+      if(action==="simple-copy-layer")return copyCertificateEditorLayer();
+      if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
+      if (action?.startsWith("studio-")) return handleStudioAction(action);
       if (action === "open-centre-onboarding") return openCentreOnboarding();
       if (action === "close-centre-onboarding") return closeCentreOnboarding();
       if (action === "centre-onboarding-continue") return continueCentreOnboarding();
@@ -3758,7 +3991,8 @@ export function initApp(config = {}) {
       if (action === "toggle-report-layout") { reportLayoutEditing = !reportLayoutEditing; return render(); }
       if (action === "reset-report-layout") {
         const coach = getCurrentCoach();
-        coach.reportLayout = normalizeReportLayout();
+        const current=getReportLayout(coach);
+        coach.reportLayout={...defaultStudioLayout(current.baseTemplateId),templateId:current.templateId,designName:current.designName,backgroundSource:current.backgroundSource,qrUrl:current.qrUrl,designs:current.designs,variants:current.variants,uploads:current.uploads};
         return saveReportLayout(coach);
       }
       if (["toggle-certificate-layer", "lower-certificate-layer", "raise-certificate-layer"].includes(action)) {
@@ -4049,6 +4283,7 @@ export function initApp(config = {}) {
 
     function renderReportLayoutToolbar(coach) {
       const reportLayout = getReportLayout(coach);
+      if(state.ui.page==="certificate-design"&&studioView==="editor")return renderCertificateEditorToolbar({layout:reportLayout,selectedId:selectedReportOverlay,escape:escapeHtml});
       const layout = reportLayout[selectedReportOverlay] || (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
       if (!layout) return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
       const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
@@ -4073,7 +4308,7 @@ export function initApp(config = {}) {
       dirtyReportDraftId = draft.id;
       const revision = (draftRevisions.get(draft.id) || 0) + 1;
       draftRevisions.set(draft.id, revision);
-      updateReportSaveStatus("Unsaved changes · saving to Google Drive…");
+      updateReportSaveStatus(isCertificatePreview ? "Preview" : "Unsaved changes · saving to Google Drive…");
       clearTimeout(draftSaveTimer);
       draftSaveTimer = window.setTimeout(() => {
         draftSaveTimer = null;
@@ -4082,7 +4317,7 @@ export function initApp(config = {}) {
         saveReportRecord({ ...current, recordType: "draft" }, { centreId: current.centreId || getReportCentreId() })
           .then(() => {
             if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
-            updateReportSaveStatus("Saved to Google Drive");
+            updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
           })
           .catch(() => {});
       }, 500);
@@ -4095,7 +4330,7 @@ export function initApp(config = {}) {
       dirtyReportDraftId = draft.id;
       const saved = await saveReportRecord({ ...draft, recordType: "draft" }, { centreId: draft.centreId || getReportCentreId() });
       if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
-      updateReportSaveStatus("Saved to Google Drive");
+      updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
       return saved;
     }
 
@@ -4107,6 +4342,10 @@ export function initApp(config = {}) {
 
     async function startReportFlow() {
       if (!state.auth.role || state.auth.role === "dev") return;
+      if (isCertificatePreview) {
+        reportStoreStatus = "ready";
+        return createReportDraft(getCurrentCoach());
+      }
       if (state.auth.role === "admin" && !activeReportCentreId) {
         state.ui.page = "reports";
         await loadReportsFromDrive();
@@ -4162,6 +4401,7 @@ export function initApp(config = {}) {
         status: "Pending",
         summary: blankSummary()
       };
+      ensureDraftCertificateDesign(state.reportDrafts[id]);
       wizardDraftId = id;
       render();
       flushDraftSave(state.reportDrafts[id]).catch(error => {
@@ -4202,7 +4442,7 @@ export function initApp(config = {}) {
       const student = getStudentById(studentId);
       if (!student || student.coachId !== draft.coachId) return;
       draft.studentId = studentId;
-      draft.lessonNumber = student.lessons + 1;
+      draft.lessonNumber = (Number(student.lessons) || 0) + 1;
       render();
       flushDraftSave(draft).catch(error => {
         reportStoreError = error.message || "Unable to save report draft.";
@@ -4253,6 +4493,7 @@ export function initApp(config = {}) {
     }
 
     async function finalizeWizard() {
+      if (reportGenerating) return;
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
       updateWizardDraftFromInputs({ schedule: false });
@@ -4274,15 +4515,21 @@ export function initApp(config = {}) {
         time: draft.time,
         status: "Generated",
         generatedAt: new Date().toISOString(),
+        certificateDesign: structuredClone(ensureDraftCertificateDesign(draft)),
         summary: { ...draft.summary }
       };
       clearTimeout(draftSaveTimer);
       draftSaveTimer = null;
+      reportGenerating = true;
+      document.querySelector('[data-action="wizard-generate"]')?.setAttribute("disabled", "");
       dirtyReportDraftId = draft.id;
       let savedReport;
       try {
+        // A pending draft write must finish before finalization removes it.
+        await reportWriteQueues.get(draft.id);
         savedReport = await saveReportRecord(finalReport, { draftId: draft.id, centreId: draft.centreId || getReportCentreId() });
       } catch {
+        reportGenerating = false;
         render();
         return;
       }
@@ -4290,7 +4537,7 @@ export function initApp(config = {}) {
       delete state.reportDrafts[draft.id];
       dirtyReportDraftId = "";
       const student = getStudentById(draft.studentId);
-      if (student) {
+      if (student && !isCertificatePreview) {
         student.lessons = Math.max(Number(student.lessons) || 0, finalReport.lessonNumber);
         try {
           const savedStudent = await saveStudentRecord(student);
@@ -4300,11 +4547,13 @@ export function initApp(config = {}) {
         }
       }
       wizardDraftId = null;
+      reportGenerating = false;
+      reportLayoutEditing = false;
       state.ui.page = "report-view";
       state.ui.reportViewId = reportId;
       persist();
       render();
-      window.requestAnimationFrame(() => syncReportToDrive(savedReport));
+      if (!isCertificatePreview) window.requestAnimationFrame(() => syncReportToDrive(savedReport));
     }
 
     async function closeWizard() {
@@ -4325,6 +4574,7 @@ export function initApp(config = {}) {
     }
 
     function openReportView(reportId) {
+      reportLayoutEditing = false;
       state.ui.page = "report-view";
       state.ui.reportViewId = reportId;
       persist();
@@ -4526,6 +4776,13 @@ export function initApp(config = {}) {
         onclone: clonedDoc => {
           const clonedReportTemplate = clonedDoc.querySelector("#reportTemplatePreview");
           if (!clonedReportTemplate) return;
+          clonedReportTemplate.querySelectorAll(".certificate-resize-handle, .certificate-object-toolbar").forEach(control => control.remove());
+          clonedReportTemplate.querySelectorAll(".report-overlay-item").forEach(item => {
+            item.classList.remove("is-selected", "is-editing", "is-text-editing", "is-dragging", "has-object-tools");
+            item.style.outline = "none";
+            item.style.boxShadow = "none";
+          });
+          clonedReportTemplate.querySelectorAll("[contenteditable]").forEach(item => item.removeAttribute("contenteditable"));
           clonedReportTemplate.style.setProperty("container-type", "inline-size");
           clonedReportTemplate.style.setProperty("container-name", "report");
           clonedReportTemplate.style.width = `${exportWidth}px`;
@@ -4749,6 +5006,7 @@ export function initApp(config = {}) {
     }
 
     async function uploadProfileImage(file, kind, recordId) {
+      if (isCertificatePreview) return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("Unable to read this image."));reader.readAsDataURL(file);});
       if (!supabase) throw new Error("Supabase is not configured.");
       if (!file.type.startsWith("image/")) throw new Error("Choose an image file.");
       if (file.size > 5 * 1024 * 1024) throw new Error("Images must be 5 MB or smaller.");
@@ -5043,6 +5301,16 @@ export function initApp(config = {}) {
     }
 
     (async function bootstrap() {
+      if (isCertificatePreview) {
+        let saved; try { saved=await previewLayoutStore("load"); } catch {}
+        state.auth={role:"coach",coachId:"preview-coach",userId:"preview-user",centreId:"",email:""};
+        state.ui.page="certificate-design";
+        state.coaches=[normalizeCoach({id:"preview-coach",name:"Daniel Lim",branch:"JomNittaku Academy",centreContact:"+60 12-345 6789",branchAddress:"JomNittaku Table Tennis Academy",slug:"daniel-lim",reportLayout:saved || defaultStudioLayout("classic")})];
+        state.students=[normalizeStudent({id:"preview-student",name:"Alex Tan",coachId:"preview-coach",lessons:7})];
+        state.reports=[{id:"sample-report",ref:"TRAINING PREVIEW",coachId:"preview-coach",studentId:"preview-student",date:"2026-10-29",time:"10:00",lessonNumber:8,summary:{whatTaught:"Forehand drive technique\nFootwork and recovery",beforeCoaching:"Inconsistent contact point\nDeveloping balance",afterTraining:"Improved shot consistency\nConfident weight transfer",nextLesson:"Backhand control\nServe and receive",remarks:"Great focus and effort throughout the session.\nKeep practising your footwork for 10 minutes daily.\nSmall improvements lead to lasting progress."}}];
+        authReady=true;authInitializing=false;render();return;
+      }
+
       let callbackError = "";
       let driveOAuthCode = "";
       let driveOAuthState = "";

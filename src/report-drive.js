@@ -1,3 +1,5 @@
+import { normalizeCertificateDesign } from "../supabase/functions/_shared/certificate-design.js";
+
 export const REPORT_SCHEMA_VERSION = 1;
 
 const SUMMARY_FIELDS = [
@@ -19,7 +21,8 @@ const REPORT_FIELDS = [
   "time",
   "status",
   "generatedAt",
-  "summary"
+  "summary",
+  "certificateDesign"
 ];
 
 const DRAFT_FIELDS = [
@@ -32,7 +35,8 @@ const DRAFT_FIELDS = [
   "lessonNumber",
   "step",
   "status",
-  "summary"
+  "summary",
+  "certificateDesign"
 ];
 
 function boundedString(value, maxLength, field, required = false) {
@@ -80,6 +84,7 @@ export function normalizeReportRecord(value) {
     ? Number(record.lessonNumber)
     : "";
   record.summary = normalizeSummary(record.summary);
+  if (record.certificateDesign != null) record.certificateDesign = normalizeCertificateDesign(record.certificateDesign);
 
   if (recordType === "draft") {
     record.step = Math.min(4, Math.max(1, Number.parseInt(record.step, 10) || 1));
@@ -105,6 +110,7 @@ export function createDashboardStatePayload(state) {
 
 export function createReportDriveRepository(invoke) {
   if (typeof invoke !== "function") throw new TypeError("A Drive action invoker is required");
+  let templateSupport = null;
 
   return {
     async list({ centreId = "", onWarnings = null } = {}) {
@@ -137,8 +143,22 @@ export function createReportDriveRepository(invoke) {
 
     async save(record, { draftId = "", centreId = "" } = {}) {
       const normalized = normalizeReportRecord(record);
+      if (normalized.certificateDesign) {
+        // Check before writing: an older service silently drops unknown fields.
+        templateSupport ||= Promise.resolve().then(() => invoke({ action: "report-template-capabilities", centre_id: centreId || undefined })).then(result => {
+          if (result?.certificateDesignVersion !== 1) throw new Error("Unsupported template service");
+        }).catch(() => {
+          templateSupport = null;
+          throw new Error("Update the report service to save selected templates.");
+        });
+        await templateSupport;
+      }
       const result = await invoke({ action: "report-save", record: normalized, draft_id: draftId || undefined, centre_id: centreId || undefined });
-      return normalizeReportRecord(result?.record || normalized);
+      const saved = normalizeReportRecord(result?.record || normalized);
+      if (normalized.certificateDesign && JSON.stringify(saved.certificateDesign) !== JSON.stringify(normalized.certificateDesign)) {
+        throw new Error("The report service needs the template update before this report can be generated.");
+      }
+      return saved;
     },
 
     async savePdf(recordId, dataUrl, { centreId = "", coachId = "" } = {}) {

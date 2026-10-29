@@ -7,6 +7,11 @@ const vm = require('node:vm');
 const test = require('node:test');
 const source = fs.readFileSync(path.join(__dirname, '../src/legacy-app.js'), 'utf8');
 const driveSource = fs.readFileSync(path.join(__dirname, '../src/report-drive.js'), 'utf8');
+const designSource = fs.readFileSync(path.join(__dirname, '../supabase/functions/_shared/certificate-design.js'), 'utf8');
+const certEditorSource = fs.readFileSync(path.join(__dirname, '../src/certificate-editor.js'), 'utf8');
+const certTemplatesSource = fs.readFileSync(path.join(__dirname, '../src/certificate-templates.js'), 'utf8');
+const certStudioSource = fs.readFileSync(path.join(__dirname, '../src/certificate-studio.js'), 'utf8');
+const templatePickerSource = fs.readFileSync(path.join(__dirname, '../src/report-template-picker.js'), 'utf8');
 const headings = ['brand-name', 'brand-subtitle', 'brand-tagline', 'report-title-art'];
 
 class Element {
@@ -133,10 +138,20 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     saveReportLayout = async () => { globalThis.__api.saves++; };
     if (globalThis.__skipBootstrap) return;
   `;
-  let code = source.replace(/^import .*;\n/gm, '').replace(/^export /gm, '')
+  const cleanModule = (str) => str.replace(/^import .*;\r?\n/gm, '').replace(/^export (default )?/gm, '');
+  let code = cleanModule(source)
     .replace('    (async function bootstrap() {', hook + '\n    (async function bootstrap() {');
   const context = vm.createContext(sandbox);
-  vm.runInContext(driveSource.replace(/^export /gm, '') + '\n' + code, context);
+  const bundle = [
+    cleanModule(designSource),
+    cleanModule(certTemplatesSource),
+    cleanModule(certEditorSource),
+    cleanModule(certStudioSource),
+    cleanModule(templatePickerSource),
+    cleanModule(driveSource),
+    code
+  ].join('\n;\n');
+  vm.runInContext(bundle, context);
   context.initApp(bootstrap ? { supabaseUrl: 'https://supabase.example.test', supabaseKey: 'publishable-fixture' } : {});
   return { api: context.__api, context, document, app, preview, calls, history, sessionUrls, location,
     get clientOptions() { return clientOptions; },

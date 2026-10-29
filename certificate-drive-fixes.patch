@@ -1,0 +1,1025 @@
+--- a/src/legacy-app.js
++++ b/src/legacy-app.js
+@@ -4,7 +4,13 @@
+ const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
+ const CENTRE_PROFILE_KEY = "centre_profile";
+ 
++export function isGoogleDriveCallback(location) {
++  return location.pathname === "/api/auth/google-drive/callback"
++    || (location.pathname === "/auth/callback" && new URLSearchParams(location.search).has("state"));
++}
++
+ export function initApp(config = {}) {
++    const driveCallback = isGoogleDriveCallback(window.location);
+     const SUPABASE_URL = config.supabaseUrl || "";
+     const SUPABASE_KEY = config.supabaseKey || "";
+     const REPORT_TEMPLATE_SRC = config.reportTemplateSrc || "/Certificate%20Template.jpg?v=4";
+@@ -79,63 +85,36 @@
+       "remark-line-3": { left: 9.7, top: 68.8, width: 80, height: 0.7 },
+       "remark-line-4": { left: 9.7, top: 71, width: 80, height: 0.7 },
+       "remark-line-5": { left: 9.7, top: 73.2, width: 80, height: 0.7 },
+-      "certification-badge": { left: 5, top: 75.8, width: 18, height: 15, locked: true },
++      "certification-badge": { left: 5, top: 75.8, width: 18, height: 15 },
+       "contact-frame": { left: 34.4, top: 76, width: 31.8, height: 14.2 },
+       "contact-title-art": { left: 35.6, top: 77, width: 29.5, height: 2.5 },
+       "address-title-art": { left: 42.5, top: 82.5, width: 15, height: 2.6 },
+       "decor-bottom-left": { left: 1.8, top: 84, width: 23, height: 14 },
+       // Let the template's own footer color show through instead of stacking
+       // another opaque navy band on top of it.
+-      "footer-bar-art": { left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true },
+-      "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5, locked: true }
++      "footer-bar-art": { left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1 },
++      "decor-bottom-right": { left: 80, top: 82, width: 18.5, height: 16.5 }
+     };
+-    // Printed certificate headings, section titles, table dividers and the
+-    // contact box belong to the fixed artwork. Only the report's dynamic
+-    // values, student/coach photos and user-added layers can be repositioned.
+-    // The replaceable brand logo is intentionally not part of this set.
+-    const FIXED_CERTIFICATE_ARTWORK_IDS = new Set(
+-      Object.keys(ARTWORK_SLICES).filter(id => id !== "brand-logo-art")
+-    );
+-    function isFixedCertificateArtwork(id) {
+-      return id === "qr" || FIXED_CERTIFICATE_ARTWORK_IDS.has(id);
+-    }
+     const ARTWORK_EDITABLE_TEXT = {
+       "brand-name": "Dao Sports Method",
+       "brand-subtitle": "TABLE TENNIS TRAINING",
+       "brand-tagline": "Character Transformation thru Sports",
+       "report-title-art": "THIS IS A TRAINING REPORT"
+     };
+-    // The four headings now use one consistently loaded text font for BOTH
+-    // default wording and custom wording. Their older PNGs stay in public/
+-    // for rollback but are not displayed over these editable text headings.
+-    // This avoids a PNG-to-font switch when a coach edits the wording.
+-    function isOriginalHeadingText(id, value) {
+-      if (!Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return false;
+-      const normalized = text => String(text || "").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+-      return normalized(value) === normalized(ARTWORK_EDITABLE_TEXT[id]);
+-    }
+-
+-    function hasCustomHeadingText(layer) {
+-      return Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id)
+-        && typeof layer.textOverride === "string"
+-        && layer.textOverride.trim() !== ""
+-        && !isOriginalHeadingText(layer.id, layer.textOverride);
+-    }
+-
+     const ARTWORK_TEXT_STYLE = {
+       // The default AND customized heading texts use these same loaded fonts.
+-      // Font sizes are in container-width units (cqw), never changed on select.
++      // Font sizes are in container-width units (cqw); selection preserves them.
+       // These are visual approximations, not verified original PNG typefaces.
+       "brand-name": { fontFamily: "Outfit", fontSize: 4.35, color: "#171525", fontWeight: 800, fontStyle: "normal" },
+       "brand-subtitle": { fontFamily: "Montserrat", fontSize: 2.95, color: "#171525", fontWeight: 400, fontStyle: "normal" },
+       "brand-tagline": { fontFamily: "Lato", fontSize: 2.65, color: "#171525", fontWeight: 400, fontStyle: "italic" },
+-      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 5.4, color: "#563719", fontWeight: 700, fontStyle: "normal" }
++      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 5.4, color: "#814b28", fontWeight: 700, fontStyle: "normal" }
+     };
+     const DEFAULT_LAYER_GEOMETRY = {
+       ...ARTWORK_SLICES,
+       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
+       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
+-      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50, locked: true },
++      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50 },
+       "footer-text-overlay": {
+         left: 27,
+         top: 91.55,
+@@ -163,7 +142,12 @@
+       ["nextLesson", "Next lesson", "dynamic-text"], ["remarks", "Coach remarks", "dynamic-text"],
+       ["contact", "Centre contact", "dynamic-text"], ["address", "Address", "dynamic-text"],
+       ["qr", "QR code", "image"], ["footer-text-overlay", "Footer text", "text"]
+-    ].map(([id, name, type], index) => ({ id, name, type, visible: true, zIndex: index + 2, ...(DEFAULT_LAYER_GEOMETRY[id] || {}), locked: isFixedCertificateArtwork(id) }));
++    ].map(([id, name, type], index) => ({
++      id, name, type, visible: true, zIndex: index + 2,
++      ...(DEFAULT_LAYER_GEOMETRY[id] || {}), locked: false,
++      ...(Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)
++        ? { type: "text", text: ARTWORK_EDITABLE_TEXT[id], ...ARTWORK_TEXT_STYLE[id] } : {})
++    }));
+     const RETIRED_CERTIFICATE_LAYER_IDS = new Set([
+       "art-brand", "art-session", "art-summary", "art-remarks", "art-badge", "art-contact", "art-footer",
+       "brand-title", "brand-logo", "report-title", "remarks", "badge", "footer",
+@@ -188,7 +172,7 @@
+       ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+           // Supabase owns the OAuth callback exchange and persists the session
+           // before getSession() is read during bootstrap.
+-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
++          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: !driveCallback }
+         })
+       : null;
+     const reportRepository = supabase
+@@ -239,6 +223,7 @@
+     let reportExportKey = "";
+     let reportStoreStatus = "idle";
+     let reportStoreError = "";
++    let driveConnectionError = "";
+     let reportPdfError = "";
+     let reportLoadPromise = null;
+     let reportLoadedAt = 0;
+@@ -366,47 +351,32 @@
+ 
+     function normalizeReportLayout(saved = {}) {
+       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
+-      const layers = Array.isArray(saved?.layers)
+-        ? DEFAULT_CERTIFICATE_LAYERS.map((defaultLayer, index) => {
+-            const savedLayer = saved.layers.find(layer => layer.id === defaultLayer.id) || {};
+-            // The footer is part of the fixed certificate frame. Do not let a
+-            // prior drag move its opaque strip over the report content.
+-            const fixedFooter = defaultLayer.id === "footer-bar-art" ? {
+-              left: 22, top: 92.1, width: 56, height: 5.9, opacity: 1, locked: true
+-            } : {};
+-            const fixedDecoration = defaultLayer.id === "decor-bottom-right" ? { locked: true } : {};
+-            // Preserve the positions/sizes from existing saved layouts, but
+-            // prevent accidental dragging of the TTAM logo and QR code.
+-            const fixedMarks = ["certification-badge", "qr"].includes(defaultLayer.id)
+-              ? { locked: true } : {};
+-            const headingReset = isOriginalHeadingText(defaultLayer.id, savedLayer.textOverride)
+-              ? { textOverride: undefined } : {};
+-            // Reset previously dragged printed table pieces to the artwork's
+-            // original geometry. Do NOT reset the TTAM badge or QR: retain the
+-            // user's existing saved position and size for those two markers.
+-            const fixedPrintedGeometry = isFixedCertificateArtwork(defaultLayer.id)
+-              && !["certification-badge", "qr"].includes(defaultLayer.id)
+-              ? {
+-                  left: defaultLayer.left, top: defaultLayer.top,
+-                  width: defaultLayer.width, height: defaultLayer.height,
+-                  zIndex: defaultLayer.zIndex
+-                }
+-              : {};
+-            const fixedLayer = isFixedCertificateArtwork(defaultLayer.id);
+-            return {
+-              ...defaultLayer,
+-              ...savedLayer,
+-              ...fixedFooter,
+-              ...fixedDecoration,
+-              ...fixedMarks,
+-              ...headingReset,
+-              ...fixedPrintedGeometry,
+-              locked: fixedLayer ? true : savedLayer.locked === true,
+-              visible: fixedLayer ? true : savedLayer.visible !== false,
+-              zIndex: defaultLayer.id === "footer-bar-art" ? 1 : defaultLayer.id === "qr" ? DEFAULT_LAYER_GEOMETRY.qr.zIndex : fixedLayer ? defaultLayer.zIndex : (Number(savedLayer.zIndex) || index + 2)
+-            };
+-          }).concat(saved.layers.filter(layer => !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id) && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)))
+-        : DEFAULT_CERTIFICATE_LAYERS.map(layer => ({ ...layer }));
++      const legacyLayout = saved?.editorVersion !== 2;
++      const savedLayers = Array.isArray(saved?.layers) ? saved.layers : [];
++      const layers = DEFAULT_CERTIFICATE_LAYERS.map(defaultLayer => {
++        const savedLayer = savedLayers.find(layer => layer.id === defaultLayer.id) || {};
++        const isHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, defaultLayer.id);
++        const merged = {
++          ...defaultLayer, ...savedLayer,
++          // Old versions imposed these locks on every load. Release them on
++          // upgrade; subsequent locks are explicit choices and remain saved.
++          locked: legacyLayout && (ARTWORK_SLICES[defaultLayer.id] || defaultLayer.id === "qr")
++            ? false : savedLayer.locked === true,
++          visible: savedLayer.visible !== false,
++          zIndex: Number(savedLayer.zIndex) || defaultLayer.zIndex
++        };
++        if (isHeading) {
++          merged.type = "text";
++          merged.text = typeof savedLayer.text === "string" ? savedLayer.text
++            : typeof savedLayer.textOverride === "string" ? savedLayer.textOverride
++            : ARTWORK_EDITABLE_TEXT[defaultLayer.id];
++          delete merged.textOverride;
++        }
++        return merged;
++      }).concat(savedLayers.filter(layer =>
++        !DEFAULT_CERTIFICATE_LAYERS.some(defaultLayer => defaultLayer.id === layer.id)
++        && !RETIRED_CERTIFICATE_LAYER_IDS.has(layer.id)
++      ));
+       const uploads = Array.isArray(saved?.uploads)
+         ? saved.uploads.filter(asset => asset && typeof asset.source === "string" && /^https:\/\//i.test(asset.source))
+           .slice(-40)
+@@ -416,7 +386,7 @@
+             source: asset.source.slice(0, 2048)
+           }))
+         : [];
+-      return { ...keyed, layers, uploads };
++      return { ...keyed, layers, uploads, editorVersion: 2 };
+     }
+ 
+     function getReportLayout(coach) {
+@@ -672,7 +642,7 @@
+       }
+       if (state.auth.role === "coach" && state.driveConnection?.status !== "connected") {
+         reportStoreStatus = "disconnected";
+-        reportStoreError = "Connect your Google Drive to view or create your reports.";
++        reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
+         return;
+       }
+       reportStoreStatus = "loading";
+@@ -708,7 +678,14 @@
+       } else if (["centre_admin", "coach"].includes(state.auth.role) && state.auth.centreId) {
+         // Drive tokens never leave the Edge Function. Coaches see their own status;
+         // centre admins only see the IDs of connected coaches.
+-        const result = await invokePrivileged("google-drive-oauth", { action: "connection-status", centre_id: state.auth.centreId });
++        let result;
++        try {
++          result = await invokePrivileged("google-drive-oauth", { action: "connection-status", centre_id: state.auth.centreId });
++          driveConnectionError = "";
++        } catch (error) {
++          driveConnectionError = error.message || "Unable to check your Google Drive connection.";
++          throw error;
++        }
+         if (state.auth.role === "coach") {
+           state.driveConnection = result.connection || null;
+           connectedCoachDriveIds = result.connection?.status === "connected" ? [state.auth.userId] : [];
+@@ -1017,7 +994,7 @@
+       return `
+         <div class="template-report-shell" id="reportTemplatePreview">
+           <img class="template-report-base" src="${REPORT_TEMPLATE_SRC}" alt="Training report template">
+-          <div class="template-report-overlay" aria-hidden="true">
++          <div class="template-report-overlay" aria-hidden="${reportLayoutEditing ? "false" : "true"}">
+             ${renderEditableOverlay("date", escapeHtml(data.session.date), layout.date, "white-space:nowrap;")}
+             ${renderEditableOverlay("time", escapeHtml(data.session.time), layout.time, "white-space:nowrap;")}
+             ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
+@@ -1195,8 +1172,9 @@
+         "qr"
+       ]);
+       return (layout.layers || []).filter(layer => !builtInLayerIds.has(layer.id) && layer.id !== "footer-bar-art" && layer.visible !== false).map(layer => {
++        const isEditableHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id);
+         const slice = ARTWORK_SLICES[layer.id];
+-      if (slice) {
++        if (slice && !isEditableHeading) {
+           const left = Number(layer.left ?? slice.left) || 0;
+           const top = Number(layer.top ?? slice.top) || 0;
+           const width = Number(layer.width ?? slice.width) || slice.width;
+@@ -1204,39 +1182,26 @@
+           // The default TTAM badge is a high-resolution transparent logo. Use
+           // a new cache key only for this layer so updated deployments do not
+           // display the previous certification seal from browser cache.
+-          const assetVersion = layer.id === "certification-badge" ? 2 : (Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id) ? 5 : 1);
++          const assetVersion = layer.id === "certification-badge" ? 2 : 1;
+           const source = layer.source || `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=${assetVersion}`;
+-          // Keep the footer decoration behind all editable text, even when a
+-          // previously saved layout assigned it a higher stacking order.
+-          const zIndex = layer.id === "footer-bar-art" ? 1 : (Number(layer.zIndex) || 2);
++          const zIndex = Number(layer.zIndex) || 2;
+           // Preserve the supplied TTAM logo proportions. The remaining
+           // artwork slices continue to fill their pre-cut template geometry.
+           const objectFit = layer.objectFit || (layer.id === "certification-badge" || layer.source ? "contain" : "fill");
+           const imageTarget = reportLayoutEditing && layer.type === "image" && layer.id !== "qr" && layer.locked !== true
+             ? `data-certificate-image-target tabindex="0" role="button" aria-label="Replace image in ${escapeHtml(layer.name || layer.id)}"`
+             : "";
+-          const objectTools = reportLayoutEditing && selectedReportOverlay === layer.id && layer.id.startsWith("custom-") && layer.type === "text"
+-            ? renderCertificateObjectTools(layer)
+-            : "";
+-          const isEditableHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id);
+-          // All four printed headings are rendered as text even at their default
+-          // wording: this is the same font before, during and after editing.
+-          const hasArtworkTextOverride = isEditableHeading ||
+-            (Object.prototype.hasOwnProperty.call(layer, "textOverride") && typeof layer.textOverride === "string");
+-          const artworkText = isEditableHeading
+-            ? (hasCustomHeadingText(layer) ? String(layer.textOverride) : ARTWORK_EDITABLE_TEXT[layer.id])
+-            : (hasArtworkTextOverride ? String(layer.textOverride) : "");
++          const hasArtworkTextOverride = typeof layer.textOverride === "string";
++          const artworkText = hasArtworkTextOverride ? layer.textOverride : "";
+           const textStyle = ARTWORK_TEXT_STYLE[layer.id] || {};
+-          // Ignore historical saved per-layer font overrides on these headings.
+-          // A name edit must never change the current title font.
+-          const displayFont = isEditableHeading ? textStyle.fontFamily : (layer.fontFamily || textStyle.fontFamily || "Arial");
+-          const displaySize = isEditableHeading ? textStyle.fontSize : (Number(layer.fontSize) || textStyle.fontSize || 2);
+-          const displayWeight = isEditableHeading ? textStyle.fontWeight : (Number(layer.fontWeight) || textStyle.fontWeight || 400);
+-          const displayStyle = isEditableHeading ? textStyle.fontStyle : (layer.fontStyle || textStyle.fontStyle || "normal");
+-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${isEditableHeading ? 'data-editable-heading="true" title="Double-click to edit this heading"' : ""} ${imageTarget} data-overlay-text="true" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(displayFont)};font-size:${displaySize}cqw;color:${escapeHtml(isEditableHeading ? textStyle.color : (layer.color || textStyle.color || "#111111"))};font-weight:${displayWeight};font-style:${escapeHtml(displayStyle)};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
++          const displayFont = layer.fontFamily || textStyle.fontFamily || "Arial";
++          const displaySize = Number(layer.fontSize) || textStyle.fontSize || 2;
++          const displayWeight = Number(layer.fontWeight) || textStyle.fontWeight || 400;
++          const displayStyle = layer.fontStyle || textStyle.fontStyle || "normal";
++          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${hasArtworkTextOverride ? 'data-overlay-text="true"' : ""} style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(displayFont)};font-size:${displaySize}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${displayWeight};font-style:${escapeHtml(displayStyle)};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+         }
+         const isFooterText = layer.id === "footer-text-overlay";
+-        const isCustomText = layer.id.startsWith("custom-") && layer.type === "text";
++        const isCustomText = layer.type === "text" && !isFooterText;
+         const fill = layer.type === "text" ? "transparent" : layer.fill || "transparent";
+         const style = `left:${Number(layer.left) || 0}%;top:${Number(layer.top) || 0}%;width:${Number(layer.width) || 10}%;height:${Number(layer.height) || 8}%;z-index:${Number(layer.zIndex) || 2};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(layer.fontFamily || "Arial")};font-size:${Number(layer.fontSize) || 2}cqw;color:${escapeHtml(layer.color || "#111111")};font-weight:${Number(layer.fontWeight) || 400};font-style:${escapeHtml(layer.fontStyle || "normal")};text-decoration:${escapeHtml(layer.textDecoration || "none")};background:${escapeHtml(fill)};`;
+         const content = layer.type === "image" || layer.type === "photo"
+@@ -1253,7 +1218,7 @@
+         const imageTarget = reportLayoutEditing && layer.type === "image" && layer.locked !== true
+           ? `data-certificate-image-target tabindex="0" role="button" aria-label="Replace image in ${escapeHtml(layer.name || layer.id)}"`
+           : "";
+-        return `<div class="template-custom-layer ${isFooterText ? "template-footer-text" : ""} ${isCustomText && isSelected && reportLayoutEditing ? "has-object-tools" : ""} report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${isSelected ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${layer.type === "text" ? 'data-overlay-text="true"' : ""} style="${style}">${innerContent}${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
++        return `<div class="template-custom-layer ${isEditableHeading ? "template-heading" : ""} ${isFooterText ? "template-footer-text" : ""} ${isCustomText && isSelected && reportLayoutEditing ? "has-object-tools" : ""} report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${isSelected ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${isEditableHeading ? 'data-editable-heading="true" title="Double-click to edit text"' : ""} ${imageTarget} ${layer.type === "text" ? 'data-overlay-text="true"' : ""} style="${style}">${innerContent}${objectTools}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+       }).join("");
+     }
+ 
+@@ -1445,6 +1410,7 @@
+       if (supabase) await supabase.auth.signOut();
+       state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+       loginError = "";
++      driveConnectionError = "";
+       state.ui.page = "overview";
+       state.ui.avatarMenuOpen = false;
+       state.ui.reportViewId = null;
+@@ -1607,7 +1573,7 @@
+     function renderEditableQr(layer) {
+       if (layer?.visible === false) return "";
+       const geometry = layer || DEFAULT_LAYER_GEOMETRY.qr;
+-      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""} is-locked" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links"></div>`;
++      return `<div class="template-report-qr-pocket report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${selectedReportOverlay === "qr" ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="qr" style="left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;right:auto;bottom:auto;z-index:${geometry.zIndex || 50};opacity:${geometry.opacity ?? 1};"><img class="template-report-qr" data-qr-centre src="" alt="Scan to open centre links">${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+     }
+ 
+     function renderSidebar() {
+@@ -2152,14 +2118,12 @@
+           <aside class="certificate-editor-rail">${renderCertificateToolPanel(coach)}</aside>
+           <div class="certificate-editor-main">${renderReportLayoutToolbar(coach)}<main class="certificate-editor-stage">${renderReportTemplate(previewReport)}</main></div>
+         </div>
+-        <div class="certificate-design-note">Printed certificate artwork and its table are fixed. Select dynamic report text or photos to reposition; double-click a top heading to edit its wording. Changes save to your coach account.</div>
++        <div class="certificate-design-note">Drag any certificate element to reposition it. Double-click text to edit it; use the handles to resize. Lock an element only when you want to keep it in place. Changes save to your coach account.</div>
+       </section>`;
+     }
+ 
+     function renderCertificateToolStrip() {
+-      const visibleTools = [["text", "T", "Text"], ["uploads", "+", "Uploads"]];
+-      return `<nav class="certificate-tool-strip" aria-label="Certificate editor tools">${visibleTools.map(([id, icon, label]) => `<button type="button" class="certificate-tool-button ${certificateEditorTool === id ? "is-active" : ""}" data-certificate-tool="${id}" aria-pressed="${certificateEditorTool === id}"><span aria-hidden="true">${icon}</span><small>${label}</small></button>`).join("")}</nav>`;
+-      const tools = [["elements", "□", "Elements"], ["text", "T", "Text"], ["uploads", "+", "Uploads"], ["layers", "≡", "Layers"], ["position", "↕", "Position"]];
++      const tools = [["text", "T", "Text"], ["uploads", "+", "Uploads"], ["layers", "≡", "Layers"], ["position", "↕", "Position"]];
+       return `<nav class="certificate-tool-strip" aria-label="Certificate editor tools">${tools.map(([id, icon, label]) => `<button type="button" class="certificate-tool-button ${certificateEditorTool === id ? "is-active" : ""}" data-certificate-tool="${id}" aria-pressed="${certificateEditorTool === id}"><span aria-hidden="true">${icon}</span><small>${label}</small></button>`).join("")}</nav>`;
+     }
+ 
+@@ -2175,10 +2139,11 @@
+     }
+ 
+     function renderCertificateLayerPanel(coach) {
+-      const layers = getReportLayout(coach).layers || [];
++      const reportLayout = getReportLayout(coach);
++      const layers = reportLayout.layers || [];
+       return `<div class="certificate-layer-panel" aria-label="Certificate layers">
+         <strong>Layers</strong>
+-        <div class="certificate-layer-list">${layers.map(layer => `<button type="button" class="certificate-layer-row ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-layer-select="${escapeHtml(layer.id)}"><span>${escapeHtml(layer.name || layer.id)}</span><small>${layer.locked === true ? "Locked" : escapeHtml(layer.type || "layer")}</small></button>`).join("")}</div>
++        <div class="certificate-layer-list">${layers.map(layer => `<button type="button" class="certificate-layer-row ${selectedReportOverlay === layer.id ? "is-selected" : ""}" data-layer-select="${escapeHtml(layer.id)}"><span>${escapeHtml(layer.name || layer.id)}</span><small>${(reportLayout[layer.id] || layer).locked === true ? "Locked" : escapeHtml(layer.type || "layer")}</small></button>`).join("")}</div>
+       </div>`;
+     }
+ 
+@@ -2220,7 +2185,7 @@
+       const layout = getReportLayout(coach);
+       const asset = layout.uploads.find(item => item.id === assetId);
+       const layer = layout.layers.find(item => item.id === layerId);
+-      if (!asset || isFixedCertificateArtwork(layerId) || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[layerId])) return;
++      if (!asset || layer?.locked === true || !(layer?.type === "image" || ARTWORK_SLICES[layerId])) return;
+       layer.source = asset.source;
+       layer.objectFit = "contain";
+       layer.objectPosition = "center";
+@@ -2232,27 +2197,9 @@
+     }
+ 
+     function editCertificateHeading(id) {
+-      const coach = getCurrentCoach();
+-      if (!coach || !Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return;
+-      const layout = getReportLayout(coach);
+-      const layer = layout.layers.find(entry => entry.id === id);
+-      if (!layer) return;
+-      // The title remains rendered in the same font while the edit prompt is
+-      // open and after the new wording is saved.
+-      const original = ARTWORK_EDITABLE_TEXT[id];
+-      const current = hasCustomHeadingText(layer) ? layer.textOverride : original;
+-      const result = window.prompt("Edit certificate heading (Cancel keeps the current design):", current);
+-      if (result === null) return;
+-      const next = result.trim().slice(0, 120);
+-      if (!next || isOriginalHeadingText(id, next)) {
+-        // Reset to the default wording without switching rendering modes.
+-        delete layer.textOverride;
+-      } else {
+-        // Only the text content changes; typography and box geometry stay put.
+-        layer.textOverride = next;
+-      }
+-      coach.reportLayout = layout;
+-      saveReportLayout(coach);
++      if (!Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, id)) return;
++      const item = [...document.querySelectorAll("[data-overlay-id]")].find(element => element.dataset.overlayId === id);
++      if (item) beginCertificateTextEditing(item);
+     }
+ 
+     function restoreCertificateHeading(id) {
+@@ -2261,22 +2208,14 @@
+       const layout = getReportLayout(coach);
+       const layer = layout.layers.find(entry => entry.id === id);
+       if (!layer) return;
++      if (layer.locked === true) return;
++      layer.text = ARTWORK_EDITABLE_TEXT[id];
+       delete layer.textOverride;
+-      // Remove old web-font overrides left behind by the previous editor.
+-      for (const field of ["fontFamily", "fontSize", "color", "fontWeight", "fontStyle", "textDecoration"]) {
+-        delete layer[field];
+-      }
+       coach.reportLayout = layout;
+       saveReportLayout(coach);
+     }
+ 
+     function beginCertificateTextEditing(item) {
+-      if (Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, item.dataset.overlayId)) {
+-        // Use the edit prompt for headings. It never substitutes a different
+-        // typeface or font-size while the text is being edited.
+-        editCertificateHeading(item.dataset.overlayId);
+-        return;
+-      }
+       const coach = getCurrentCoach();
+       if (!coach || item.dataset.overlayId === "qr" || item.contentEditable === "true" || item.querySelector('[contenteditable="true"]')) return;
+       const fullLayout = getReportLayout(coach);
+@@ -2286,13 +2225,6 @@
+       if (layer && layer.type !== "text" && !layer.type.includes("text") && layer.type !== "image") return;
+       selectedReportOverlay = item.dataset.overlayId;
+       syncCertificateTextToolbar(layout, layer);
+-      // Keep the original full-size bitmap visible while a heading is merely
+-      // highlighted/selected. Replace it with editable text on the first edit.
+-      // This avoids the apparent sudden shrink on double-click.
+-      const preserveHeadingArtwork = layer?.type === "image"
+-        && Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id)
+-        && !Object.prototype.hasOwnProperty.call(layer, "textOverride");
+-      let headingWasChanged = false;
+       let editor = item.querySelector(".template-custom-layer-content") || item;
+       if (layer?.type === "image") {
+         editor = item.querySelector(".template-art-text") || document.createElement("span");
+@@ -2302,13 +2234,7 @@
+         if (!editor.textContent.trim() && !Object.prototype.hasOwnProperty.call(layer, "textOverride")) {
+           editor.textContent = ARTWORK_EDITABLE_TEXT[item.dataset.overlayId] || "";
+         }
+-        if (preserveHeadingArtwork) {
+-          // Transparent, selectable text provides caret/editing without hiding
+-          // the original-size heading until the user actually changes it.
+-          editor.classList.add("is-art-text-ghost");
+-        } else {
+-          item.classList.add("is-art-text-editing");
+-        }
++        item.classList.add("is-art-text-editing");
+       }
+       editor.contentEditable = "true";
+       editor.setAttribute("contenteditable", "true");
+@@ -2341,11 +2267,7 @@
+         const value = item.classList.contains("template-bullet-group")
+           ? [...item.querySelectorAll(".template-bullet span")].map(span => span.textContent.trim()).filter(Boolean).join("\n").slice(0, 500)
+           : (editor.innerText || editor.textContent).trim().slice(0, 500);
+-        if (preserveHeadingArtwork && !headingWasChanged) {
+-          // A selection followed by Escape/blur must not replace the graphic
+-          // with a small text substitute or create a needless override.
+-          editor.hidden = true;
+-        } else if (layer?.type === "text") {
++        if (layer?.type === "text") {
+           layer.text = value;
+         } else {
+           layout.textOverride = value;
+@@ -2372,15 +2294,11 @@
+         }
+       };
+       const onInput = () => {
+-        if (preserveHeadingArtwork && !headingWasChanged) {
+-          headingWasChanged = true;
+-          editor.classList.remove("is-art-text-ghost");
+-          item.classList.add("is-art-text-editing");
+-        }
+         const value = (editor.innerText || editor.textContent).trim().slice(0, 500);
+         if (layer?.type === "text") layer.text = value;
+         else layout.textOverride = value;
+         coach.reportLayout = fullLayout;
++        fitCustomCertificateHeadingText();
+       };
+       activeCertificateEditor = { editor, item, finish };
+       editor.addEventListener("keydown", onKeydown);
+@@ -2863,6 +2781,7 @@
+         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
+           ${isCoach ? `<div class="profile-card centre-settings-card drive-connection-card ${drive.status === "connected" ? "is-connected" : ""}" style="margin-bottom:16px;">
+             <div class="section-title"><div class="drive-heading"><h2>My Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : ""}</div><p>Your report drafts and PDFs are saved to your own Google Drive. Authorized centre admins can access your centre's reports.</p></div>
++            ${driveConnectionError || drive.last_error ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(driveConnectionError || drive.last_error)}</p>` : ""}
+             ${drive.status === "connected" ? `<div class="review-card"><div class="review-row"><strong>Google account</strong><span>${escapeHtml(drive.google_account_email || "Connected")}</span></div><div class="review-row"><strong>Report folder</strong><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(drive.root_folder_name || "Open my Drive folder")}</a></div><div class="review-row"><strong>Last saved</strong><span>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString()) : "Not yet"}</span></div></div>
+               <div class="profile-actions"><button class="secondary-btn" data-action="connect-drive">Reconnect Drive</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your own Google Drive to create and save reports without a centre admin connecting first.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect My Google Drive</span></button>`}
+           </div>` : state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card drive-connection-card" style="margin-bottom:16px;"><div class="section-title"><h2>Coach Google Drives</h2><p>Coaches authorize their own accounts. You do not need to connect a Drive for the centre.</p></div><p class="muted">${connectedCoachDriveIds.length} coach account(s) connected.</p></div>` : ""}
+@@ -3156,21 +3075,27 @@
+     }
+ 
+     function fitCustomCertificateHeadingText() {
+-      for (const span of document.querySelectorAll('.template-art-slice[data-editable-heading="true"] .template-art-text:not([hidden])')) {
++      for (const span of document.querySelectorAll('.template-heading .template-custom-layer-content')) {
+         const box = span.parentElement;
+-        if (!box || !box.clientWidth || !box.clientHeight) continue;
++        if (!box?.clientWidth || !box.clientHeight) continue;
+         const style = window.getComputedStyle(box);
+         const baseSize = Number.parseFloat(style.fontSize) || 18;
+         const ctx = document.createElement("canvas").getContext("2d");
+         if (!ctx) continue;
+         ctx.font = `${style.fontStyle} ${style.fontWeight} ${baseSize}px ${style.fontFamily}`;
+-        const textWidth = ctx.measureText(span.textContent || "").width;
+-        const widthScale = textWidth ? (box.clientWidth * 0.96) / textWidth : 1;
+-        // Preserve the same font/size on every render. Long titles can fit
+-        // horizontally without resizing or moving the certificate elements.
+-        span.style.fontSize = "";
+-        span.style.transformOrigin = "center center";
+-        span.style.transform = widthScale < 1 ? `scaleX(${Math.max(0.5, widthScale).toFixed(3)})` : "";
++        const lines = (span.innerText || span.textContent || "").split("\n");
++        const textWidth = Math.max(...lines.map(line => {
++          const metrics = ctx.measureText(line);
++          return Math.max(metrics.width, (metrics.actualBoundingBoxLeft || 0) + (metrics.actualBoundingBoxRight || 0));
++        }), 1);
++        const widthScale = box.clientWidth * 0.94 / textWidth;
++        const heightScale = box.clientHeight * 0.94 / (baseSize * 1.15 * lines.length);
++        // Fit the complete text, including glyph overhang, inside its box.
++        // Never crop a title by imposing a minimum horizontal scale.
++        // Relative sizing also scales correctly in the full-resolution
++        // html2canvas clone and when the preview changes width.
++        span.style.fontSize = `${Math.min(1, widthScale, heightScale)}em`;
++        span.style.transform = "none";
+       }
+     }
+ 
+@@ -3378,6 +3303,7 @@
+             if (resizing) {
+               item.style.width = `${layout.width}%`;
+               item.style.height = `${layout.height}%`;
++              fitCustomCertificateHeadingText();
+             }
+           };
+           const up = () => {
+@@ -3554,11 +3480,10 @@
+           reportOverlayDragged = false;
+           return;
+         }
+-        if (item.dataset.overlayId === "qr") return;
+         selectedReportOverlay = item.dataset.overlayId;
+         const layer = getReportLayout(getCurrentCoach()).layers.find(entry => entry.id === item.dataset.overlayId);
+         if (reportLayoutEditing && item.dataset.overlayText === "true") {
+-          item.classList.add("is-selected");
++          refreshCertificateSelection();
+           return;
+         }
+         if (reportLayoutEditing) render();
+@@ -3594,33 +3519,7 @@
+         event.stopPropagation();
+         beginCertificateTextEditing(item);
+       }));
+-      document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
+-      document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));
+-      document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
+-      document.querySelector("[data-layout-size]")?.addEventListener("change", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
+-      document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
+-      document.querySelectorAll("[data-font-step]").forEach(button => button.addEventListener("click", () => {
+-        const input = document.querySelector("[data-layout-size]");
+-        if (!input) return;
+-        const nextSize = Math.max(0.6, Math.min(8, (Number(input.value) || 1) + Number(button.dataset.fontStep || 0)));
+-        updateSelectedReportLayout({ fontSize: Number(nextSize.toFixed(1)) });
+-      }));
+-      document.querySelectorAll("[data-text-format]").forEach(button => button.addEventListener("click", () => {
+-        const format = button.dataset.textFormat;
+-        if (format === "bold") {
+-          const coach = getCurrentCoach();
+-          const layout = getReportLayout(coach)[selectedReportOverlay] || (getReportLayout(coach).layers || []).find(layer => layer.id === selectedReportOverlay);
+-          updateSelectedReportLayout({ fontWeight: Number(layout?.fontWeight) >= 600 ? 400 : 700 });
+-        }
+-        if (format === "italic") updateSelectedReportLayout({ fontStyle: button.classList.contains("is-active") ? "normal" : "italic" });
+-        if (format === "underline") updateSelectedReportLayout({ textDecoration: button.classList.contains("is-active") ? "none" : "underline" });
+-      }));
+-      document.querySelectorAll(".certificate-object-toolbar button").forEach(button => button.addEventListener("mousedown", event => event.preventDefault()));
+-      document.querySelector("[data-layout-left]")?.addEventListener("change", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
+-      document.querySelector("[data-layout-top]")?.addEventListener("change", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
+-      document.querySelector("[data-layout-width]")?.addEventListener("change", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
+-      document.querySelector("[data-layout-height]")?.addEventListener("change", event => updateSelectedReportLayout({ height: Number(event.target.value) || 0.5 }));
+-      document.querySelector("[data-layout-opacity]")?.addEventListener("change", event => updateSelectedReportLayout({ opacity: Math.max(0, Math.min(1, Number(event.target.value))) }));
++      attachCertificateToolbarEvents();
+       document.getElementById("hiddenCertificateUpload")?.addEventListener("change", event => {
+         const [file] = event.target.files || [];
+         if (!file) return;
+@@ -3675,6 +3574,53 @@
+       }
+     }
+ 
++    function attachCertificateToolbarEvents() {
++      document.querySelector("[data-layout-field]")?.addEventListener("change", event => { selectedReportOverlay = event.target.value; render(); });
++      document.querySelector("[data-layout-name]")?.addEventListener("change", event => updateSelectedReportLayout({ name: event.target.value.trim().slice(0, 80) || selectedReportOverlay }));
++      document.querySelector("[data-layout-font]")?.addEventListener("change", event => updateSelectedReportLayout({ fontFamily: event.target.value }));
++      document.querySelector("[data-layout-size]")?.addEventListener("change", event => updateSelectedReportLayout({ fontSize: Number(event.target.value) || 1 }));
++      document.querySelector("[data-layout-color]")?.addEventListener("input", event => updateSelectedReportLayout({ color: event.target.value }));
++      document.querySelectorAll("[data-font-step]").forEach(button => button.addEventListener("click", () => {
++        const input = document.querySelector("[data-layout-size]");
++        if (!input) return;
++        const nextSize = Math.max(0.6, Math.min(8, (Number(input.value) || 1) + Number(button.dataset.fontStep || 0)));
++        updateSelectedReportLayout({ fontSize: Number(nextSize.toFixed(1)) });
++      }));
++      document.querySelectorAll("[data-text-format]").forEach(button => button.addEventListener("click", () => {
++        const format = button.dataset.textFormat;
++        if (format === "bold") {
++          const coach = getCurrentCoach();
++          const layout = getReportLayout(coach)[selectedReportOverlay] || (getReportLayout(coach).layers || []).find(layer => layer.id === selectedReportOverlay);
++          updateSelectedReportLayout({ fontWeight: Number(layout?.fontWeight) >= 600 ? 400 : 700 });
++        }
++        if (format === "italic") updateSelectedReportLayout({ fontStyle: button.classList.contains("is-active") ? "normal" : "italic" });
++        if (format === "underline") updateSelectedReportLayout({ textDecoration: button.classList.contains("is-active") ? "none" : "underline" });
++      }));
++      document.querySelectorAll(".certificate-object-toolbar button").forEach(button => button.addEventListener("mousedown", event => event.preventDefault()));
++      document.querySelector("[data-layout-left]")?.addEventListener("change", event => updateSelectedReportLayout({ left: Number(event.target.value) || 0 }));
++      document.querySelector("[data-layout-top]")?.addEventListener("change", event => updateSelectedReportLayout({ top: Number(event.target.value) || 0 }));
++      document.querySelector("[data-layout-width]")?.addEventListener("change", event => updateSelectedReportLayout({ width: Number(event.target.value) || 1 }));
++      document.querySelector("[data-layout-height]")?.addEventListener("change", event => updateSelectedReportLayout({ height: Number(event.target.value) || 0.5 }));
++      document.querySelector("[data-layout-opacity]")?.addEventListener("change", event => updateSelectedReportLayout({ opacity: Math.max(0, Math.min(1, Number(event.target.value))) }));
++    }
++
++    function refreshCertificateSelection() {
++      const coach = getCurrentCoach();
++      const layout = getReportLayout(coach);
++      document.querySelectorAll("[data-overlay-id]").forEach(item => {
++        const selected = item.dataset.overlayId === selectedReportOverlay;
++        item.classList.toggle("is-selected", selected);
++        item.querySelector(".certificate-object-toolbar")?.remove();
++        const layer = layout.layers.find(entry => entry.id === item.dataset.overlayId);
++        const showTools = selected && reportLayoutEditing && layer?.type === "text" && layer.id !== "footer-text-overlay";
++        item.classList.toggle("has-object-tools", showTools);
++        if (showTools) item.insertAdjacentHTML("beforeend", renderCertificateObjectTools(layer));
++      });
++      const toolbar = document.querySelector(".report-layout-toolbar");
++      if (toolbar) toolbar.outerHTML = renderReportLayoutToolbar(coach);
++      attachCertificateToolbarEvents();
++    }
++
+     function updateSelectedReportLayout(changes) {
+       const coach = getCurrentCoach();
+       if (!coach || !selectedReportOverlay) return;
+@@ -3682,7 +3628,6 @@
+       const layerTarget = (coach.reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
+       const target = coach.reportLayout[selectedReportOverlay] || layerTarget;
+       if (!target) return;
+-      if (isFixedCertificateArtwork(selectedReportOverlay)) return;
+       if (Object.prototype.hasOwnProperty.call(changes, "text") && !layerTarget?.type?.includes("text")) {
+         changes = { ...changes, textOverride: changes.text };
+         delete changes.text;
+@@ -3734,13 +3679,17 @@
+       if (action === "connect-drive") return (async () => {
+         if (state.auth.role !== "coach") return;
+         try {
++          driveConnectionError = "";
+           const result = await invokePrivileged("google-drive-oauth", { action: "connect", centre_id: state.auth.centreId });
+-          if (result.authorization_url) window.location.assign(result.authorization_url);
++          if (!result?.authorization_url) throw new Error("Google Drive did not return an authorization URL.");
++          if (requestedCentre?.slug) sessionStorage.setItem("pendingCentreSlug", requestedCentre.slug);
++          window.location.assign(result.authorization_url);
+         } catch (error) {
+           const message = error.message || "Unable to start Google Drive connection.";
+-          alert(/centre admin role required/i.test(message)
+-            ? "The deployed google-drive-oauth Edge Function is outdated. Deploy the index.ts supplied in Part 4 using the Supabase CLI, then try again."
+-            : message);
++          driveConnectionError = /centre admin role required/i.test(message)
++            ? "The Google Drive service still requires a centre admin. Deploy the per-coach google-drive-oauth function and the coach Drive migration, then reconnect from this coach account."
++            : message;
++          render();
+         }
+       })();
+       if (action === "disconnect-drive") return (async () => {
+@@ -3751,7 +3700,7 @@
+           await refreshPrivilegedState();
+           state.reports = []; state.reportDrafts = {}; reportStoreStatus = "disconnected";
+           reportLoadedAt = 0;
+-          reportStoreError = "Connect your Google Drive to view or create your reports.";
++          reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
+           render();
+         } catch (error) { alert(error.message || "Unable to disconnect Google Drive."); }
+       })();
+@@ -3815,8 +3764,7 @@
+       if (["toggle-certificate-layer", "lower-certificate-layer", "raise-certificate-layer"].includes(action)) {
+         const coach = getCurrentCoach();
+         const layout = getReportLayout(coach);
+-        if (isFixedCertificateArtwork(selectedReportOverlay)) return;
+-        const target = layout[selectedReportOverlay] || (layout.layers || []).find(layer => layer.id === selectedReportOverlay);
++          const target = layout[selectedReportOverlay] || (layout.layers || []).find(layer => layer.id === selectedReportOverlay);
+         if (!target) return;
+         if (action === "toggle-certificate-layer") target.visible = target.visible === false;
+         if (action === "lower-certificate-layer") target.zIndex = Math.max(1, Number(target.zIndex || 20) - 1);
+@@ -3827,19 +3775,19 @@
+       if (["toggle-certificate-lock", "duplicate-certificate-layer", "delete-certificate-layer"].includes(action)) {
+         const coach = getCurrentCoach();
+         const layout = getReportLayout(coach);
+-        if (isFixedCertificateArtwork(selectedReportOverlay)) return;
+-        const index = (layout.layers || []).findIndex(layer => layer.id === selectedReportOverlay);
++          const index = (layout.layers || []).findIndex(layer => layer.id === selectedReportOverlay);
+         const selectedLayer = index >= 0 ? layout.layers[index] : null;
+         const target = layout[selectedReportOverlay] || selectedLayer;
+         if (!target) return;
+         if (action === "toggle-certificate-lock") {
+           target.locked = target.locked !== true;
+-        } else if (action === "duplicate-certificate-layer" && selectedLayer?.id.startsWith("custom-")) {
++        } else if (action === "duplicate-certificate-layer" && selectedLayer && (selectedLayer.id.startsWith("custom-") || selectedLayer.type === "text")) {
+           const copy = { ...selectedLayer, id: `custom-${Date.now()}`, name: `${selectedLayer.name || "Layer"} copy`, left: Math.min(100 - (Number(selectedLayer.width) || 10), (Number(selectedLayer.left) || 0) + 2), top: Math.min(100 - (Number(selectedLayer.height) || 8), (Number(selectedLayer.top) || 0) + 2), zIndex: Math.max(...layout.layers.map(layer => Number(layer.zIndex) || 1), 1) + 1, locked: false };
+           layout.layers.push(copy);
+           selectedReportOverlay = copy.id;
+-        } else if (action === "delete-certificate-layer" && selectedLayer?.id.startsWith("custom-")) {
+-          layout.layers.splice(index, 1);
++        } else if (action === "delete-certificate-layer" && selectedLayer && (selectedLayer.id.startsWith("custom-") || selectedLayer.type === "text")) {
++          if (selectedLayer.id.startsWith("custom-")) layout.layers.splice(index, 1);
++          else selectedLayer.visible = false;
+           selectedReportOverlay = layout.layers[0]?.id || "date";
+         } else {
+           return;
+@@ -4102,26 +4050,22 @@
+     function renderReportLayoutToolbar(coach) {
+       const reportLayout = getReportLayout(coach);
+       const layout = reportLayout[selectedReportOverlay] || (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
+-      if (!layout || selectedReportOverlay === "qr") return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
++      if (!layout) return `<div class="report-layout-toolbar is-empty" aria-hidden="true"></div>`;
+       const selectedLayer = (reportLayout.layers || []).find(layer => layer.id === selectedReportOverlay);
+       const isCustomLayer = Boolean(selectedLayer?.id?.startsWith("custom-"));
+       const isHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay);
+-      // Keep the typography fixed for these four headings so changing
+-      // wording never inadvertently changes the typeface.
+-      const isTextLayer = Boolean(!isHeading && (reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || selectedLayer?.type === "image"));
+-      const isFixedArtwork = isFixedCertificateArtwork(selectedReportOverlay);
++      const isTextLayer = Boolean(reportLayout[selectedReportOverlay] || selectedLayer?.type?.includes("text") || typeof selectedLayer?.textOverride === "string");
+       return `<div class="report-layout-toolbar">
+         <label class="toolbar-text toolbar-meta-field"><span>Name</span><input type="text" data-layout-name value="${escapeHtml(layout.name || selectedLayer?.name || selectedReportOverlay)}" aria-label="Element name" maxlength="80"></label>
+-        ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Georgia", "Cinzel Decorative"].map(font => `<option ${(layout.fontFamily || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontFamily) === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${(layout.fontStyle || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontStyle) === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${(layout.textDecoration || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.textDecoration) === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
++        ${isTextLayer ? `<label class="toolbar-font"><span class="sr-only">Font</span><select data-layout-font aria-label="Font family">${["Arial", "Kalam", "Outfit", "Montserrat", "Lato", "Georgia", "Cinzel Decorative"].map(font => `<option ${(layout.fontFamily || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontFamily) === font ? "selected" : ""}>${font}</option>`).join("")}</select></label><div class="toolbar-font-stepper" aria-label="Font size"><button type="button" data-font-step="-0.1" aria-label="Decrease font size">−</button><input type="number" min="0.6" max="8" step="0.1" data-layout-size value="${layout.fontSize ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontSize ?? 2}" aria-label="Font size"><button type="button" data-font-step="0.1" aria-label="Increase font size">+</button></div><label class="toolbar-colour" title="Text colour"><span class="sr-only">Text colour</span><span class="toolbar-colour-letter" aria-hidden="true">A</span><input type="color" data-layout-color value="${layout.color || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.color || "#111111"}"></label><span class="toolbar-format-group" role="group" aria-label="Text formatting"><button type="button" class="toolbar-format-button ${Number(layout.fontWeight ?? ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontWeight) >= 600 ? "is-active" : ""}" data-text-format="bold" aria-label="Bold">B</button><button type="button" class="toolbar-format-button ${(layout.fontStyle || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.fontStyle) === "italic" ? "is-active" : ""}" data-text-format="italic" aria-label="Italic"><em>I</em></button><button type="button" class="toolbar-format-button ${(layout.textDecoration || ARTWORK_TEXT_STYLE[selectedReportOverlay]?.textDecoration) === "underline" ? "is-active" : ""}" data-text-format="underline" aria-label="Underline"><u>U</u></button></span>` : ""}
+         <span class="toolbar-divider" aria-hidden="true"></span>
+         ${Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, selectedReportOverlay) ? '<button type="button" class="certificate-icon-action" data-action="edit-certificate-heading" title="Edit heading text" aria-label="Edit heading text">Edit text</button><button type="button" class="certificate-icon-action" data-action="restore-certificate-heading" title="Reset heading to the default wording" aria-label="Reset heading wording">Reset wording</button>' : ""}
+         <span class="toolbar-divider" aria-hidden="true"></span>
+-        ${isFixedArtwork ? '<span class="certificate-locked-note">Fixed certificate artwork</span>' : `
+-          <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
++        <button class="certificate-icon-action" data-action="lower-certificate-layer" title="Send backward" aria-label="Send backward">↓</button>
+           <button class="certificate-icon-action" data-action="raise-certificate-layer" title="Bring forward" aria-label="Bring forward">↑</button>
+           <button class="certificate-icon-action" data-action="toggle-certificate-lock" title="${layout.locked === true ? "Unlock" : "Lock"}" aria-label="${layout.locked === true ? "Unlock" : "Lock"}">${layout.locked === true ? "Unlock" : "Lock"}</button>
+-          ${isCustomLayer ? `<button type="button" class="certificate-icon-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate">Duplicate</button><button type="button" class="certificate-icon-action is-danger" data-action="delete-certificate-layer" title="Delete" aria-label="Delete">Delete</button>` : ""}
+-          <button class="certificate-icon-action" data-action="toggle-certificate-layer">${layout.visible === false ? "Show" : "Hide"}</button>`}
++          ${isCustomLayer || isHeading ? `<button type="button" class="certificate-icon-action" data-action="duplicate-certificate-layer" title="Duplicate" aria-label="Duplicate">Duplicate</button><button type="button" class="certificate-icon-action is-danger" data-action="delete-certificate-layer" title="Delete" aria-label="Delete">Delete</button>` : ""}
++          <button class="certificate-icon-action" data-action="toggle-certificate-layer">${layout.visible === false ? "Show" : "Hide"}</button>
+       </div>`;
+     }
+ 
+@@ -5116,21 +5060,19 @@
+       if (supabase && (window.location.pathname === "/auth/callback" || isDriveCallbackPath)) {
+         const callbackParams = new URLSearchParams(window.location.search);
+         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
+-        driveOAuthCode = callbackParams.get("code") || "";
+-        driveOAuthState = callbackParams.get("state") || "";
++        driveOAuthCode = driveCallback ? callbackParams.get("code") || "" : "";
++        driveOAuthState = driveCallback ? callbackParams.get("state") || "" : "";
+         const callbackCentreSlug = callbackParams.get("centre") || driveOAuthState.split("|")[1] || sessionStorage.getItem("pendingCentreSlug");
+         if (callbackCentreSlug) {
+           const { data } = await supabase.from("centres").select("id,name,slug,sport,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
+           if (data?.status === "active") {
+             requestedCentre = data;
+             sessionStorage.removeItem("pendingCentreSlug");
+-            if (!driveOAuthCode) window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(data.slug)}`);
++            // Let Supabase consume its own sign-in callback before removing
++            // the code. Drive callbacks are cleaned up after the exchange.
+           } else {
+             centreRouteUnavailable = true;
+-            window.history.replaceState({}, document.title, "/");
+           }
+-        } else {
+-          window.history.replaceState({}, document.title, "/");
+         }
+       }
+       if (!requestedCentre && /^\/centre\/?$/i.test(window.location.pathname)) {
+@@ -5168,18 +5110,29 @@
+             await refreshStudentsFromSupabase();
+             await refreshCoachAccountCount();
+             await refreshPrivilegedState().catch(() => {});
+-            if (driveOAuthCode && state.auth.centreId) {
+-              try {
+-                const driveResult = await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: driveOAuthState, centre_id: state.auth.centreId });
+-                // The callback response contains the row written by the Edge
+-                // Function. Apply it immediately so the first post-redirect
+-                // render cannot show stale disconnected state.
+-                await refreshPrivilegedState();
+-                if (driveResult?.connection) state.driveConnection = driveResult.connection;
+-                if (requestedCentre?.slug) window.history.replaceState({}, document.title, `/centre/${encodeURIComponent(requestedCentre.slug)}`);
+-              } catch (error) {
+-                callbackError = error.message || "Unable to connect Google Drive.";
++            if (driveCallback) {
++              if (!callbackError) {
++                try {
++                  if (!driveOAuthCode || !driveOAuthState) throw new Error("Google Drive authorization is incomplete. Please reconnect your account.");
++                  if (state.auth.role !== "coach" || !state.auth.centreId) throw new Error("Sign in to the coach account that started this Google Drive connection, then reconnect.");
++                  const driveResult = await invokePrivileged("google-drive-oauth", { action: "callback", code: driveOAuthCode, state: driveOAuthState, centre_id: state.auth.centreId });
++                  // The callback's saved row is authoritative. A subsequent
++                  // status-read failure must not erase a successful connection.
++                  if (driveResult?.connection) state.driveConnection = driveResult.connection;
++                  else await refreshPrivilegedState();
++                  reportLoadedAt = 0;
++                  reportStoreStatus = "idle";
++                } catch (error) {
++                  callbackError = error.message || "Unable to connect Google Drive.";
++                }
+               }
++              driveConnectionError = callbackError;
++              if (state.auth.role === "coach") state.ui.page = "centre-settings";
++            }
++            if (window.location.pathname === "/auth/callback" || isDriveCallbackPath) {
++              window.history.replaceState({}, document.title, requestedCentre?.slug
++                ? `/centre/${encodeURIComponent(requestedCentre.slug)}` : "/");
++              sessionStorage.removeItem("pendingCentreSlug");
+             }
+             await loadReportsFromDrive();
+             state.centreProfile = await loadPublicCentreProfile();
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -1911,41 +1911,27 @@
+     .template-art-slice img { display:block; width:100%; height:100%; object-fit:fill; pointer-events:none; }
+     .template-art-slice img[hidden] { display:none !important; }
+     .template-art-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:2%; box-sizing:border-box; overflow:hidden; color:inherit; font:inherit; line-height:1.1; text-align:center; white-space:pre-wrap; overflow-wrap:anywhere; background:transparent; outline:1px dashed rgba(124,58,237,.5); }
+-    /* Default and edited headings are rendered identically as browser text.
+-       Selection changes only the box outline, never the title typography. */
+-    .template-art-slice[data-editable-heading="true"] .template-art-text {
+-      padding:0 1%;
+-      white-space:nowrap;
++    /* Headings share the normal inline text-box editor and formatting.
++       The fitter reserves space for the complete first and last glyphs. */
++    .template-heading .template-custom-layer-content {
++      display:flex;
++      align-items:center;
++      justify-content:center;
++      padding:0 2%;
++      white-space:pre;
+       overflow-wrap:normal;
+-      line-height:1.06;
+-      border:0;
+-      outline:0;
+-    }
+-    /* Consistent copper embossed appearance for default and edited title
+-       wording alike. Not a claim of pixel-identical PNG lettering. */
+-    .template-art-slice[data-overlay-id="report-title-art"] .template-art-text:not([hidden]) {
+-      font-family:"Cinzel Decorative", Georgia, serif;
+-      font-weight:700;
++      line-height:1.15;
++      text-align:center;
++      font-family:inherit;
++      font-weight:inherit;
++      font-style:inherit;
++      text-decoration:inherit;
++    }
++    .template-heading[data-overlay-id="report-title-art"] .template-custom-layer-content {
+       font-variant:small-caps;
+-      letter-spacing:-.035em;
+-      color:#814b28;
+       -webkit-text-stroke:.015em #40200e;
+-      text-shadow:
+-        0 -.027em 0 #e8c28a,
+-        0 .029em 0 #3c2113,
++      text-shadow:0 -.027em 0 #e8c28a, 0 .029em 0 #3c2113,
+         .018em .055em .028em rgba(49,25,12,.45);
+-    }
+-    .template-art-slice[data-overlay-id="brand-name"] .template-art-text:not([hidden]) {
+-      font-family:"Outfit", Arial, sans-serif;
+-      letter-spacing:-.012em;
+-    }
+-    .template-art-slice[data-overlay-id="brand-subtitle"] .template-art-text:not([hidden]) {
+-      font-family:"Montserrat", Arial, sans-serif;
+-      letter-spacing:.01em;
+-    }
+-    .template-art-slice[data-overlay-id="brand-tagline"] .template-art-text:not([hidden]) {
+-      font-family:"Lato", Arial, sans-serif;
+-      font-style:italic;
+     }
+     .template-art-text[hidden] { display:none !important; }
+     .template-art-text:not([contenteditable="true"]) { pointer-events:none; }
+@@ -2743,7 +2729,7 @@
+     .dev-centre-logo-test img { display: block; width: 100%; height: 100%; max-width: 58px; max-height: 42px; object-fit: contain; }
+     .dev-centre-logo-preview { display: block; width: 116px; height: 72px; max-width: 100%; object-fit: contain; border: 1px solid #dce2e7; border-radius: 5px; background: #fff; }
+ 
+-/* Part 5: the printed certificate layout is a fixed template. */
++/* Only an explicit user lock prevents moving or resizing a layer. */
+ .certificate-design-page .report-overlay-item.is-locked { cursor: default !important; }
+ .certificate-design-page .report-overlay-item.is-locked:hover { outline: 1px solid rgba(124,58,237,.30); }
+ .certificate-locked-note { display:inline-flex; align-items:center; font-size:.75rem; font-weight:600; color:#64748b; white-space:nowrap; padding:0 8px; }
+--- a/supabase/functions/google-drive-oauth/index.ts
++++ b/supabase/functions/google-drive-oauth/index.ts
+@@ -1,10 +1,14 @@
+ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+ 
+ const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
++// Exposed on every response so a deployed coach-aware function is identifiable.
++const DRIVE_API_VERSION = "coach-v2";
+ const corsHeaders = {
+   "Access-Control-Allow-Origin": "*",
+   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
++  "Access-Control-Allow-Methods": "POST, OPTIONS",
++  "Access-Control-Expose-Headers": "x-dao-drive-api-version",
++  "x-dao-drive-api-version": DRIVE_API_VERSION,
+ };
+ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" } });
+ 
+@@ -252,12 +256,22 @@
+   return String(profile.email).trim().toLowerCase();
+ }
+ 
+-Deno.serve(async (request) => {
++export async function handleDriveRequest(request: Request) {
+   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
++  if (request.method !== "POST") return json({ error: "Use POST for Google Drive actions" }, 405);
++  const authorization = request.headers.get("authorization") || "";
++  const token = /^Bearer\s+(\S+)$/i.exec(authorization)?.[1];
+   if (!token) return json({ error: "Authentication required" }, 401);
+-  const { data: userData } = await admin.auth.getUser(token);
+-  const user = userData.user;
++  // Retain explicit Auth verification even when invoked directly in tests or
++  // from a deployment whose platform settings differ from config.toml.
++  let user;
++  try {
++    const { data, error } = await admin.auth.getUser(token);
++    if (error || !data?.user) return json({ error: "Sign in again before connecting Google Drive" }, 401);
++    user = data.user;
++  } catch {
++    return json({ error: "Unable to verify your sign-in session" }, 503);
++  }
+   const contentLength = Number(request.headers.get("content-length") || 0);
+   if (contentLength > 32 * 1024 * 1024) return json({ error: "Request is too large" }, 413);
+   const metadataCentreId = String(user?.app_metadata?.centre_id || "");
+@@ -588,11 +602,24 @@
+         body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }),
+       });
+       const tokens = await response.json();
+-      if (!response.ok || !tokens.access_token || !tokens.refresh_token) return json({ error: "Google token exchange failed. Please reconnect." }, 502);
++      if (!response.ok || !tokens.access_token) return json({ error: "Google token exchange failed. Please reconnect." }, 502);
+       const accountEmail = await driveAccountEmail(tokens.access_token);
+       const { data: existing } = await admin.from("coach_drive_connections")
+-        .select("google_account_email,root_folder_id,root_folder_name,root_folder_url")
++        .select("google_account_email,root_folder_id,root_folder_name,root_folder_url,encrypted_refresh_token")
+         .eq("coach_id", user.id).maybeSingle();
++      // Google may omit a new refresh token on a repeat authorization. Reuse
++      // the stored token only after verifying it is the SAME Google account.
++      let sealed = "";
++      if (typeof tokens.refresh_token === "string" && tokens.refresh_token) {
++        const key = await crypto.subtle.importKey("raw", Uint8Array.from(atob(encryptionKey), c => c.charCodeAt(0)), "AES-GCM", false, ["encrypt"]);
++        const iv = crypto.getRandomValues(new Uint8Array(12));
++        const sealedBytes = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(tokens.refresh_token)));
++        sealed = `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...sealedBytes))}`;
++      } else if (existing?.google_account_email?.toLowerCase() === accountEmail && existing.encrypted_refresh_token) {
++        sealed = existing.encrypted_refresh_token;
++      } else {
++        return json({ error: "Google did not grant offline access. Reconnect and approve the requested access." }, 409);
++      }
+       const { data: coach } = await admin.from("coaches").select("name").eq("id", user.id).maybeSingle();
+       const folderName = `Dao Sports Method - ${centre.name} - ${coach?.name || "Coach"}`.slice(0, 180);
+       let rootFolderId = "";
+@@ -616,10 +643,6 @@
+         rootFolderId = String(folder.id);
+         rootFolderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(rootFolderId)}`;
+       }
+-      const key = await crypto.subtle.importKey("raw", Uint8Array.from(atob(encryptionKey), c => c.charCodeAt(0)), "AES-GCM", false, ["encrypt"]);
+-      const iv = crypto.getRandomValues(new Uint8Array(12));
+-      const sealedBytes = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(tokens.refresh_token)));
+-      const sealed = `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...sealedBytes))}`;
+       const { data: connection, error: connectionError } = await admin.from("coach_drive_connections")
+         .upsert({ coach_id: user.id, centre_id: centreId, google_account_email: accountEmail,
+           root_folder_id: rootFolderId, root_folder_url: rootFolderUrl, root_folder_name: rootFolderName,
+@@ -636,7 +659,9 @@
+   if (action !== "connect") return json({ error: "Unknown coach Drive action" }, 400);
+   const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+   const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
+-  if (!clientId || !redirectUri) return json({ error: "Drive OAuth is not configured" }, 503);
++  if (!clientId || !redirectUri || !Deno.env.get("GOOGLE_CLIENT_SECRET") || !Deno.env.get("DRIVE_TOKEN_ENCRYPTION_KEY")) {
++    return json({ error: "Drive OAuth is not configured" }, 503);
++  }
+   const { data: centre, error: centreError } = await admin.from("centres")
+     .select("slug,status").eq("id", centreId).maybeSingle();
+   if (centreError || !centre || centre.status !== "active" || !centre.slug) return json({ error: "Centre is unavailable" }, 403);
+@@ -654,4 +679,6 @@
+   authorizationUrl.searchParams.set("scope", "https://www.googleapis.com/auth/drive.file openid email");
+   authorizationUrl.searchParams.set("state", `${centreId}|${centre.slug}|${nonce}`);
+   return json({ authorization_url: authorizationUrl.toString() });
+-});
++}
++
++Deno.serve(handleDriveRequest);
+--- a/vercel.json
++++ b/vercel.json
+@@ -1,11 +1,29 @@
+ {
+   "framework": "vite",
+   "rewrites": [
+-    { "source": "/api/auth/google-drive/callback", "destination": "/auth/callback" },
+-    { "source": "/auth/callback", "destination": "/index.html" },
+-    { "source": "/centre", "destination": "/index.html" },
+-    { "source": "/centre/", "destination": "/index.html" },
+-    { "source": "/centre/:slug", "destination": "/index.html" },
+-    { "source": "/coach/:slug", "destination": "/index.html" }
++    {
++      "source": "/api/auth/google-drive/callback",
++      "destination": "/index.html"
++    },
++    {
++      "source": "/auth/callback",
++      "destination": "/index.html"
++    },
++    {
++      "source": "/centre",
++      "destination": "/index.html"
++    },
++    {
++      "source": "/centre/",
++      "destination": "/index.html"
++    },
++    {
++      "source": "/centre/:slug",
++      "destination": "/index.html"
++    },
++    {
++      "source": "/coach/:slug",
++      "destination": "/index.html"
++    }
+   ]
+ }
+--- /dev/null
++++ b/supabase/config.toml
+@@ -0,0 +1,7 @@
++# Local CLI project label. The deploy command explicitly selects the remote project.
++project_id = "dao-sports-method"
++
++[functions.google-drive-oauth]
++enabled = true
++verify_jwt = true
++entrypoint = "./functions/google-drive-oauth/index.ts"

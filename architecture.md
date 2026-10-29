@@ -71,7 +71,7 @@ Vercel rewrites application routes to `index.html` (`vercel.json`), then `legacy
 - `/centre/:slug` - centre-specific login page; after a matching centre account signs in, the same route renders that centre's dashboard
 - `/coach/:slug` - public coach profile
 - `/auth/callback` - OAuth callback processing, including the centre slug carried through centre Google SSO and Google Drive OAuth
-- `/api/auth/google-drive/callback` - Google Drive's configured callback URL; Vercel rewrites it to `/auth/callback` so the SPA can process the code and return to `/centre/:slug`
+- `/api/auth/google-drive/callback` - Google Drive's configured callback URL; Vercel serves `/index.html` directly for this path so the SPA can process the preserved callback URL and return to `/centre/:slug`
 
 There is no route table or router package. Route behavior is implemented inside the bootstrap and render logic.
 
@@ -105,7 +105,7 @@ user interaction
 
 ## Authentication and Roles
 
-Supabase Auth provides email/password and Google OAuth. Sessions are persisted, refreshed, and restored during bootstrap. Centre login pages expose both methods; Google callback context preserves the centre slug.
+Supabase Auth provides email/password and Google OAuth. Sessions are persisted, refreshed, and restored during bootstrap. Centre login pages expose both methods; Google callback context preserves the centre slug. The dedicated Drive callback path and state-bearing `/auth/callback` URLs are identified before creating the Supabase client. Supabase URL-session detection is disabled only for Drive callbacks, so Google Drive authorization codes are exchanged by `google-drive-oauth` and Google sign-in codes remain with Supabase. Callback parameters are removed after processing. Coach Drive failures are visible in Settings, including callback denial and backend role errors.
 
 The frontend resolves these roles:
 
@@ -176,6 +176,8 @@ The browser validates image type and size, uploads through the publishable clien
 
 ## Supabase Edge Functions
 
+`supabase/config.toml` now declares the `google-drive-oauth` entrypoint and keeps platform JWT verification enabled. Its handler additionally verifies each Bearer user token with `admin.auth.getUser()` before database actions. Frontend/Vercel deployments do not deploy Supabase functions; update the named function in the same Supabase project the frontend is configured to call. Every response from this version includes `x-dao-drive-api-version: coach-v2` to identify the deployed API. Dashboard-based deployments do not need a local config file.
+
 ### `supabase/functions/dev-console`
 
 Privileged internal operations, including:
@@ -197,6 +199,7 @@ Per-coach Google Drive operations, including:
 - generating coach-bound, one-time OAuth state and exchanging callbacks for the originating coach account
 - requesting Drive file and Google identity/email OAuth scopes
 - reusing the managed coach root folder when reconnecting the same verified account, or creating a new folder for a different account
+- retaining an existing encrypted refresh token on repeat authorization only when Google verifies the same account and does not return a replacement token
 - AES-GCM encryption of refresh tokens in service-role-only `coach_drive_connections`
 - coach self-service connection status and disconnect, and centre-admin view of connected coach IDs
 - aggregating coach-scoped Drive JSON reports for their centre and trusted global admins
@@ -225,7 +228,7 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 2. The selected coach must have independently connected Google Drive. Their draft is saved to **that coach's** Drive and held in memory while the wizard is open. The centre ID is request context and is not stored in canonical report content.
 3. Wizard edits are debounced to Drive; step changes and close flush pending edits first.
 4. Finalization writes the canonical JSON report to Drive before moving it into in-memory `state.reports`; the student lesson count remains a Supabase profile aggregate.
-5. The report view renders the fixed certificate artwork plus dynamic overlays.
+5. The report view renders certificate layers plus dynamic report overlays at their saved positions.
 6. Layout edits update the coach's `report_layout`.
 
 ### Report export
@@ -235,7 +238,7 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 - The browser downloads PNG or PDF blobs locally.
 - `qrcode` generates coach and centre QR images.
 - Report view can open a WhatsApp share composer with report metadata and the reports route.
-- Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket starts at the template geometry; it and the TTAM certification badge retain their saved position and dimensions and are locked against dragging/resizing.
+- Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket starts at the template geometry. All certificate layers, including printed artwork, the TTAM badge, and the QR code, can be dragged and resized. Locks are optional user choices and persist with the layout.
 
 Google Drive remains the sole durable store for reports, but now records are owned by each coach's connected Google account rather than a shared centre Drive. The Edge Function verifies centre membership and refreshes the corresponding coach token before accessing app-managed files. `coach_drive_connections` stores only connection/control-plane metadata; no report IDs, names, URLs, or content. Old centre-owned reports are not automatically transferred by the per-coach upgrade.
 
@@ -273,6 +276,16 @@ Before handoff, run `pnpm build` (or `npm run build` if the environment only has
 - Do not edit `dist/` or `node_modules/`.
 - Update this document when routes, persistence ownership, roles, Edge Functions, or report generation architecture changes.
 
-## Certificate editor: cumulative Parts 5–7
+## Certificate editor: movable layers and shared text editing
 
-Printed headings, section labels, divider lines, and the contact frame are fixed at their template positions. The four main headings use a consistent editable text rendering for their original and replacement wording (Outfit, Montserrat, Lato Italic, and Cinzel Decorative respectively, loaded through the stylesheet). The original PNG heading layers remain as project assets for rollback but are not displayed for these four headings. These fonts approximate rather than exactly reproduce the font shapes embedded in the source PNG artwork. The TTAM logo is the certification-badge PNG layer, and it and the QR code preserve their saved size/position.
+All certificate layers can be repositioned and resized in Certificate Design, including printed section artwork, dividers, the contact frame, the certification badge, and the QR code. Saved positions, sizes, visibility and stacking order are preserved instead of being reset to template geometry. The background/frame remains the canvas.
+
+Layouts use `editorVersion: 2`. On the first normalization of a legacy layout, the old automatically imposed artwork/QR locks are released. New user locks persist across subsequent normalization and saves. Layer and Position panels remain available to select hidden layers and lock/unlock objects.
+
+The four main headings (Dao Sports Method, Table Tennis Training, Character Transformation thru Sports, and This Is a Training Report) are ordinary `type: "text"` layers. They use the same contenteditable text-box wrapper and object controls as added text. Legacy `textOverride` values migrate to `text`, including deliberately empty wording. Selecting a text box updates its controls without replacing its DOM node, so double-clicks and the text caret remain intact. The toolbar supports font, size, colour, bold, italic and underline for all four headings. Their original PNG assets are retained but not rendered over the editable text.
+
+Heading fitting measures the complete glyph width and line height, reserves space at the edges, and uses a relative `em` scale without a minimum horizontal squeeze. This prevents the leading T from being cropped and keeps fitting proportional when the report is exported at full resolution. The default fonts are Outfit, Montserrat, Lato Italic, and Cinzel Decorative; these approximate the original PNG lettering.
+
+`tests/drive-backend.cjs` adds 11 isolated handler regressions for coach connect, verified sessions, cross-centre denial, public-only connection metadata, encrypted token storage, expired/replayed/concurrent OAuth state, same-account reconnect, account switching, missing configuration and report ownership. It uses Node 24's TypeScript stripping with Supabase/Google mocks.
+
+`tests/regressions.cjs` provides 13 focused, dependency-free Node regressions for layout migration/round-tripping, inline heading edits, formatting, escaping, pointer dragging/resizing, optional locks, title fitting and callback handling. DOM and Supabase behavior are mocked; this does not replace browser QA, a production build, or live Google authorization testing.

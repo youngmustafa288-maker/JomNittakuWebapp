@@ -1,0 +1,7 @@
+# Local CLI project label. The deploy command explicitly selects the remote project.
+project_id = "dao-sports-method"
+
+[functions.google-drive-oauth]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/google-drive-oauth/index.ts"

@@ -1,10 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+// Exposed on every response so a deployed coach-aware function is identifiable.
+const DRIVE_API_VERSION = "coach-v2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Expose-Headers": "x-dao-drive-api-version",
+  "x-dao-drive-api-version": DRIVE_API_VERSION,
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "content-type": "application/json", "cache-control": "no-store" } });
 
@@ -252,12 +256,22 @@ async function driveAccountEmail(accessToken: string) {
   return String(profile.email).trim().toLowerCase();
 }
 
-Deno.serve(async (request) => {
+export async function handleDriveRequest(request: Request) {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (request.method !== "POST") return json({ error: "Use POST for Google Drive actions" }, 405);
+  const authorization = request.headers.get("authorization") || "";
+  const token = /^Bearer\s+(\S+)$/i.exec(authorization)?.[1];
   if (!token) return json({ error: "Authentication required" }, 401);
-  const { data: userData } = await admin.auth.getUser(token);
-  const user = userData.user;
+  // Retain explicit Auth verification even when invoked directly in tests or
+  // from a deployment whose platform settings differ from config.toml.
+  let user;
+  try {
+    const { data, error } = await admin.auth.getUser(token);
+    if (error || !data?.user) return json({ error: "Sign in again before connecting Google Drive" }, 401);
+    user = data.user;
+  } catch {
+    return json({ error: "Unable to verify your sign-in session" }, 503);
+  }
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 32 * 1024 * 1024) return json({ error: "Request is too large" }, 413);
   const metadataCentreId = String(user?.app_metadata?.centre_id || "");
@@ -588,11 +602,24 @@ Deno.serve(async (request) => {
         body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }),
       });
       const tokens = await response.json();
-      if (!response.ok || !tokens.access_token || !tokens.refresh_token) return json({ error: "Google token exchange failed. Please reconnect." }, 502);
+      if (!response.ok || !tokens.access_token) return json({ error: "Google token exchange failed. Please reconnect." }, 502);
       const accountEmail = await driveAccountEmail(tokens.access_token);
       const { data: existing } = await admin.from("coach_drive_connections")
-        .select("google_account_email,root_folder_id,root_folder_name,root_folder_url")
+        .select("google_account_email,root_folder_id,root_folder_name,root_folder_url,encrypted_refresh_token")
         .eq("coach_id", user.id).maybeSingle();
+      // Google may omit a new refresh token on a repeat authorization. Reuse
+      // the stored token only after verifying it is the SAME Google account.
+      let sealed = "";
+      if (typeof tokens.refresh_token === "string" && tokens.refresh_token) {
+        const key = await crypto.subtle.importKey("raw", Uint8Array.from(atob(encryptionKey), c => c.charCodeAt(0)), "AES-GCM", false, ["encrypt"]);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const sealedBytes = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(tokens.refresh_token)));
+        sealed = `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...sealedBytes))}`;
+      } else if (existing?.google_account_email?.toLowerCase() === accountEmail && existing.encrypted_refresh_token) {
+        sealed = existing.encrypted_refresh_token;
+      } else {
+        return json({ error: "Google did not grant offline access. Reconnect and approve the requested access." }, 409);
+      }
       const { data: coach } = await admin.from("coaches").select("name").eq("id", user.id).maybeSingle();
       const folderName = `Dao Sports Method - ${centre.name} - ${coach?.name || "Coach"}`.slice(0, 180);
       let rootFolderId = "";
@@ -616,10 +643,6 @@ Deno.serve(async (request) => {
         rootFolderId = String(folder.id);
         rootFolderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(rootFolderId)}`;
       }
-      const key = await crypto.subtle.importKey("raw", Uint8Array.from(atob(encryptionKey), c => c.charCodeAt(0)), "AES-GCM", false, ["encrypt"]);
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const sealedBytes = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(tokens.refresh_token)));
-      const sealed = `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...sealedBytes))}`;
       const { data: connection, error: connectionError } = await admin.from("coach_drive_connections")
         .upsert({ coach_id: user.id, centre_id: centreId, google_account_email: accountEmail,
           root_folder_id: rootFolderId, root_folder_url: rootFolderUrl, root_folder_name: rootFolderName,
@@ -636,7 +659,9 @@ Deno.serve(async (request) => {
   if (action !== "connect") return json({ error: "Unknown coach Drive action" }, 400);
   const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
   const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
-  if (!clientId || !redirectUri) return json({ error: "Drive OAuth is not configured" }, 503);
+  if (!clientId || !redirectUri || !Deno.env.get("GOOGLE_CLIENT_SECRET") || !Deno.env.get("DRIVE_TOKEN_ENCRYPTION_KEY")) {
+    return json({ error: "Drive OAuth is not configured" }, 503);
+  }
   const { data: centre, error: centreError } = await admin.from("centres")
     .select("slug,status").eq("id", centreId).maybeSingle();
   if (centreError || !centre || centre.status !== "active" || !centre.slug) return json({ error: "Centre is unavailable" }, 403);
@@ -654,4 +679,6 @@ Deno.serve(async (request) => {
   authorizationUrl.searchParams.set("scope", "https://www.googleapis.com/auth/drive.file openid email");
   authorizationUrl.searchParams.set("state", `${centreId}|${centre.slug}|${nonce}`);
   return json({ authorization_url: authorizationUrl.toString() });
-});
+}
+
+Deno.serve(handleDriveRequest);

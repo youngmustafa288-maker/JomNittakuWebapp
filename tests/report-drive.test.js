@@ -84,11 +84,12 @@ test("Drive repository maps list/save/pdf actions through its invoker", async ()
 
   assert.equal((await repository.list({ centreId: "centre-1" })).length, 1);
   assert.equal((await repository.save(report, { draftId: "draft-456", centreId: "centre-1" })).id, report.id);
-  await repository.savePdf(report.id, "data:application/pdf;base64,AA==", { centreId: "centre-1" });
+  await repository.savePdf(report.id, "data:application/pdf;base64,AA==", { centreId: "centre-1", coachId: report.coachId });
   assert.deepEqual(calls.map(call => call.action), ["report-list", "report-save", "report-pdf"]);
   assert.equal(calls[1].draft_id, "draft-456");
   assert.equal(calls[0].centre_id, "centre-1");
   assert.equal(calls[1].centre_id, "centre-1");
   assert.equal(calls[2].centre_id, "centre-1");
+  assert.equal(calls[2].coach_id, report.coachId);
   assert.equal("arbitrary" in calls[1].record, false);
 });

@@ -90,10 +90,12 @@ function fixture({ role = 'coach', config = {}, email = 'coach@google.test', tok
   };
   const context = vm.createContext(sandbox);
   const code = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, '').replace(/^export /gm, ''), { mode: 'strip' });
-  vm.runInContext(code + '\nglobalThis.decryptStoredToken = decryptRefreshToken;', context);
+  vm.runInContext(code + '\nglobalThis.decryptStoredToken = decryptRefreshToken; globalThis.drivePerformance = { mapWithConcurrency, getReportFolders, listReportRecords };', context);
   return {
     tables, env, googleCalls, authCalls, databaseCalls,
     decryptStored: sealed => context.decryptStoredToken(sealed, env.DRIVE_TOKEN_ENCRYPTION_KEY),
+    performance: context.drivePerformance,
+    setFetch: fetcher => { sandbox.fetch = fetcher; },
     request: async (body, { token = 'valid-coach-session', method = 'POST', authorization = null } = {}) => {
       const headers = { 'content-type': 'application/json' };
       if (authorization !== null) headers.authorization = authorization;
@@ -238,4 +240,124 @@ test('CORS preflight is public but Google actions require POST and a verified se
   assert.ok(preflight.headers.get('access-control-allow-methods').includes('POST'));
   assert.equal((await f.request(null, { method: 'GET' })).status, 405);
   assert.equal(f.authCalls.length, 0);
+});
+
+test('bounded workers refill free slots while an earlier coach is slow', async () => {
+  const f = fixture();
+  let releaseSlow;
+  const slow = new Promise(resolve => { releaseSlow = resolve; });
+  const started = [];
+  const pending = f.performance.mapWithConcurrency([0, 1, 2, 3, 4, 5], 4, async id => {
+    started.push(id);
+    if (id === 0) await slow;
+    return id;
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(started, [0, 1, 2, 3, 4, 5]);
+  releaseSlow();
+  assert.deepEqual(Array.from(await pending), [0, 1, 2, 3, 4, 5]);
+});
+
+test('record downloads stay bounded and preserve file identity and ordering', async () => {
+  const f = fixture();
+  const files = Array.from({ length: 19 }, (_, index) => ({ id: `file-${index}`, appProperties: { dsmReportId: `report-${index}` } }));
+  let active = 0, peak = 0;
+  f.setFetch(async url => {
+    if (!String(url).includes('alt=media')) return Response.json({ files });
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setImmediate(resolve));
+    active--;
+    const index = /file-(\d+)/.exec(String(url))[1];
+    return Response.json({ schemaVersion: 1, recordType: 'report', id: `report-${index}`, coachId, studentId: 'student-1', summary: {} });
+  });
+  const records = await f.performance.listReportRecords('access-token', 'records-folder');
+  assert.equal(peak, 6);
+  assert.deepEqual(Array.from(records, record => record.id), files.map(file => file.appProperties.dsmReportId));
+  f.setFetch(async url => String(url).includes('alt=media')
+    ? Response.json({ schemaVersion: 1, recordType: 'report', id: 'report-wrong', coachId, studentId: 'student-1', summary: {} })
+    : Response.json({ files: files.slice(0, 1) }));
+  await assert.rejects(f.performance.listReportRecords('access-token', 'records-folder'), /identity does not match/);
+});
+
+test('list/save folder lookup skips Exports and PDF lookup includes it', async () => {
+  const f = fixture();
+  const folders = [];
+  f.setFetch(async url => {
+    const query = new URL(String(url)).searchParams.get('q');
+    const name = /name = '([^']+)'/.exec(query)[1];
+    folders.push(name);
+    return Response.json({ files: [{ id: `${name}-folder` }] });
+  });
+  const recordsOnly = await f.performance.getReportFolders('access-token', 'root-folder');
+  assert.deepEqual(folders, ['Reports', 'Records']);
+  assert.equal(recordsOnly.exportsId, '');
+  folders.length = 0;
+  const withPdf = await f.performance.getReportFolders('access-token', 'root-folder', true);
+  assert.deepEqual(folders, ['Reports', 'Records', 'Exports']);
+  assert.equal(withPdf.exportsId, 'Exports-folder');
+});
+
+async function hybridFixture() {
+  const f = fixture();
+  await finish(f, await start(f));
+  const files = new Map(), uploads = [];
+  f.setFetch(async (url, options = {}) => {
+    url = new URL(String(url));
+    if (url.hostname === 'oauth2.googleapis.com') return Response.json({ access_token: 'access-token' });
+    if (url.pathname.startsWith('/upload/drive/v3/files')) {
+      const record = JSON.parse(new TextDecoder().decode(options.body).split('\r\n\r\n').at(-1).split('\r\n--')[0]);
+      uploads.push(record);
+      files.set(record.id, record);
+      return Response.json({ id: record.id });
+    }
+    if (url.searchParams.get('alt') === 'media') return Response.json(files.get(decodeURIComponent(url.pathname.split('/').at(-1))));
+    const q = url.searchParams.get('q') || '';
+    const folder = /name = '([^']+)'/.exec(q)?.[1];
+    if (folder) return Response.json({ files: [{ id: folder }] });
+    const id = /key='dsmReportId' and value='([^']+)'/.exec(q)?.[1];
+    const record = files.get(id);
+    return Response.json({ files: record ? [{ id, appProperties: { dsmReportId: id, dsmReportKind: record.recordType } }] : [] });
+  });
+  const record = { schemaVersion: 1, recordType: 'draft', id: 'draft-hybrid', coachId, summary: { remarks: 'First edit' } };
+  const hybrid = { version: 1, actor_id: coachId, root_folder_id: f.tables.coach_drive_connections[0].root_folder_id, base_record: null };
+  const save = (value = record, context = hybrid) => f.request({ action: 'report-save', centre_id: centreId, record: value, hybrid_draft: context });
+  return { ...f, files, uploads, record, hybrid, save };
+}
+
+test('hybrid drafts create once, acknowledge exact retries and compare the saved baseline', async () => {
+  const f = await hybridFixture();
+  const first = await f.save();
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal((await f.save()).status, 200);
+  assert.equal(f.uploads.length, 1, 'lost-response retry must not rewrite the same content');
+  const next = { ...f.record, summary: { remarks: 'Next edit' } };
+  const conflict = await f.save(next);
+  assert.equal(conflict.status, 409);
+  assert.equal(conflict.body.code, 'DRAFT_CONFLICT');
+  assert.equal(f.uploads.length, 1);
+  const updated = await f.save(next, { ...f.hybrid, base_record: first.body.record });
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+  assert.equal(f.uploads.length, 2);
+});
+
+test('hybrid sync refuses another actor, a changed Google account and stale missing drafts', async () => {
+  const f = await hybridFixture();
+  assert.equal((await f.save(f.record, { ...f.hybrid, actor_id: secondCoachId })).status, 403);
+  const changed = await f.save(f.record, { ...f.hybrid, root_folder_id: 'another-account-root' });
+  assert.equal(changed.status, 409);
+  assert.equal(changed.body.code, 'DRIVE_SOURCE_CHANGED');
+  const missing = await f.save(f.record, { ...f.hybrid, base_record: f.record });
+  assert.equal(missing.status, 409);
+  assert.equal(missing.body.code, 'DRAFT_CONFLICT');
+  assert.equal(f.uploads.length, 0);
+});
+
+test('hybrid retries cannot recreate an already finalized draft', async () => {
+  const f = await hybridFixture();
+  f.files.set('report-hybrid', { ...f.record, id: 'report-hybrid', recordType: 'report', studentId: 'student-1' });
+  const response = await f.save();
+  assert.equal(response.status, 409);
+  assert.equal(response.body.code, 'DRAFT_CONFLICT');
+  assert.equal(f.uploads.length, 0);
 });

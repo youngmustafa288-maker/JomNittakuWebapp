@@ -1,77 +1,48 @@
-# Dao Sports Method — certificate and coach Drive fixes
+# Hybrid local saving and Google Drive
 
-The package contains the earlier certificate editor fixes plus a coach-aware Drive function, a new `supabase/config.toml`, and the corrected Vercel callback rewrite. No live deployment has been performed from this session.
+This updated source bundle replaces the earlier Drive performance patch. It merges the hybrid approach into the latest supplied certificate studio.
 
-## Why the coach receives the outdated-function message
+## What the user sees
 
-The old frontend turns the server error `Centre admin role required` into the message mentioning “Part 4.” The attached function already authorizes individual coaches from `centre_memberships` and does not contain that server error. This points to a different/older function still being deployed, or the frontend being configured to call another Supabase project. Replacing frontend files alone cannot change the server's authorization rules.
+- Draft edits save on the device first. Typing debounces for 200 ms; step changes and closing the wizard wait for the local transaction instead of Google Drive.
+- The app clearly distinguishes Saving on this device, Saved on this device / Drive sync pending, and Saved to Google Drive.
+- Cached recent reports can appear while Drive is loading. The cache retains up to 100 synced records and every unsynced draft. A complete online list still shows every remote record.
+- Drive sync runs in the background while the authenticated app is open. It retries pending work, resumes on reconnect/returning to the tab, and offers Sync now.
+- Detected conflicts stay on the device. Save as a separate copy preserves those edits under a new draft ID; Export local drafts downloads pending drafts as JSON.
+- Final report generation waits for the latest draft to sync and for the canonical report save to succeed on Drive. PDF exports retain their existing Drive retry behavior.
 
-The new function keeps coach ownership and centre isolation. Do not change the coach into a centre admin to work around this error.
+## Storage boundaries
 
-## Deploy the Drive function using the Dashboard
+Supabase still stores authentication, memberships, profiles, licensing and student lesson aggregates. Report content is excluded from Supabase dashboard_state.
 
-This route does not require a local `config.toml` or the Supabase CLI.
+Google Drive is the authoritative shared report store. IndexedDB stores device-local cached records and a pending draft outbox. Local entries are separated by Supabase project, user, role and centre. Queued uploads are bound to the coach's verified managed Drive root; a changed Google account cannot silently receive the old outbox.
 
-1. Open the Supabase project used by the deployed website. The supplied `src/main.js` has `vjhjvcvmtfpkoyjxfmxu` as its fallback project reference; existing Vite environment variables or `/app-config.js` may override it. Match the project to the actual endpoint called by the website.
-2. Open **Edge Functions**, select **google-drive-oauth**, and replace its `index.ts` with `supabase/functions/google-drive-oauth/index.ts` from this package. Deploy the update under the same function name.
-3. Keep JWT verification enabled for this signed-in-user endpoint. The function also verifies every user token with Supabase Auth and checks coach membership in the database.
-4. Confirm these existing function secrets are set: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and `DRIVE_TOKEN_ENCRYPTION_KEY`. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supplied by Supabase. Do not change an existing encryption key: stored refresh tokens depend on it.
-5. Confirm the `coach_drive_connections` and `coach_drive_oauth_states` tables exist. If migration `20261026_000018_coach_drive_connections.sql` has not been applied, run the included unchanged migration using your normal migration process or the Supabase SQL editor. Existing earlier migrations must already be present.
-6. In Google Cloud's OAuth client settings, ensure the authorized redirect URI exactly equals `GOOGLE_REDIRECT_URI`. For the supplied production site, the intended callback is `https://jom-nittaku-webapp.vercel.app/api/auth/google-drive/callback`; use your actual deployed origin if different. Enable the Google Drive API. If the OAuth consent app is in testing mode, include the coach's Google account as a test user.
+Each draft has an individual IndexedDB record. Editing does not read or rewrite all cached reports. Transactions, tab leases and revision-aware acknowledgements preserve edits made during an upload. Cache pruning and Clear cached reports never remove pending drafts. Signing out stops sync and hides that account's data, while retaining its local outbox for recovery after signing back into the same account.
 
-Official instructions: [Supabase Dashboard editor](https://supabase.com/docs/guides/functions/quickstart-dashboard), [user-function authentication](https://supabase.com/docs/guides/functions/auth-headers), [Google OAuth callback matching](https://developers.google.com/identity/protocols/oauth2/web-server).
+Local storage is browser-managed and is not separately encrypted. Clearing site data or storage eviction can remove it. Sync or export pending edits before clearing browser data. This is not a full offline application: authentication, first-time page loading, profile/student writes, image uploads and final report generation still need their existing online services. Sync does not continue after closing the app.
 
-## Optional CLI deployment
+The backend compares a draft's last confirmed baseline and preserves detected conflicts. This is a read/compare/write check, not an atomic distributed compare-and-swap; the release does not provide simultaneous collaborative editing guarantees across devices. Live concurrent editing still needs staging verification.
 
-The new configuration is included at `supabase/config.toml`. It selects the function entrypoint and keeps `verify_jwt = true`. Its `project_id` is only a local label; choose the correct remote project explicitly below. If your existing project has a config file after all, merge the `[functions.google-drive-oauth]` block into it.
+If IndexedDB is unavailable, the original Drive-only draft saving path remains. If a local transaction fails (for example, quota exhaustion), the app reports the failure and retains the unsaved-edit guard instead of claiming a successful local save.
 
-From the folder containing `supabase/`, after installing the Supabase CLI:
+## Apply and deploy
 
-```bash
-supabase login
-supabase functions deploy google-drive-oauth --project-ref YOUR_PROJECT_REF --use-api
-```
+The ZIP includes the assembled supplied src/, public/, scripts/, tests/, supabase/, package and entry/configuration files, plus updated architecture.md and changes.patch. The patch is relative to the latest src(2).zip and the original backend/tests/package uploads. Compiled output and installed dependencies are excluded.
 
-Replace `YOUR_PROJECT_REF` with the reference of the project the website actually calls. `--use-api` bundles server-side so Docker is not required. This command deploys only the named function; it does not apply SQL migrations or deploy the Vercel frontend.
+1. Review changes.patch or compare the source with your current project.
+2. Deploy the included google-drive-oauth function and its existing shared certificate-design.js dependency in the same Supabase project as the app BEFORE deploying the frontend. No database migration is required.
+3. Install dependencies, including dev dependencies for builds/tests. fake-indexeddb is test-only.
+4. npm test runs all 87 tests on Node 24. npm run build builds the authenticated app. npm run build:studio builds the isolated certificate preview. Both builds use dist/, so the last build determines its contents.
+5. Keep your existing hosting configuration, especially SPA/auth callback rewrites. The original hosting configuration and dependency lockfile were not supplied; this bundle does not replace them.
+6. Validate on staging: reconnect the existing coach Drive, create/edit a draft, go offline, close/resume, reconnect, verify Sync pending becomes Saved to Drive, test a changed Drive account, and finalize/export a report.
 
-Official reference: [Supabase deploy command](https://supabase.com/docs/reference/cli/supabase-functions-deploy).
-
-## Deploy the frontend
-
-Merge these files into your existing app and redeploy it to Vercel:
-
-- `src/legacy-app.js`
-- `src/styles.css`
-- `vercel.json`
-
-The Drive callback now rewrites directly to `/index.html`, preserving the callback path/query for the SPA. Supabase sign-in codes and Google Drive codes are handled separately. The four headings use ordinary inline text boxes; full-title fitting preserves the leading T. Artwork, text, photos, badge and QR code can be dragged and resized. Prior forced artwork locks are removed once; explicit locks made in the new editor remain saved.
-
-The package also includes the supplied unchanged `package.json`, `index.html`, `src/main.js`, `src/report-drive.js`, certificate background and layer PNGs for reference. Keep your existing runtime configuration, other public assets and lockfile. No replacement `/app-config.js`, production environment file, or guessed lockfile is supplied.
-
-## Verify the deployment
-
-1. Sign in as an individual coach and open **Settings → My Google Drive**.
-2. Click **Connect My Google Drive**. Google should open without a centre-admin rejection.
-3. Authorize that coach's chosen Google account. The callback should return to Settings, show the verified Google account, and mark it connected.
-4. Create a draft and finalize a report; confirm its JSON record and PDF appear in that coach's managed Drive folder.
-5. Reconnect the same Google account and confirm it reuses the original root folder.
-6. In browser developer tools, new function responses include `x-dao-drive-api-version: coach-v2`. If that header is absent, check the actual Supabase project/function being called and the deployed version. Do not share authorization headers or tokens.
-
-## Changes in this backend update
-
-- Individual coaches authorize their own connections through verified database membership, as in the attached per-coach source.
-- Invalid/expired sessions return a clear authentication error; an Auth outage returns a controlled service error.
-- OAuth configuration is checked before creating pending state.
-- A repeat authorization that omits a refresh token can reuse the encrypted token only for the same verified Google account. Switching accounts cannot reuse the previous account's token.
-- Single-use, expiring OAuth state, encrypted token storage, and report ownership checks remain enforced.
+The client requires hybridDraftVersion: 1 before sending local outbox uploads. Older functions leave drafts pending locally and show a service-update error rather than silently discarding source/baseline safeguards. The backend response version header is coach-v4-hybrid-drafts.
 
 ## Validation
 
-```bash
-node tests/regressions.cjs
-node tests/drive-backend.cjs
-```
+- All 87 tests pass, including the original certificate/auth/ownership suites and the new local persistence, cache, conflict and finalization cases.
+- Tests use the actual IndexedDB API through fake-indexeddb, including persistence across new store instances, transactional tab claims, quota errors, upload acknowledgements racing with newer typing, and per-account/centre isolation.
+- Both production app and studio builds pass.
+- Live Google authorization, browser visual QA, real device storage limits and end-to-end Drive/PDF timing have not been verified here.
 
-All 24 isolated checks passed (13 frontend/layout and 11 backend). Backend tests run the actual TypeScript handler using Node 24's built-in TypeScript stripping. Tests mock the DOM, Supabase and Google; they do not prove a live Google authorization succeeds. JavaScript/TypeScript syntax and JSON/TOML parsing also passed.
-
-The production build remains unverified: offline dependency installation failed because the required Vite package metadata is unavailable in this environment. No lockfile was fabricated. Browser layout and live Google/Supabase behavior still need the deployment checks above.
+No production deployment was performed.

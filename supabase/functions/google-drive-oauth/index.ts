@@ -3,7 +3,7 @@ import { normalizeCertificateDesign } from "../_shared/certificate-design.js";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 // Exposed on every response so a deployed coach-aware function is identifiable.
-const DRIVE_API_VERSION = "coach-v3-templates";
+const DRIVE_API_VERSION = "coach-v4-hybrid-drafts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -106,12 +106,12 @@ async function findOrCreateFolder(accessToken: string, parentId: string, name: s
   return String(created.id);
 }
 
-async function getReportFolders(accessToken: string, rootFolderId: string) {
+async function getReportFolders(accessToken: string, rootFolderId: string, includeExports = false) {
   if (!rootFolderId || rootFolderId === "pending") throw new Error("Google Drive root folder is unavailable");
   const reportsId = await findOrCreateFolder(accessToken, rootFolderId, REPORT_FOLDER);
   const [recordsId, exportsId] = await Promise.all([
     findOrCreateFolder(accessToken, reportsId, "Records"),
-    findOrCreateFolder(accessToken, reportsId, "Exports"),
+    includeExports ? findOrCreateFolder(accessToken, reportsId, "Exports") : Promise.resolve(""),
   ]);
   return { recordsId, exportsId };
 }
@@ -166,6 +166,12 @@ function normalizeReportRecord(value: unknown) {
   return record;
 }
 
+function stableRecord(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableRecord).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableRecord(item)}`).join(",")}}`;
+  return JSON.stringify(value) ?? "null";
+}
+
 async function reportFiles(accessToken: string, recordsId: string, recordId: string, recordType?: string) {
   const query = `'${driveQueryValue(recordsId)}' in parents and appProperties has { key='${REPORT_FILE_PROPERTY}' and value='${driveQueryValue(recordId)}' } and trashed = false`;
   const files = await listDriveFiles(accessToken, query, "id,name,mimeType,appProperties,parents");
@@ -197,18 +203,32 @@ async function readDriveJson(accessToken: string, fileId: string) {
   return JSON.parse(text);
 }
 
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+  return results;
+}
+
 async function listReportRecords(accessToken: string, recordsId: string) {
   const files = await listDriveFiles(
     accessToken,
     `'${driveQueryValue(recordsId)}' in parents and mimeType = 'application/json' and trashed = false`,
     "id,name,mimeType,appProperties,parents",
   );
-  return (await Promise.all(files.map(async file => {
+  // Bound reads even when a coach has hundreds of report files. Coach Drives
+  // use four workers below, keeping media requests bounded to 24 per request.
+  return (await mapWithConcurrency(files, 6, async file => {
     if (!file.appProperties?.[REPORT_FILE_PROPERTY]) return null;
     const record = normalizeReportRecord(await readDriveJson(accessToken, String(file.id)));
     if (record.id !== file.appProperties[REPORT_FILE_PROPERTY]) throw new Error("Drive report identity does not match its record");
     return record;
-  }))).filter(Boolean);
+  })).filter(Boolean);
 }
 
 // Only the Edge Function's service-role client can read encrypted tokens.
@@ -315,7 +335,7 @@ export async function handleDriveRequest(request: Request) {
       if (error) throw error;
       const connected = await connectedCoachRows(centreId);
       const approved = new Set(connected.map(item => item.coach_id));
-      return json({ connected_coach_ids: (data || []).map(item => item.coach_id).filter(id => approved.has(id)) });
+      return json({ connected_coach_ids: (data || []).map(item => item.coach_id).filter(id => approved.has(id)), source_roots: Object.fromEntries(connected.map(item => [item.coach_id, item.root_folder_id])) });
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : "Unable to load Drive status" }, 500);
     }
@@ -367,7 +387,7 @@ export async function handleDriveRequest(request: Request) {
       }
       actorRole = membership.role;
     }
-    if (action === "report-template-capabilities") return json({ certificateDesignVersion: 1 });
+    if (action === "report-template-capabilities") return json({ certificateDesignVersion: 1, hybridDraftVersion: 1 });
     if (action === "report-list") {
       try {
         const allConnections = await connectedCoachRows(requestedCentreId);
@@ -376,9 +396,9 @@ export async function handleDriveRequest(request: Request) {
         const results: Record<string, unknown>[] = [];
         const warnings: string[] = [];
         let successfulConnections = 0;
-        // Read a few coach Drives concurrently to avoid one slow account delaying all others.
-        for (let offset = 0; offset < connections.length; offset += 4) {
-          await Promise.all(connections.slice(offset, offset + 4).map(async owner => {
+        // Refill each free slot immediately; a slow coach must not hold the
+        // next batch of accounts until its entire batch has completed.
+        await mapWithConcurrency(connections, 4, async owner => {
             try {
               const { accessToken, recordsId } = await connectionAccess(owner);
               const [records, studentResult] = await Promise.all([
@@ -404,10 +424,9 @@ export async function handleDriveRequest(request: Request) {
               // Do not silently claim a complete view if one coach's account fails.
               warnings.push(`One coach's Drive could not be loaded (${error instanceof Error ? error.message : "unknown error"})`);
             }
-          }));
-        }
+        });
         if (warnings.length && !successfulConnections) return json({ error: warnings.join("; ") }, 502);
-        return json({ records: results, warnings, connected_coach_ids: connections.map(row => row.coach_id) });
+        return json({ records: results, warnings, connected_coach_ids: connections.map(row => row.coach_id), source_roots: Object.fromEntries(connections.map(row => [row.coach_id, row.root_folder_id])) });
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : "Unable to load coach reports" }, 502);
       }
@@ -436,6 +455,15 @@ export async function handleDriveRequest(request: Request) {
     if (!connection || connection.status !== "connected" || !connection.encrypted_refresh_token) {
       return json({ error: "This coach has not connected Google Drive" }, 409);
     }
+    if (body.hybrid_draft) {
+      const hybrid = body.hybrid_draft;
+      if (action !== "report-save" || hybrid.version !== 1 || hybrid.actor_id !== user.id || body.record?.recordType !== "draft") {
+        return json({ error: "Invalid local draft sync context" }, 403);
+      }
+      if (hybrid.root_folder_id !== connection.root_folder_id) {
+        return json({ error: "Drive account changed: save a copy to the current Drive", code: "DRIVE_SOURCE_CHANGED" }, 409);
+      }
+    }
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
     const encryptionKey = Deno.env.get("DRIVE_TOKEN_ENCRYPTION_KEY");
@@ -443,7 +471,7 @@ export async function handleDriveRequest(request: Request) {
     try {
       const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, encryptionKey);
       const tokens = await getDriveAccessToken(refreshToken, clientId, clientSecret);
-      const { recordsId, exportsId } = await getReportFolders(tokens.access_token, connection.root_folder_id);
+      const { recordsId, exportsId } = await getReportFolders(tokens.access_token, connection.root_folder_id, action === "report-pdf");
       if (action === "report-save") {
         let record: Record<string, unknown>;
         try {
@@ -471,12 +499,28 @@ export async function handleDriveRequest(request: Request) {
             return json({ error: "Report student is not part of this centre and coach" }, 403);
           }
         }
+        if (body.hybrid_draft) {
+          const finalized = await reportFiles(tokens.access_token, recordsId, `report-${String(record.id).slice(6)}`, "report");
+          if (finalized) return json({ error: "Draft conflict: this draft was already generated. Save local edits as a copy.", code: "DRAFT_CONFLICT" }, 409);
+        }
         const existing = await reportFiles(tokens.access_token, recordsId, String(record.id), String(record.recordType));
         if (existing) {
           const saved = normalizeReportRecord(await readDriveJson(tokens.access_token, String(existing.id)));
           if (saved.coachId !== record.coachId || (saved.studentId && saved.studentId !== record.studentId)) {
             return json({ error: "Report identifier is already owned by a different record" }, 409);
           }
+          if (body.hybrid_draft) {
+            // A lost response may be retried after the exact content was saved.
+            if (stableRecord(saved) === stableRecord(record)) return json({ record: saved, file_id: existing.id });
+            let base;
+            try { base = body.hybrid_draft.base_record ? normalizeReportRecord(body.hybrid_draft.base_record) : null; }
+            catch { return json({ error: "Invalid draft sync baseline" }, 400); }
+            if (!base || base.id !== record.id || stableRecord(base) !== stableRecord(saved)) {
+              return json({ error: "Draft conflict: Google Drive has a different version. Keep your edits by saving a copy.", code: "DRAFT_CONFLICT" }, 409);
+            }
+          }
+        } else if (body.hybrid_draft?.base_record) {
+          return json({ error: "Draft conflict: the Drive draft was removed or finalized. Save your local edits as a copy.", code: "DRAFT_CONFLICT" }, 409);
         }
         if (record.recordType === "report" && body.draft_id) {
           const draftId = String(body.draft_id);

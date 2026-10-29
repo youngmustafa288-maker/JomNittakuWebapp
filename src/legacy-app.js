@@ -4,6 +4,7 @@ import { renderStudio, previewLayoutStore } from "./certificate-studio.js";
 import { createClient } from "@supabase/supabase-js";
 import { createDashboardStatePayload, createReportDriveRepository, normalizeReportRecord } from "./report-drive.js";
 import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
+import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
 const CENTRE_PROFILE_KEY = "centre_profile";
@@ -182,6 +183,7 @@ export function initApp(config = {}) {
     const reportRepository = supabase
       ? createReportDriveRepository(body => invokePrivileged("google-drive-oauth", body))
       : null;
+    const reportLocalStore = supabase && typeof indexedDB !== "undefined" ? createIndexedDbReportStore(indexedDB) : null;
     let state = createInitialState();
     state.centreProfile = getCentreProfile();
     let wizardDraftId = null;
@@ -232,6 +234,20 @@ export function initApp(config = {}) {
     let reportPdfError = "";
     let reportLoadPromise = null;
     let reportLoadedAt = 0;
+    let reportLoadedScope = "";
+    let reportLoadGeneration = 0;
+    let reportWriteRevision = 0;
+    let hybridWorkspace = null;
+    let hybridScope = "";
+    let hybridCacheLoadedScope = "";
+    let hybridPending = [];
+    let hybridSyncedDraftIds = new Set();
+    let remoteReportDrafts = new Map();
+    let reportUsingLocalCache = false;
+    let hybridLocalError = "";
+    let hybridSyncTimer = null;
+    let coachDriveRoots = {};
+    const REPORT_SESSION_CACHE_MS = 60000;
     let adminReportCentres = [];
     let adminReportCentresLoaded = false;
     let activeReportCentreId = "";
@@ -712,15 +728,16 @@ export function initApp(config = {}) {
 
     async function invokePrivileged(functionName, body) {
       if (!supabase) throw new Error("Supabase is not configured.");
-      const { data, error } = await supabase.functions.invoke(functionName, { body });
+      const { data, error } = await supabase.functions.invoke(functionName, { body, ...(body.hybrid_draft ? { timeout: 45000 } : body.action === "report-template-capabilities" ? { timeout: 15000 } : {}) });
       if (error) {
-        let detail = "";
+        let detail = "", code = "";
         try {
           const response = error.context;
           const payload = response && typeof response.json === "function" ? await response.json() : null;
           detail = payload?.error || "";
+          code = payload?.code || "";
         } catch (parseError) {}
-        throw new Error(detail || error.message || "The server rejected this request.");
+        throw Object.assign(new Error(detail || error.message || "The server rejected this request."), { code });
       }
       // Older Edge Function deployments can return the JSON body as text when
       // their content type is not propagated through the gateway. Normalize it
@@ -733,7 +750,7 @@ export function initApp(config = {}) {
           // Preserve the original response for callers that handle plain text.
         }
       }
-      if (payload?.error) throw new Error(payload.error);
+      if (payload?.error) throw Object.assign(new Error(payload.error), { code: payload.code || "" });
       return payload;
     }
 
@@ -749,6 +766,98 @@ export function initApp(config = {}) {
       return current;
     }
 
+    function resetHybridSession() {
+      clearTimeout(hybridSyncTimer);
+      hybridSyncTimer = null;
+      hybridWorkspace = null;
+      hybridScope = "";
+      hybridCacheLoadedScope = "";
+      hybridPending = [];
+      hybridSyncedDraftIds = new Set();
+      remoteReportDrafts = new Map();
+      reportUsingLocalCache = false;
+      hybridLocalError = "";
+      coachDriveRoots = {};
+    }
+
+    function ensureHybridWorkspace() {
+      if (!reportLocalStore || !state.auth.userId || !getReportCentreId()) return null;
+      const scope = reportWorkspaceKey({ project: SUPABASE_URL, userId: state.auth.userId, role: state.auth.role, centreId: getReportCentreId() });
+      if (hybridWorkspace && hybridScope === scope) return hybridWorkspace;
+      const verifiedRoots = coachDriveRoots;
+      resetHybridSession();
+      coachDriveRoots = verifiedRoots;
+      hybridScope = scope;
+      const workspace = createHybridReportWorkspace({
+        store: reportLocalStore, scope, actorId: state.auth.userId, remote: reportRepository,
+        getRoot: coachId => state.auth.role === "coach"
+          ? state.driveConnection?.status === "connected" && coachId === state.auth.userId ? state.driveConnection.root_folder_id || "" : ""
+          : coachDriveRoots[coachId] || "",
+        isActive: () => hybridWorkspace === workspace && hybridScope === scope && Boolean(state.auth.userId)
+          && scope === reportWorkspaceKey({ project: SUPABASE_URL, userId: state.auth.userId, role: state.auth.role, centreId: getReportCentreId() }),
+        onChange: snapshot => {
+          applyHybridSnapshot(snapshot);
+          updateHybridNotice();
+        },
+      });
+      hybridWorkspace = workspace;
+      return workspace;
+    }
+
+    function reportSaveMessage() {
+      if (isCertificatePreview) return "Preview";
+      if (dirtyReportDraftId === wizardDraftId || draftSaveTimer) return reportLocalStore ? "Saving on this device…" : "Saving to Google Drive…";
+      const pending = hybridPending.find(item => item.id === wizardDraftId);
+      if (pending) return `Saved on this device · ${pending.blocked ? "sync needs attention" : "Drive sync pending"}`;
+      return reportLocalStore && wizardDraftId && !hybridSyncedDraftIds.has(wizardDraftId) ? "Not saved yet" : "Saved to Google Drive";
+    }
+
+    function applyHybridSnapshot(snapshot) {
+      hybridPending = snapshot.pending;
+      const pendingIds = new Set(snapshot.pending.map(item => item.id));
+      hybridSyncedDraftIds = new Set(snapshot.syncedDraftIds || snapshot.records.filter(record => record.recordType === "draft" && !pendingIds.has(record.id)).map(record => record.id));
+    }
+
+    function hybridNoticeContent() {
+      if (!hybridWorkspace && !hybridLocalError) return "";
+      const message = hybridPending.length
+        ? `${hybridPending.length} draft(s) saved on this device. ${navigator.onLine === false ? "Offline. " : ""}Google Drive sync pending.`
+        : reportUsingLocalCache ? "Showing recent reports saved on this device. The cached list may be out of date while Google Drive is unavailable or loading." : "Recent reports are cached on this device. Google Drive holds the permanent copies.";
+      const error = hybridLocalError || hybridPending.find(item => item.error)?.error;
+      return `<p>${escapeHtml(message)}</p>${error ? `<p class="is-error">${escapeHtml(error)}</p>` : ""}<div class="profile-actions">${hybridPending.length ? '<button class="secondary-btn" data-action="retry-local-sync">Sync now</button><button class="ghost-btn" data-action="export-local-drafts">Export local drafts</button>' : '<button class="ghost-btn" data-action="clear-report-cache">Clear cached reports</button>'}${hybridPending.filter(item => item.blocked).slice(0, 5).map(item => `<button class="secondary-btn" data-action="copy-local-draft" data-draft-id="${escapeHtml(item.id)}">Save ${escapeHtml(state.reportDrafts[item.id]?.ref || "draft")} as a separate copy</button>`).join("")}</div>`;
+    }
+
+    function renderHybridNotice() { return `<div class="report-hybrid-notice" data-hybrid-notice role="status">${hybridNoticeContent()}</div>`; }
+
+    function updateHybridNotice() {
+      document.querySelectorAll?.("[data-hybrid-notice]").forEach(element => { element.innerHTML = hybridNoticeContent(); });
+      if (wizardDraftId) updateReportSaveStatus(reportSaveMessage());
+    }
+
+    function scheduleHybridSync(delay = 1000) {
+      clearTimeout(hybridSyncTimer);
+      if (!hybridWorkspace) return;
+      hybridSyncTimer = window.setTimeout(() => syncLocalDrafts(), delay);
+    }
+
+    async function syncLocalDrafts() {
+      const workspace = hybridWorkspace;
+      if (!workspace) return;
+      try {
+        if (navigator.onLine !== false) await workspace.sync();
+      } catch (error) {
+        if (workspace === hybridWorkspace) hybridLocalError = `Local storage: ${error.message}`;
+      }
+      if (workspace !== hybridWorkspace) return;
+      updateHybridNotice();
+      if (hybridPending.some(item => !item.blocked)) scheduleHybridSync(15000);
+    }
+
+    function applyReportRecords(records, centreId) {
+      state.reports = records.filter(record => record.recordType === "report").map(record => ({ ...normalizeReport(record), centreId }));
+      state.reportDrafts = Object.fromEntries(records.filter(record => record.recordType === "draft").map(record => [record.id, { ...normalizeDraft(record), centreId }]));
+    }
+
     function updateReportSaveStatus(text, isError = false) {
       const status = document.getElementById("reportSaveStatus");
       if (!status) return;
@@ -757,12 +866,37 @@ export function initApp(config = {}) {
     }
 
     async function saveReportRecord(record, options = {}) {
+      const saveScope = reportReadScope();
+      const saveGeneration = reportLoadGeneration;
       const draftBeforeSave = record.recordType === "draft" ? JSON.stringify(state.reportDrafts[record.id]) : "";
+      reportWriteRevision += 1;
+      const workspace = !isCertificatePreview && record.recordType === "draft" ? ensureHybridWorkspace() : null;
+      if (workspace) {
+        updateReportSaveStatus("Saving on this device…");
+        try {
+          const saved = await workspace.queue(record, { baseRecord: remoteReportDrafts.get(record.id) || null });
+          if (workspace !== hybridWorkspace) return saved;
+          if (JSON.stringify(state.reportDrafts[record.id]) === draftBeforeSave) state.reportDrafts[saved.id] = { ...normalizeDraft(saved), centreId: options.centreId || getReportCentreId() };
+          hybridLocalError = "";
+          reportStoreStatus = "ready";
+          updateReportSaveStatus(reportSaveMessage());
+          scheduleHybridSync();
+          return saved;
+        } catch (error) {
+          if (workspace === hybridWorkspace) {
+            hybridLocalError = `Not saved on this device: ${error.message}`;
+            updateReportSaveStatus(hybridLocalError, true);
+            updateHybridNotice();
+          }
+          throw error;
+        }
+      }
       reportStoreError = "";
       reportStoreStatus = "saving";
       updateReportSaveStatus(isCertificatePreview ? "Saving preview…" : "Saving to Google Drive…");
       try {
         const saved = await queueReportWrite(record, options);
+        if (saveScope !== reportReadScope() || saveGeneration !== reportLoadGeneration) return saved;
         reportStoreStatus = "ready";
         reportStoreError = "";
         updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
@@ -771,6 +905,7 @@ export function initApp(config = {}) {
         }
         return saved;
       } catch (error) {
+        if (saveScope !== reportReadScope() || saveGeneration !== reportLoadGeneration) throw error;
         reportStoreStatus = "error";
         reportStoreError = error.message || "Unable to save report to Google Drive.";
         updateReportSaveStatus(`Not saved: ${reportStoreError}`, true);
@@ -778,78 +913,142 @@ export function initApp(config = {}) {
       }
     }
 
-    async function loadReportsFromDrive() {
+    function reportReadScope() {
+      return JSON.stringify([state.auth.userId, state.auth.role, getReportCentreId()]);
+    }
+
+    function invalidateReportReads() {
+      // A response from a previous account/workspace must never hydrate this one.
+      reportLoadGeneration += 1;
+      reportLoadPromise = null;
+      reportLoadedAt = 0;
+      reportLoadedScope = "";
+      resetHybridSession();
+      reportGenerating = false;
+    }
+
+    function refreshReportsInBackground(options = {}) {
+      const scope = reportReadScope();
+      const generation = reportLoadGeneration;
+      const pending = loadReportsFromDrive(options);
+      pending.then(() => {
+        if (scope !== reportReadScope() || generation !== reportLoadGeneration) return;
+        // Background completion must not replace profile forms, certificate
+        // editors, or an open wizard/modal while the user is working in them.
+        if (wizardDraftId || onboardingModal || studentEditModal || reportStartOpen) return;
+        if (!["overview", "reports", "report-view"].includes(state.ui.page)) return;
+        scheduleRender();
+      }).catch(() => {});
+      return pending;
+    }
+
+    async function loadReportsFromDrive({ force = false } = {}) {
       const isGlobalAdmin = state.auth.role === "admin";
-      if (!isCentreAccount() && !isGlobalAdmin) return;
+      if (!reportRepository || (!isCentreAccount() && !isGlobalAdmin)) return;
       if (reportLoadPromise) return reportLoadPromise;
-      if (reportStoreStatus === "ready" && reportLoadedAt && Date.now() - reportLoadedAt < 15000) return;
+      // Keep active edits authoritative; a list response may predate a save.
+      if (wizardDraftId || dirtyReportDraftId || draftSaveTimer || reportWriteQueues.size || reportStoreStatus === "saving") return;
+      const scope = reportReadScope();
+      const generation = reportLoadGeneration;
+      const revision = reportWriteRevision;
+      const isCurrent = () => scope === reportReadScope() && generation === reportLoadGeneration;
+      const canApply = () => isCurrent() && revision === reportWriteRevision && !wizardDraftId && !dirtyReportDraftId;
+      let hasSnapshot = reportLoadedScope === scope && Boolean(reportLoadedAt);
+      if (!force && hasSnapshot && Date.now() - reportLoadedAt < REPORT_SESSION_CACHE_MS) return;
+      if (/^\/coach\/[^/]+\/?$/i.test(window.location.pathname)) return;
       reportStoreError = "";
-      state.reports = [];
-      state.reportDrafts = {};
-      if (/^\/coach\/[^/]+\/?$/i.test(window.location.pathname)) {
-        reportStoreStatus = "idle";
-        reportLoadedAt = 0;
-        return;
-      }
-      if (isGlobalAdmin && !adminReportCentresLoaded) {
-        reportStoreStatus = "loading";
+      reportStoreStatus = hasSnapshot ? "ready" : "loading";
+      // Assign the shared promise before any context/list request can finish.
+      // This includes global-admin context discovery, not just the final list.
+      const pending = Promise.resolve().then(async () => {
         try {
-          const result = await invokePrivileged("google-drive-oauth", { action: "admin-report-context" });
-          adminReportCentres = Array.isArray(result.centres) ? result.centres : [];
-          adminReportCentresLoaded = true;
-        } catch (error) {
-          reportStoreStatus = "error";
-          reportStoreError = error.message || "Unable to load report workspaces.";
-          return;
-        }
-      }
-      const centreId = getReportCentreId();
-      if (isGlobalAdmin && !centreId) {
-        reportStoreStatus = "idle";
-        reportLoadedAt = 0;
-        return;
-      }
-      if (isGlobalAdmin && adminReportContextCentreId !== centreId) {
-        reportStoreStatus = "loading";
-        try {
-          adminReportContext = await invokePrivileged("google-drive-oauth", { action: "admin-report-context", centre_id: centreId });
-          adminReportContext.coaches = (adminReportContext.coaches || []).map(normalizeCoach);
-          adminReportContext.students = (adminReportContext.students || []).map(normalizeStudent);
-          connectedCoachDriveIds = Array.isArray(adminReportContext.connected_coach_ids) ? adminReportContext.connected_coach_ids : [];
-          adminReportContextCentreId = centreId;
-        } catch (error) {
-          reportStoreStatus = "error";
-          reportStoreError = error.message || "Unable to load report participants.";
-          return;
-        }
-      }
-      if (state.auth.role === "coach" && state.driveConnection?.status !== "connected") {
-        reportStoreStatus = "disconnected";
-        reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
-        return;
-      }
-      reportStoreStatus = "loading";
-      reportLoadPromise = (async () => {
-        try {
+          if (!isCurrent()) return;
+          const workspace = ensureHybridWorkspace();
+          const explicitlyDisconnected = state.auth.role === "coach" && !driveConnectionError && state.driveConnection?.status !== "connected";
+          if (workspace && !explicitlyDisconnected && hybridCacheLoadedScope !== hybridScope) {
+            try {
+              const local = await workspace.snapshot();
+              if (!canApply()) return;
+              applyHybridSnapshot(local);
+              hybridCacheLoadedScope = hybridScope;
+              if (local.records.length) {
+                applyReportRecords(local.records, getReportCentreId());
+                hasSnapshot = true;
+                reportUsingLocalCache = true;
+                reportStoreStatus = "ready";
+                if (["overview", "reports", "report-view"].includes(state.ui.page)) scheduleRender();
+              }
+              scheduleHybridSync();
+            } catch (error) { hybridLocalError = `Local storage unavailable: ${error.message}`; }
+          }
+          if (isGlobalAdmin && !adminReportCentresLoaded) {
+            const result = await invokePrivileged("google-drive-oauth", { action: "admin-report-context" });
+            if (!isCurrent()) return;
+            adminReportCentres = Array.isArray(result.centres) ? result.centres : [];
+            adminReportCentresLoaded = true;
+          }
+          const centreId = getReportCentreId();
+          if (isGlobalAdmin && !centreId) {
+            reportStoreStatus = "idle";
+            return;
+          }
+          if (isGlobalAdmin && adminReportContextCentreId !== centreId) {
+            const context = await invokePrivileged("google-drive-oauth", { action: "admin-report-context", centre_id: centreId });
+            if (!isCurrent()) return;
+            adminReportContext = {
+              ...context,
+              coaches: (context.coaches || []).map(normalizeCoach),
+              students: (context.students || []).map(normalizeStudent),
+            };
+            connectedCoachDriveIds = Array.isArray(context.connected_coach_ids) ? context.connected_coach_ids : [];
+            adminReportContextCentreId = centreId;
+          }
+          if (state.auth.role === "coach" && state.driveConnection?.status !== "connected") {
+            if (hasSnapshot && driveConnectionError) {
+              reportStoreStatus = "ready";
+              reportStoreError = "Showing saved data from this device. Reconnect to check Google Drive.";
+              return;
+            }
+            state.reports = [];
+            state.reportDrafts = {};
+            reportStoreStatus = "disconnected";
+            reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
+            return;
+          }
           let driveWarnings = [];
-          const records = await reportRepository.list({ centreId, onWarnings: warnings => { driveWarnings = warnings; } });
-          state.reports = records.filter(record => record.recordType === "report").map(record => ({ ...normalizeReport(record), centreId }));
-          state.reportDrafts = Object.fromEntries(records
-            .filter(record => record.recordType === "draft")
-            .map(record => [record.id, { ...normalizeDraft(record), centreId }]));
+          let sources = {};
+          let records = await reportRepository.list({ centreId, onWarnings: warnings => { driveWarnings = warnings; }, onSources: roots => { sources = roots; } });
+          if (!canApply()) return;
+          coachDriveRoots = sources;
+          remoteReportDrafts = new Map(records.filter(record => record.recordType === "draft").map(record => [record.id, record]));
+          if (workspace) {
+            try {
+              const local = await workspace.cache(records, { complete: !driveWarnings.length });
+              if (!canApply()) return;
+              const pendingIds = new Set(local.pending.map(item => item.id));
+              const merged = new Map(records.map(record => [record.id, record]));
+              for (const record of local.records) if (pendingIds.has(record.id) || driveWarnings.length && !merged.has(record.id)) merged.set(record.id, record);
+              records = [...merged.values()];
+              applyHybridSnapshot(local);
+            } catch (error) { hybridLocalError = `Local cache could not be updated: ${error.message}`; }
+          }
+          applyReportRecords(records, centreId);
+          reportUsingLocalCache = Boolean(driveWarnings.length);
           reportStoreStatus = "ready";
           reportStoreError = driveWarnings.length ? `Some coach reports could not be loaded: ${driveWarnings.join("; ")}` : "";
           reportLoadedAt = Date.now();
+          reportLoadedScope = scope;
         } catch (error) {
-          reportStoreStatus = "error";
-          reportLoadedAt = 0;
+          if (!canApply()) return;
+          reportStoreStatus = hasSnapshot ? "ready" : "error";
           reportStoreError = error.message || "Unable to load reports from Google Drive.";
         }
-      })();
+      });
+      reportLoadPromise = pending;
       try {
-        await reportLoadPromise;
+        await pending;
       } finally {
-        reportLoadPromise = null;
+        if (reportLoadPromise === pending) reportLoadPromise = null;
       }
     }
 
@@ -875,6 +1074,7 @@ export function initApp(config = {}) {
         } else {
           state.driveConnection = null;
           connectedCoachDriveIds = Array.isArray(result.connected_coach_ids) ? result.connected_coach_ids : [];
+          coachDriveRoots = result.source_roots || {};
         }
       }
     }
@@ -1248,6 +1448,7 @@ export function initApp(config = {}) {
     }
 
     async function selectAdminReportCentre(centreId) {
+      invalidateReportReads();
       activeReportCentreId = adminReportCentres.some(centre => centre.id === centreId) ? centreId : "";
       adminReportContext = null;
       adminReportContextCentreId = "";
@@ -1255,12 +1456,13 @@ export function initApp(config = {}) {
       state.reports = [];
       state.reportDrafts = {};
       reportStoreError = "";
-      await loadReportsFromDrive();
+      refreshReportsInBackground();
       render();
     }
 
     function handleReportCentreChange(centreId) {
       if (!centreId) {
+        invalidateReportReads();
         activeReportCentreId = "";
         adminReportContext = null;
         adminReportContextCentreId = "";
@@ -1314,8 +1516,8 @@ export function initApp(config = {}) {
       loginError = "";
       render();
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      isSigningIn = false;
       if (error) {
+        isSigningIn = false;
         loginError = error.message || "Unable to sign in.";
         return render();
       }
@@ -1323,6 +1525,7 @@ export function initApp(config = {}) {
       if (requestedCentre && (!state.auth.centreId || state.auth.centreId !== requestedCentre.id)) {
         await supabase.auth.signOut();
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+        isSigningIn = false;
         loginError = `This account does not belong to ${requestedCentre.name}.`;
         return render();
       }
@@ -1332,14 +1535,21 @@ export function initApp(config = {}) {
       if (requestedCentre && state.auth.centreId !== requestedCentre.id) {
         await supabase.auth.signOut();
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+        isSigningIn = false;
         loginError = `This account does not belong to ${requestedCentre.name}.`;
         return render();
       }
-      await refreshPrivilegedState().catch(() => {});
-      await loadReportsFromDrive();
+      await Promise.all([
+        refreshCoachesFromSupabase(),
+        refreshStudentsFromSupabase(),
+        refreshCoachAccountCount(),
+        refreshPrivilegedState().catch(() => {}),
+      ]);
       state.ui.page = "overview";
       state.ui.avatarMenuOpen = false;
       state.ui.reportViewId = null;
+      isSigningIn = false;
+      refreshReportsInBackground();
       render();
     }
 
@@ -1452,6 +1662,11 @@ export function initApp(config = {}) {
       const previousUserId = state.auth.userId;
       const previousCentreId = state.auth.centreId;
       if (!user) {
+        if (wizardDraftId && state.reportDrafts[wizardDraftId] && hybridWorkspace) {
+          updateWizardDraftFromInputs({ schedule: false });
+          try { await flushDraftSave(state.reportDrafts[wizardDraftId]); } catch {}
+        }
+        invalidateReportReads();
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
         state.reports = [];
         state.reportDrafts = {};
@@ -1543,6 +1758,7 @@ export function initApp(config = {}) {
         state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
       }
       if (previousUserId && (previousUserId !== user.id || previousCentreId !== centreId)) {
+        invalidateReportReads();
         state.reports = [];
         state.reportDrafts = {};
         reportStoreStatus = "idle";
@@ -1578,13 +1794,17 @@ export function initApp(config = {}) {
       if (!supabase) return;
       supabase.auth.onAuthStateChange((event, session) => {
         window.setTimeout(async () => {
+          // Bootstrap and password sign-in already restore this same session.
+          if (authInitializing || isSigningIn) return;
           await applyAuthUser(session?.user || null);
-          await refreshCoachesFromSupabase();
-          await refreshStudentsFromSupabase();
-          await refreshCoachAccountCount();
+          await Promise.all([
+            refreshCoachesFromSupabase(),
+            refreshStudentsFromSupabase(),
+            refreshCoachAccountCount(),
+          ]);
           if (event === "SIGNED_IN" && !authInitializing) {
             await refreshPrivilegedState().catch(() => {});
-            await loadReportsFromDrive();
+            refreshReportsInBackground();
           }
           if (!authInitializing) render();
         }, 0);
@@ -1592,6 +1812,12 @@ export function initApp(config = {}) {
     }
 
     async function logout() {
+      if (wizardDraftId && state.reportDrafts[wizardDraftId] && reportLocalStore) {
+        updateWizardDraftFromInputs({ schedule: false });
+        try { await flushDraftSave(state.reportDrafts[wizardDraftId]); }
+        catch { alert("Your latest edits could not be saved. Keep this tab open and retry before signing out."); return; }
+      }
+      invalidateReportReads();
       if (supabase) await supabase.auth.signOut();
       state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
       loginError = "";
@@ -1632,7 +1858,7 @@ export function initApp(config = {}) {
       persist();
       scheduleRender();
       if (page === "reports" && reportRepository) {
-        loadReportsFromDrive().then(() => scheduleRender()).catch(() => scheduleRender());
+        refreshReportsInBackground();
       }
     }
 
@@ -1677,7 +1903,7 @@ export function initApp(config = {}) {
       const reportsLastMonth = getVisibleReportsForMonth(getPreviousMonthPrefix()).length;
       const activeStudents = getVisibleStudents().filter(student => student.status !== "Inactive").length;
       const stats = [
-        { title: "Reports Created This Month", value: reportsThisMonth, footnote: formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
+        { title: "Reports Created This Month", value: reportStoreStatus === "loading" || reportUsingLocalCache ? "…" : reportsThisMonth, footnote: reportStoreStatus === "loading" || reportUsingLocalCache ? "Checking Google Drive totals…" : formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
         { title: "Total Students", value: activeStudents, footnote: "" }
       ];
       if (state.auth.role === "admin") {
@@ -1840,6 +2066,7 @@ export function initApp(config = {}) {
       return `
         <section class="page ${state.ui.page === "overview" ? "active" : ""}">
           ${renderStats()}
+          ${reportStoreStatus === "loading" ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive. You can use the dashboard while they load.</p>' : reportStoreError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)} <button class="plain-link" data-nav="reports">Open reports</button></p>` : ""}
           <div class="table-card">
             <div class="table-topline">
               <div class="section-title">
@@ -1944,7 +2171,7 @@ export function initApp(config = {}) {
               <div class="section-title">
                 <h2>Reports</h2>
               </div>
-              ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}
+              <div class="profile-actions"><button class="secondary-btn" data-action="refresh-reports" ${reportLoadPromise ? "disabled" : ""}>${reportLoadPromise ? "Refreshing…" : "Refresh"}</button>${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}</div>
             </div>
             <div class="reports-filter-bar">
               <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">
@@ -2645,7 +2872,8 @@ export function initApp(config = {}) {
         <div id="wizardModal" class="modal-backdrop open">
           <div class="modal-card">
             <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
-            <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || (isCertificatePreview ? "Preview" : "Saved to Google Drive"))}</p>
+            <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || reportSaveMessage())}</p>
+            ${renderHybridNotice()}
             <div class="wizard-steps">
               ${[
                 ["Step 1", "Select Student"],
@@ -2923,6 +3151,7 @@ export function initApp(config = {}) {
               <p>${escapeHtml(requestedCentre?.name || "JomNittaku")} Coach Reporting System</p>
               </div>
             </header>
+            ${renderHybridNotice()}
             ${pageContent}
           </main>
         </div>
@@ -3192,6 +3421,15 @@ export function initApp(config = {}) {
       // half-typed into the login form (and the caret position) is lost
       // unless it is carried across explicitly.
       const activeElement = document.activeElement;
+      // A Drive list may finish while a report search/date filter is in use.
+      // Carry these values and the caret across that asynchronous render.
+      const reportFilterIds = ["reportsSearch", "reportsDateFilter", "reportsStatusFilter", "reportsStudentFilter", "reportsMonthFilter", "reportsDayFilter", "reportsDateFrom", "reportsDateTo", "overviewDateFrom", "overviewDateTo"];
+      const reportFilterState = {
+        values: Object.fromEntries(reportFilterIds.map(id => document.getElementById(id)).filter(Boolean).map(input => [input.id, input.value])),
+        activeId: reportFilterIds.includes(activeElement?.id) ? activeElement.id : null,
+        selectionStart: typeof activeElement?.selectionStart === "number" ? activeElement.selectionStart : null,
+        selectionEnd: typeof activeElement?.selectionEnd === "number" ? activeElement.selectionEnd : null,
+      };
       const loginForm = app.querySelector(".login-form");
       const loginFormState = loginForm
         ? {
@@ -3230,6 +3468,14 @@ export function initApp(config = {}) {
       app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
       if (publicCoach) return;
       attachEvents();
+      Object.entries(reportFilterState.values).forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+      });
+      const reportDateFilter = document.getElementById("reportsDateFilter")?.value;
+      document.getElementById("reportsMonthFilter")?.classList.toggle("hidden", reportDateFilter !== "month");
+      document.getElementById("reportsDayFilter")?.classList.toggle("hidden", reportDateFilter !== "day");
+      document.getElementById("reportsCustomDates")?.classList.toggle("hidden", reportDateFilter !== "custom");
       fitCustomCertificateHeadingText();
       // Fonts requested by styles.css can finish loading after first paint.
       // Refit after readiness without changing font size or saved geometry.
@@ -3249,17 +3495,17 @@ export function initApp(config = {}) {
         // that have no hydrate step of their own.
         stampTableLabels();
       }
-      if (loginFormState) {
-        Object.entries(loginFormState.values).forEach(([id, value]) => {
+      for (const formState of [loginFormState, reportFilterState].filter(Boolean)) {
+        Object.entries(formState.values).forEach(([id, value]) => {
           const input = document.getElementById(id);
           if (input && value) input.value = value;
         });
-        const nextFocus = loginFormState.activeId ? document.getElementById(loginFormState.activeId) : null;
+        const nextFocus = formState.activeId ? document.getElementById(formState.activeId) : null;
         if (nextFocus && typeof nextFocus.focus === "function") {
           nextFocus.focus({ preventScroll: true });
-          if (typeof nextFocus.setSelectionRange === "function" && loginFormState.selectionStart !== null && loginFormState.selectionEnd !== null) {
+          if (typeof nextFocus.setSelectionRange === "function" && formState.selectionStart !== null && formState.selectionEnd !== null) {
             try {
-              nextFocus.setSelectionRange(loginFormState.selectionStart, loginFormState.selectionEnd);
+              nextFocus.setSelectionRange(formState.selectionStart, formState.selectionEnd);
             } catch {
               // Some input types (e.g. email) disallow selection APIs.
             }
@@ -3930,12 +4176,43 @@ export function initApp(config = {}) {
         if (!confirm("Disconnect your Google Drive? Existing reports remain in your Google account, but the dashboard will no longer be able to load or save them until you reconnect.")) return;
         try {
           await invokePrivileged("google-drive-oauth", { action: "disconnect", centre_id: state.auth.centreId });
+          invalidateReportReads();
           await refreshPrivilegedState();
           state.reports = []; state.reportDrafts = {}; reportStoreStatus = "disconnected";
           reportLoadedAt = 0;
           reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
           render();
         } catch (error) { alert(error.message || "Unable to disconnect Google Drive."); }
+      })();
+      if (action === "refresh-reports") {
+        refreshReportsInBackground({ force: true });
+        return render();
+      }
+      if (action === "retry-local-sync") return syncLocalDrafts();
+      if (action === "export-local-drafts") return (async () => {
+        if (!hybridWorkspace) return;
+        const local = await hybridWorkspace.snapshot();
+        const pendingIds = new Set(local.pending.map(item => item.id));
+        const records = local.records.filter(record => pendingIds.has(record.id));
+        downloadBlob(new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), records }, null, 2)], { type: "application/json" }), "local-report-drafts.json");
+      })();
+      if (action === "copy-local-draft") return (async () => {
+        if (!hybridWorkspace) return;
+        try {
+          const id = event.currentTarget.dataset.draftId;
+          const copy = await hybridWorkspace.copyDraft(id);
+          const local = await hybridWorkspace.snapshot();
+          applyReportRecords(local.records, getReportCentreId());
+          if (wizardDraftId === id) wizardDraftId = copy.id;
+          scheduleHybridSync();
+          render();
+        } catch (error) { alert(error.message); }
+      })();
+      if (action === "clear-report-cache") return (async () => {
+        if (!hybridWorkspace) return;
+        await hybridWorkspace.clearSynced();
+        hybridCacheLoadedScope = "";
+        updateHybridNotice();
       })();
       if (action === "sign-in") return signIn();
       if (action === "logout") return logout();
@@ -4308,7 +4585,7 @@ export function initApp(config = {}) {
       dirtyReportDraftId = draft.id;
       const revision = (draftRevisions.get(draft.id) || 0) + 1;
       draftRevisions.set(draft.id, revision);
-      updateReportSaveStatus(isCertificatePreview ? "Preview" : "Unsaved changes · saving to Google Drive…");
+      updateReportSaveStatus(isCertificatePreview ? "Preview" : reportLocalStore ? "Saving on this device…" : "Unsaved changes · saving to Google Drive…");
       clearTimeout(draftSaveTimer);
       draftSaveTimer = window.setTimeout(() => {
         draftSaveTimer = null;
@@ -4317,20 +4594,22 @@ export function initApp(config = {}) {
         saveReportRecord({ ...current, recordType: "draft" }, { centreId: current.centreId || getReportCentreId() })
           .then(() => {
             if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
-            updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
+            updateReportSaveStatus(reportSaveMessage());
           })
           .catch(() => {});
-      }, 500);
+      }, reportLocalStore ? 200 : 500);
     }
 
     async function flushDraftSave(draft) {
+      const scope = reportReadScope();
       clearTimeout(draftSaveTimer);
       draftSaveTimer = null;
       const revision = draftRevisions.get(draft.id) || 0;
       dirtyReportDraftId = draft.id;
       const saved = await saveReportRecord({ ...draft, recordType: "draft" }, { centreId: draft.centreId || getReportCentreId() });
+      if (scope !== reportReadScope()) return saved;
       if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
-      updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
+      updateReportSaveStatus(reportSaveMessage());
       return saved;
     }
 
@@ -4339,6 +4618,13 @@ export function initApp(config = {}) {
       event.preventDefault();
       event.returnValue = "";
     });
+    window.addEventListener("online", () => {
+      if (hybridWorkspace) refreshPrivilegedState().catch(() => {}).then(() => syncLocalDrafts());
+    });
+    window.addEventListener("offline", () => updateHybridNotice());
+    if (typeof document !== "undefined") document.addEventListener?.("visibilitychange", () => {
+      if (document.visibilityState === "visible" && hybridWorkspace) syncLocalDrafts();
+    });
 
     async function startReportFlow() {
       if (!state.auth.role || state.auth.role === "dev") return;
@@ -4346,6 +4632,7 @@ export function initApp(config = {}) {
         reportStoreStatus = "ready";
         return createReportDraft(getCurrentCoach());
       }
+      if (reportLoadPromise || reportStoreStatus === "loading") await loadReportsFromDrive();
       if (state.auth.role === "admin" && !activeReportCentreId) {
         state.ui.page = "reports";
         await loadReportsFromDrive();
@@ -4353,8 +4640,9 @@ export function initApp(config = {}) {
         return;
       }
       const driveConnected = state.auth.role !== "coach" || state.driveConnection?.status === "connected";
+      const hasLocalDraft = hybridWorkspace && Object.values(state.reportDrafts).some(draft => draft.coachId === state.auth.coachId);
       const listUnavailable = reportStoreStatus === "error" && reportStoreError === "Google Drive returned an invalid report list";
-      if ((!driveConnected) || (reportStoreStatus !== "ready" && !listUnavailable)) {
+      if ((!driveConnected && !hasLocalDraft) || (reportStoreStatus !== "ready" && !listUnavailable)) {
         alert(reportStoreError || "Connect Google Drive and wait for reports to load before starting a report.");
         return;
       }
@@ -4496,6 +4784,8 @@ export function initApp(config = {}) {
       if (reportGenerating) return;
       const draft = state.reportDrafts[wizardDraftId];
       if (!draft) return;
+      const finalScope = reportReadScope();
+      const finalGeneration = reportLoadGeneration;
       updateWizardDraftFromInputs({ schedule: false });
       if (!draft.studentId) {
         alert("Select a student first.");
@@ -4521,19 +4811,34 @@ export function initApp(config = {}) {
       clearTimeout(draftSaveTimer);
       draftSaveTimer = null;
       reportGenerating = true;
+      // Keep the confirmed snapshot stable while its draft/report is uploading.
+      document.querySelectorAll("#wizardModal input, #wizardModal textarea, #wizardModal select, #wizardModal button").forEach(control => { control.disabled = true; });
+      document.getElementById("wizardModal")?.setAttribute("aria-busy", "true");
       document.querySelector('[data-action="wizard-generate"]')?.setAttribute("disabled", "");
       dirtyReportDraftId = draft.id;
       let savedReport;
       try {
         // A pending draft write must finish before finalization removes it.
-        await reportWriteQueues.get(draft.id);
+        if (!isCertificatePreview && ensureHybridWorkspace()) {
+          await flushDraftSave(draft);
+          if (navigator.onLine === false) throw new Error("This draft is saved on this device. Go online to sync and generate the report.");
+          await hybridWorkspace.confirmDraft(draft.id);
+        } else await reportWriteQueues.get(draft.id);
+        if (finalScope !== reportReadScope() || finalGeneration !== reportLoadGeneration) return;
         savedReport = await saveReportRecord(finalReport, { draftId: draft.id, centreId: draft.centreId || getReportCentreId() });
-      } catch {
+      } catch (error) {
+        if (finalScope !== reportReadScope() || finalGeneration !== reportLoadGeneration) return;
+        reportStoreError = error.message || "Sync this draft to Google Drive before generating the report.";
         reportGenerating = false;
         render();
         return;
       }
+      if (finalScope !== reportReadScope() || finalGeneration !== reportLoadGeneration) return;
       state.reports.unshift({ ...normalizeReport(savedReport), centreId: draft.centreId || getReportCentreId() });
+      if (hybridWorkspace) {
+        try { await hybridWorkspace.complete(savedReport, draft.id); }
+        catch (error) { hybridLocalError = `Report saved to Drive; local cache update failed: ${error.message}`; }
+      }
       delete state.reportDrafts[draft.id];
       dirtyReportDraftId = "";
       const student = getStudentById(draft.studentId);
@@ -5374,10 +5679,12 @@ export function initApp(config = {}) {
               state = tenantState;
               state.auth = liveAuth;
             }
-            await refreshCoachesFromSupabase();
-            await refreshStudentsFromSupabase();
-            await refreshCoachAccountCount();
-            await refreshPrivilegedState().catch(() => {});
+            await Promise.all([
+              refreshCoachesFromSupabase(),
+              refreshStudentsFromSupabase(),
+              refreshCoachAccountCount(),
+              refreshPrivilegedState().catch(() => {}),
+            ]);
             if (driveCallback) {
               if (!callbackError) {
                 try {
@@ -5388,7 +5695,7 @@ export function initApp(config = {}) {
                   // status-read failure must not erase a successful connection.
                   if (driveResult?.connection) state.driveConnection = driveResult.connection;
                   else await refreshPrivilegedState();
-                  reportLoadedAt = 0;
+                  invalidateReportReads();
                   reportStoreStatus = "idle";
                 } catch (error) {
                   callbackError = error.message || "Unable to connect Google Drive.";
@@ -5402,7 +5709,6 @@ export function initApp(config = {}) {
                 ? `/centre/${encodeURIComponent(requestedCentre.slug)}` : "/");
               sessionStorage.removeItem("pendingCentreSlug");
             }
-            await loadReportsFromDrive();
             state.centreProfile = await loadPublicCentreProfile();
           } else {
             state.centreProfile = normalizeCentreProfile(state.centreProfile);
@@ -5410,6 +5716,7 @@ export function initApp(config = {}) {
           authInitializing = false;
           authReady = true;
           if (callbackError) loginError = callbackError;
+          refreshReportsInBackground();
           render();
           subscribeToRealtime();
         })

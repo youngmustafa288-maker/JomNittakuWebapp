@@ -111,9 +111,10 @@ export function createDashboardStatePayload(state) {
 export function createReportDriveRepository(invoke) {
   if (typeof invoke !== "function") throw new TypeError("A Drive action invoker is required");
   let templateSupport = null;
+  let hybridSupport = null;
 
   return {
-    async list({ centreId = "", onWarnings = null } = {}) {
+    async list({ centreId = "", onWarnings = null, onSources = null } = {}) {
       let result = await invoke({ action: "report-list", centre_id: centreId || undefined });
       if (typeof result === "string") {
         try {
@@ -138,11 +139,18 @@ export function createReportDriveRepository(invoke) {
       if (typeof onWarnings === "function") {
         onWarnings(Array.isArray(result?.warnings) ? result.warnings : []);
       }
+      if (typeof onSources === "function") onSources(result?.source_roots || {});
       return records.map(normalizeReportRecord);
     },
 
-    async save(record, { draftId = "", centreId = "" } = {}) {
+    async save(record, { draftId = "", centreId = "", hybrid = null } = {}) {
       const normalized = normalizeReportRecord(record);
+      if (hybrid) {
+        hybridSupport ||= Promise.resolve().then(() => invoke({ action: "report-template-capabilities", centre_id: centreId || undefined })).then(result => {
+          if (result?.hybridDraftVersion !== 1) throw new Error("Update the report service to enable local draft sync.");
+        }).catch(error => { hybridSupport = null; throw error; });
+        await hybridSupport;
+      }
       if (normalized.certificateDesign) {
         // Check before writing: an older service silently drops unknown fields.
         templateSupport ||= Promise.resolve().then(() => invoke({ action: "report-template-capabilities", centre_id: centreId || undefined })).then(result => {
@@ -153,7 +161,9 @@ export function createReportDriveRepository(invoke) {
         });
         await templateSupport;
       }
-      const result = await invoke({ action: "report-save", record: normalized, draft_id: draftId || undefined, centre_id: centreId || undefined });
+      const body = { action: "report-save", record: normalized, draft_id: draftId || undefined, centre_id: centreId || undefined };
+      if (hybrid) body.hybrid_draft = hybrid;
+      const result = await invoke(body);
       const saved = normalizeReportRecord(result?.record || normalized);
       if (normalized.certificateDesign && JSON.stringify(saved.certificateDesign) !== JSON.stringify(normalized.certificateDesign)) {
         throw new Error("The report service needs the template update before this report can be generated.");

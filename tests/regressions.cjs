@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const test = require('node:test');
 const source = fs.readFileSync(path.join(__dirname, '../src/legacy-app.js'), 'utf8');
 const driveSource = fs.readFileSync(path.join(__dirname, '../src/report-drive.js'), 'utf8');
+const localSource = fs.readFileSync(path.join(__dirname, '../src/report-local.js'), 'utf8');
 const designSource = fs.readFileSync(path.join(__dirname, '../supabase/functions/_shared/certificate-design.js'), 'utf8');
 const certEditorSource = fs.readFileSync(path.join(__dirname, '../src/certificate-editor.js'), 'utf8');
 const certTemplatesSource = fs.readFileSync(path.join(__dirname, '../src/certificate-templates.js'), 'utf8');
@@ -57,7 +58,7 @@ function memoryStorage() {
   const map = new Map();
   return { getItem: k => map.get(k) || null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k) };
 }
-function harness({ url = 'https://example.test/', bootstrap = false, user = null, invoke = null } = {}) {
+function harness({ url = 'https://example.test/', bootstrap = false, user = null, invoke = null, localDB = null } = {}) {
   const location = new URL(url);
   location.assign = value => { location.assigned = value; };
   const app = new Element();
@@ -93,6 +94,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
   const sandbox = {
     console, URLSearchParams, Date, Map, Set, Event,
     setTimeout, clearTimeout, crypto: require('node:crypto').webcrypto,
+    ...(localDB ? { indexedDB: localDB } : {}), navigator: { onLine: true }, structuredClone, TextEncoder,
     localStorage: storage, sessionStorage, document,
     requestAnimationFrame: fn => fn(),
     alert: message => { throw Error(`Unexpected alert: ${message}`); },
@@ -116,7 +118,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     }
   };
   sandbox.window = {
-    location, addEventListener() {}, setTimeout,
+    location, addEventListener() {}, setTimeout, requestAnimationFrame: () => {},
     history: { replaceState: (_s, _t, url) => { history.push(url); const next = new URL(url, location); location.pathname = next.pathname; location.search = next.search; } },
     getComputedStyle: () => ({ fontSize: '48', fontFamily: 'Arial', fontStyle: 'normal', fontWeight: '700' }),
     getSelection: () => ({ rangeCount: 0, removeAllRanges() {}, addRange() {} })
@@ -126,6 +128,16 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
       normalizeReportLayout, renderCustomCertificateLayers, renderEditableQr,
       renderReportLayoutToolbar, beginCertificateTextEditing, fitCustomCertificateHeadingText,
       updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage,
+      finalizeWizard, closeWizard, ensureHybridWorkspace, resetHybridSession,
+      get wizardId() { return wizardDraftId; },
+      get reportError() { return reportStoreError; },
+      seedWizard() {
+        state.driveConnection = { status: 'connected', root_folder_id: 'root-1' };
+        const draft = { schemaVersion: 1, recordType: 'draft', id: 'draft-hybrid-flow', ref: 'TEST', coachId: 'coach-1', studentId: 'student-1', date: '2026-10-29', time: '10:00', lessonNumber: 1, summary: blankSummary(), step: 4 };
+        state.students = [{ id: 'student-1', coachId: 'coach-1', name: 'Student', lessons: 0 }];
+        state.reportDrafts[draft.id] = draft;
+        wizardDraftId = draft.id;
+      },
       get state() { return state; }, get driveError() { return driveConnectionError; },
       get reportStatus() { return reportStoreStatus; },
       seed(coach) { state.coaches = [coach]; state.auth = { role: 'coach', coachId: coach.id, userId: coach.id, centreId: 'centre-1' }; reportLayoutEditing = true; },
@@ -136,6 +148,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     subscribeToRealtime = () => {};
     persist = () => {};
     saveReportLayout = async () => { globalThis.__api.saves++; };
+    saveStudentRecord = async student => student;
     if (globalThis.__skipBootstrap) return;
   `;
   const cleanModule = (str) => str.replace(/^import .*;\r?\n/gm, '').replace(/^export (default )?/gm, '');
@@ -149,10 +162,11 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     cleanModule(certStudioSource),
     cleanModule(templatePickerSource),
     cleanModule(driveSource),
+    cleanModule(localSource),
     code
   ].join('\n;\n');
   vm.runInContext(bundle, context);
-  context.initApp(bootstrap ? { supabaseUrl: 'https://supabase.example.test', supabaseKey: 'publishable-fixture' } : {});
+  context.initApp(bootstrap || localDB ? { supabaseUrl: 'https://supabase.example.test', supabaseKey: 'publishable-fixture' } : {});
   return { api: context.__api, context, document, app, preview, calls, history, sessionUrls, location,
     get clientOptions() { return clientOptions; },
     items: values => { overlayItems = values; }, spans: values => { headingSpans = values; } };
@@ -378,4 +392,43 @@ test('Drive connect validates the response and shows a coach-specific backend re
     if (response.error) assert.ok(h.api.driveError.includes('per-coach'));
     else assert.ok(h.api.driveError.includes('authorization URL'));
   }
+});
+
+test('closing the hybrid wizard persists its draft without waiting for Drive', async () => {
+  const { IDBFactory } = require('fake-indexeddb');
+  const h = harness({ localDB: new IDBFactory(), invoke: () => { throw Error('Offline'); } });
+  const coach = { id: 'coach-1', name: 'Coach', reportLayout: h.api.normalizeReportLayout() };
+  h.api.seed(coach);
+  h.api.seedWizard();
+  await h.api.closeWizard();
+  assert.equal(h.api.wizardId, null);
+  assert.equal(h.calls.length, 0);
+  const local = await h.api.ensureHybridWorkspace().snapshot();
+  assert.equal(local.pending[0].id, 'draft-hybrid-flow');
+  h.api.resetHybridSession();
+});
+
+test('hybrid finalization waits for draft sync, then confirms the report on Drive', async () => {
+  const { IDBFactory } = require('fake-indexeddb');
+  const h = harness({ localDB: new IDBFactory(), invoke: body => ({ data: body.action === 'report-template-capabilities'
+    ? { certificateDesignVersion: 1, hybridDraftVersion: 1 } : { record: body.record }, error: null }) });
+  h.api.seed({ id: 'coach-1', name: 'Coach', reportLayout: h.api.normalizeReportLayout() });
+  h.api.seedWizard();
+  h.context.navigator.onLine = false;
+  await h.api.finalizeWizard();
+  assert.equal(h.api.state.reports.length, 0);
+  assert.match(h.api.reportError, /Go online/);
+  assert.equal(h.calls.length, 0);
+  h.context.navigator.onLine = true;
+  await h.api.finalizeWizard();
+  const writes = h.calls.filter(call => call.action === 'report-save');
+  assert.deepEqual(writes.map(call => call.record.recordType), ['draft', 'report']);
+  assert.equal(writes[0].hybrid_draft.actor_id, 'coach-1');
+  assert.equal(writes[1].draft_id, 'draft-hybrid-flow');
+  assert.equal(h.api.state.reports[0].id, 'report-hybrid-flow');
+  assert.equal(h.api.wizardId, null);
+  const local = await h.api.ensureHybridWorkspace().snapshot();
+  assert.equal(local.pending.length, 0);
+  assert.equal(local.records[0].recordType, 'report');
+  h.api.resetHybridSession();
 });

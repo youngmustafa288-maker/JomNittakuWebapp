@@ -1,0 +1,2237 @@
+--- a/src/legacy-app.js
++++ b/src/legacy-app.js
+@@ -4,6 +4,7 @@
+ import { createClient } from "@supabase/supabase-js";
+ import { createDashboardStatePayload, createReportDriveRepository, normalizeReportRecord } from "./report-drive.js";
+ import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
++import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
+ 
+ const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
+ const CENTRE_PROFILE_KEY = "centre_profile";
+@@ -182,6 +183,7 @@
+     const reportRepository = supabase
+       ? createReportDriveRepository(body => invokePrivileged("google-drive-oauth", body))
+       : null;
++    const reportLocalStore = supabase && typeof indexedDB !== "undefined" ? createIndexedDbReportStore(indexedDB) : null;
+     let state = createInitialState();
+     state.centreProfile = getCentreProfile();
+     let wizardDraftId = null;
+@@ -232,6 +234,20 @@
+     let reportPdfError = "";
+     let reportLoadPromise = null;
+     let reportLoadedAt = 0;
++    let reportLoadedScope = "";
++    let reportLoadGeneration = 0;
++    let reportWriteRevision = 0;
++    let hybridWorkspace = null;
++    let hybridScope = "";
++    let hybridCacheLoadedScope = "";
++    let hybridPending = [];
++    let hybridSyncedDraftIds = new Set();
++    let remoteReportDrafts = new Map();
++    let reportUsingLocalCache = false;
++    let hybridLocalError = "";
++    let hybridSyncTimer = null;
++    let coachDriveRoots = {};
++    const REPORT_SESSION_CACHE_MS = 60000;
+     let adminReportCentres = [];
+     let adminReportCentresLoaded = false;
+     let activeReportCentreId = "";
+@@ -712,15 +728,16 @@
+ 
+     async function invokePrivileged(functionName, body) {
+       if (!supabase) throw new Error("Supabase is not configured.");
+-      const { data, error } = await supabase.functions.invoke(functionName, { body });
++      const { data, error } = await supabase.functions.invoke(functionName, { body, ...(body.hybrid_draft ? { timeout: 45000 } : body.action === "report-template-capabilities" ? { timeout: 15000 } : {}) });
+       if (error) {
+-        let detail = "";
++        let detail = "", code = "";
+         try {
+           const response = error.context;
+           const payload = response && typeof response.json === "function" ? await response.json() : null;
+           detail = payload?.error || "";
++          code = payload?.code || "";
+         } catch (parseError) {}
+-        throw new Error(detail || error.message || "The server rejected this request.");
++        throw Object.assign(new Error(detail || error.message || "The server rejected this request."), { code });
+       }
+       // Older Edge Function deployments can return the JSON body as text when
+       // their content type is not propagated through the gateway. Normalize it
+@@ -733,7 +750,7 @@
+           // Preserve the original response for callers that handle plain text.
+         }
+       }
+-      if (payload?.error) throw new Error(payload.error);
++      if (payload?.error) throw Object.assign(new Error(payload.error), { code: payload.code || "" });
+       return payload;
+     }
+ 
+@@ -749,6 +766,98 @@
+       return current;
+     }
+ 
++    function resetHybridSession() {
++      clearTimeout(hybridSyncTimer);
++      hybridSyncTimer = null;
++      hybridWorkspace = null;
++      hybridScope = "";
++      hybridCacheLoadedScope = "";
++      hybridPending = [];
++      hybridSyncedDraftIds = new Set();
++      remoteReportDrafts = new Map();
++      reportUsingLocalCache = false;
++      hybridLocalError = "";
++      coachDriveRoots = {};
++    }
++
++    function ensureHybridWorkspace() {
++      if (!reportLocalStore || !state.auth.userId || !getReportCentreId()) return null;
++      const scope = reportWorkspaceKey({ project: SUPABASE_URL, userId: state.auth.userId, role: state.auth.role, centreId: getReportCentreId() });
++      if (hybridWorkspace && hybridScope === scope) return hybridWorkspace;
++      const verifiedRoots = coachDriveRoots;
++      resetHybridSession();
++      coachDriveRoots = verifiedRoots;
++      hybridScope = scope;
++      const workspace = createHybridReportWorkspace({
++        store: reportLocalStore, scope, actorId: state.auth.userId, remote: reportRepository,
++        getRoot: coachId => state.auth.role === "coach"
++          ? state.driveConnection?.status === "connected" && coachId === state.auth.userId ? state.driveConnection.root_folder_id || "" : ""
++          : coachDriveRoots[coachId] || "",
++        isActive: () => hybridWorkspace === workspace && hybridScope === scope && Boolean(state.auth.userId)
++          && scope === reportWorkspaceKey({ project: SUPABASE_URL, userId: state.auth.userId, role: state.auth.role, centreId: getReportCentreId() }),
++        onChange: snapshot => {
++          applyHybridSnapshot(snapshot);
++          updateHybridNotice();
++        },
++      });
++      hybridWorkspace = workspace;
++      return workspace;
++    }
++
++    function reportSaveMessage() {
++      if (isCertificatePreview) return "Preview";
++      if (dirtyReportDraftId === wizardDraftId || draftSaveTimer) return reportLocalStore ? "Saving on this device…" : "Saving to Google Drive…";
++      const pending = hybridPending.find(item => item.id === wizardDraftId);
++      if (pending) return `Saved on this device · ${pending.blocked ? "sync needs attention" : "Drive sync pending"}`;
++      return reportLocalStore && wizardDraftId && !hybridSyncedDraftIds.has(wizardDraftId) ? "Not saved yet" : "Saved to Google Drive";
++    }
++
++    function applyHybridSnapshot(snapshot) {
++      hybridPending = snapshot.pending;
++      const pendingIds = new Set(snapshot.pending.map(item => item.id));
++      hybridSyncedDraftIds = new Set(snapshot.syncedDraftIds || snapshot.records.filter(record => record.recordType === "draft" && !pendingIds.has(record.id)).map(record => record.id));
++    }
++
++    function hybridNoticeContent() {
++      if (!hybridWorkspace && !hybridLocalError) return "";
++      const message = hybridPending.length
++        ? `${hybridPending.length} draft(s) saved on this device. ${navigator.onLine === false ? "Offline. " : ""}Google Drive sync pending.`
++        : reportUsingLocalCache ? "Showing recent reports saved on this device. The cached list may be out of date while Google Drive is unavailable or loading." : "Recent reports are cached on this device. Google Drive holds the permanent copies.";
++      const error = hybridLocalError || hybridPending.find(item => item.error)?.error;
++      return `<p>${escapeHtml(message)}</p>${error ? `<p class="is-error">${escapeHtml(error)}</p>` : ""}<div class="profile-actions">${hybridPending.length ? '<button class="secondary-btn" data-action="retry-local-sync">Sync now</button><button class="ghost-btn" data-action="export-local-drafts">Export local drafts</button>' : '<button class="ghost-btn" data-action="clear-report-cache">Clear cached reports</button>'}${hybridPending.filter(item => item.blocked).slice(0, 5).map(item => `<button class="secondary-btn" data-action="copy-local-draft" data-draft-id="${escapeHtml(item.id)}">Save ${escapeHtml(state.reportDrafts[item.id]?.ref || "draft")} as a separate copy</button>`).join("")}</div>`;
++    }
++
++    function renderHybridNotice() { return `<div class="report-hybrid-notice" data-hybrid-notice role="status">${hybridNoticeContent()}</div>`; }
++
++    function updateHybridNotice() {
++      document.querySelectorAll?.("[data-hybrid-notice]").forEach(element => { element.innerHTML = hybridNoticeContent(); });
++      if (wizardDraftId) updateReportSaveStatus(reportSaveMessage());
++    }
++
++    function scheduleHybridSync(delay = 1000) {
++      clearTimeout(hybridSyncTimer);
++      if (!hybridWorkspace) return;
++      hybridSyncTimer = window.setTimeout(() => syncLocalDrafts(), delay);
++    }
++
++    async function syncLocalDrafts() {
++      const workspace = hybridWorkspace;
++      if (!workspace) return;
++      try {
++        if (navigator.onLine !== false) await workspace.sync();
++      } catch (error) {
++        if (workspace === hybridWorkspace) hybridLocalError = `Local storage: ${error.message}`;
++      }
++      if (workspace !== hybridWorkspace) return;
++      updateHybridNotice();
++      if (hybridPending.some(item => !item.blocked)) scheduleHybridSync(15000);
++    }
++
++    function applyReportRecords(records, centreId) {
++      state.reports = records.filter(record => record.recordType === "report").map(record => ({ ...normalizeReport(record), centreId }));
++      state.reportDrafts = Object.fromEntries(records.filter(record => record.recordType === "draft").map(record => [record.id, { ...normalizeDraft(record), centreId }]));
++    }
++
+     function updateReportSaveStatus(text, isError = false) {
+       const status = document.getElementById("reportSaveStatus");
+       if (!status) return;
+@@ -757,12 +866,37 @@
+     }
+ 
+     async function saveReportRecord(record, options = {}) {
++      const saveScope = reportReadScope();
++      const saveGeneration = reportLoadGeneration;
+       const draftBeforeSave = record.recordType === "draft" ? JSON.stringify(state.reportDrafts[record.id]) : "";
++      reportWriteRevision += 1;
++      const workspace = !isCertificatePreview && record.recordType === "draft" ? ensureHybridWorkspace() : null;
++      if (workspace) {
++        updateReportSaveStatus("Saving on this device…");
++        try {
++          const saved = await workspace.queue(record, { baseRecord: remoteReportDrafts.get(record.id) || null });
++          if (workspace !== hybridWorkspace) return saved;
++          if (JSON.stringify(state.reportDrafts[record.id]) === draftBeforeSave) state.reportDrafts[saved.id] = { ...normalizeDraft(saved), centreId: options.centreId || getReportCentreId() };
++          hybridLocalError = "";
++          reportStoreStatus = "ready";
++          updateReportSaveStatus(reportSaveMessage());
++          scheduleHybridSync();
++          return saved;
++        } catch (error) {
++          if (workspace === hybridWorkspace) {
++            hybridLocalError = `Not saved on this device: ${error.message}`;
++            updateReportSaveStatus(hybridLocalError, true);
++            updateHybridNotice();
++          }
++          throw error;
++        }
++      }
+       reportStoreError = "";
+       reportStoreStatus = "saving";
+       updateReportSaveStatus(isCertificatePreview ? "Saving preview…" : "Saving to Google Drive…");
+       try {
+         const saved = await queueReportWrite(record, options);
++        if (saveScope !== reportReadScope() || saveGeneration !== reportLoadGeneration) return saved;
+         reportStoreStatus = "ready";
+         reportStoreError = "";
+         updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
+@@ -771,6 +905,7 @@
+         }
+         return saved;
+       } catch (error) {
++        if (saveScope !== reportReadScope() || saveGeneration !== reportLoadGeneration) throw error;
+         reportStoreStatus = "error";
+         reportStoreError = error.message || "Unable to save report to Google Drive.";
+         updateReportSaveStatus(`Not saved: ${reportStoreError}`, true);
+@@ -778,78 +913,142 @@
+       }
+     }
+ 
+-    async function loadReportsFromDrive() {
++    function reportReadScope() {
++      return JSON.stringify([state.auth.userId, state.auth.role, getReportCentreId()]);
++    }
++
++    function invalidateReportReads() {
++      // A response from a previous account/workspace must never hydrate this one.
++      reportLoadGeneration += 1;
++      reportLoadPromise = null;
++      reportLoadedAt = 0;
++      reportLoadedScope = "";
++      resetHybridSession();
++      reportGenerating = false;
++    }
++
++    function refreshReportsInBackground(options = {}) {
++      const scope = reportReadScope();
++      const generation = reportLoadGeneration;
++      const pending = loadReportsFromDrive(options);
++      pending.then(() => {
++        if (scope !== reportReadScope() || generation !== reportLoadGeneration) return;
++        // Background completion must not replace profile forms, certificate
++        // editors, or an open wizard/modal while the user is working in them.
++        if (wizardDraftId || onboardingModal || studentEditModal || reportStartOpen) return;
++        if (!["overview", "reports", "report-view"].includes(state.ui.page)) return;
++        scheduleRender();
++      }).catch(() => {});
++      return pending;
++    }
++
++    async function loadReportsFromDrive({ force = false } = {}) {
+       const isGlobalAdmin = state.auth.role === "admin";
+-      if (!isCentreAccount() && !isGlobalAdmin) return;
++      if (!reportRepository || (!isCentreAccount() && !isGlobalAdmin)) return;
+       if (reportLoadPromise) return reportLoadPromise;
+-      if (reportStoreStatus === "ready" && reportLoadedAt && Date.now() - reportLoadedAt < 15000) return;
++      // Keep active edits authoritative; a list response may predate a save.
++      if (wizardDraftId || dirtyReportDraftId || draftSaveTimer || reportWriteQueues.size || reportStoreStatus === "saving") return;
++      const scope = reportReadScope();
++      const generation = reportLoadGeneration;
++      const revision = reportWriteRevision;
++      const isCurrent = () => scope === reportReadScope() && generation === reportLoadGeneration;
++      const canApply = () => isCurrent() && revision === reportWriteRevision && !wizardDraftId && !dirtyReportDraftId;
++      let hasSnapshot = reportLoadedScope === scope && Boolean(reportLoadedAt);
++      if (!force && hasSnapshot && Date.now() - reportLoadedAt < REPORT_SESSION_CACHE_MS) return;
++      if (/^\/coach\/[^/]+\/?$/i.test(window.location.pathname)) return;
+       reportStoreError = "";
+-      state.reports = [];
+-      state.reportDrafts = {};
+-      if (/^\/coach\/[^/]+\/?$/i.test(window.location.pathname)) {
+-        reportStoreStatus = "idle";
+-        reportLoadedAt = 0;
+-        return;
+-      }
+-      if (isGlobalAdmin && !adminReportCentresLoaded) {
+-        reportStoreStatus = "loading";
++      reportStoreStatus = hasSnapshot ? "ready" : "loading";
++      // Assign the shared promise before any context/list request can finish.
++      // This includes global-admin context discovery, not just the final list.
++      const pending = Promise.resolve().then(async () => {
+         try {
+-          const result = await invokePrivileged("google-drive-oauth", { action: "admin-report-context" });
+-          adminReportCentres = Array.isArray(result.centres) ? result.centres : [];
+-          adminReportCentresLoaded = true;
+-        } catch (error) {
+-          reportStoreStatus = "error";
+-          reportStoreError = error.message || "Unable to load report workspaces.";
+-          return;
+-        }
+-      }
+-      const centreId = getReportCentreId();
+-      if (isGlobalAdmin && !centreId) {
+-        reportStoreStatus = "idle";
+-        reportLoadedAt = 0;
+-        return;
+-      }
+-      if (isGlobalAdmin && adminReportContextCentreId !== centreId) {
+-        reportStoreStatus = "loading";
+-        try {
+-          adminReportContext = await invokePrivileged("google-drive-oauth", { action: "admin-report-context", centre_id: centreId });
+-          adminReportContext.coaches = (adminReportContext.coaches || []).map(normalizeCoach);
+-          adminReportContext.students = (adminReportContext.students || []).map(normalizeStudent);
+-          connectedCoachDriveIds = Array.isArray(adminReportContext.connected_coach_ids) ? adminReportContext.connected_coach_ids : [];
+-          adminReportContextCentreId = centreId;
+-        } catch (error) {
+-          reportStoreStatus = "error";
+-          reportStoreError = error.message || "Unable to load report participants.";
+-          return;
+-        }
+-      }
+-      if (state.auth.role === "coach" && state.driveConnection?.status !== "connected") {
+-        reportStoreStatus = "disconnected";
+-        reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
+-        return;
+-      }
+-      reportStoreStatus = "loading";
+-      reportLoadPromise = (async () => {
+-        try {
++          if (!isCurrent()) return;
++          const workspace = ensureHybridWorkspace();
++          const explicitlyDisconnected = state.auth.role === "coach" && !driveConnectionError && state.driveConnection?.status !== "connected";
++          if (workspace && !explicitlyDisconnected && hybridCacheLoadedScope !== hybridScope) {
++            try {
++              const local = await workspace.snapshot();
++              if (!canApply()) return;
++              applyHybridSnapshot(local);
++              hybridCacheLoadedScope = hybridScope;
++              if (local.records.length) {
++                applyReportRecords(local.records, getReportCentreId());
++                hasSnapshot = true;
++                reportUsingLocalCache = true;
++                reportStoreStatus = "ready";
++                if (["overview", "reports", "report-view"].includes(state.ui.page)) scheduleRender();
++              }
++              scheduleHybridSync();
++            } catch (error) { hybridLocalError = `Local storage unavailable: ${error.message}`; }
++          }
++          if (isGlobalAdmin && !adminReportCentresLoaded) {
++            const result = await invokePrivileged("google-drive-oauth", { action: "admin-report-context" });
++            if (!isCurrent()) return;
++            adminReportCentres = Array.isArray(result.centres) ? result.centres : [];
++            adminReportCentresLoaded = true;
++          }
++          const centreId = getReportCentreId();
++          if (isGlobalAdmin && !centreId) {
++            reportStoreStatus = "idle";
++            return;
++          }
++          if (isGlobalAdmin && adminReportContextCentreId !== centreId) {
++            const context = await invokePrivileged("google-drive-oauth", { action: "admin-report-context", centre_id: centreId });
++            if (!isCurrent()) return;
++            adminReportContext = {
++              ...context,
++              coaches: (context.coaches || []).map(normalizeCoach),
++              students: (context.students || []).map(normalizeStudent),
++            };
++            connectedCoachDriveIds = Array.isArray(context.connected_coach_ids) ? context.connected_coach_ids : [];
++            adminReportContextCentreId = centreId;
++          }
++          if (state.auth.role === "coach" && state.driveConnection?.status !== "connected") {
++            if (hasSnapshot && driveConnectionError) {
++              reportStoreStatus = "ready";
++              reportStoreError = "Showing saved data from this device. Reconnect to check Google Drive.";
++              return;
++            }
++            state.reports = [];
++            state.reportDrafts = {};
++            reportStoreStatus = "disconnected";
++            reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
++            return;
++          }
+           let driveWarnings = [];
+-          const records = await reportRepository.list({ centreId, onWarnings: warnings => { driveWarnings = warnings; } });
+-          state.reports = records.filter(record => record.recordType === "report").map(record => ({ ...normalizeReport(record), centreId }));
+-          state.reportDrafts = Object.fromEntries(records
+-            .filter(record => record.recordType === "draft")
+-            .map(record => [record.id, { ...normalizeDraft(record), centreId }]));
++          let sources = {};
++          let records = await reportRepository.list({ centreId, onWarnings: warnings => { driveWarnings = warnings; }, onSources: roots => { sources = roots; } });
++          if (!canApply()) return;
++          coachDriveRoots = sources;
++          remoteReportDrafts = new Map(records.filter(record => record.recordType === "draft").map(record => [record.id, record]));
++          if (workspace) {
++            try {
++              const local = await workspace.cache(records, { complete: !driveWarnings.length });
++              if (!canApply()) return;
++              const pendingIds = new Set(local.pending.map(item => item.id));
++              const merged = new Map(records.map(record => [record.id, record]));
++              for (const record of local.records) if (pendingIds.has(record.id) || driveWarnings.length && !merged.has(record.id)) merged.set(record.id, record);
++              records = [...merged.values()];
++              applyHybridSnapshot(local);
++            } catch (error) { hybridLocalError = `Local cache could not be updated: ${error.message}`; }
++          }
++          applyReportRecords(records, centreId);
++          reportUsingLocalCache = Boolean(driveWarnings.length);
+           reportStoreStatus = "ready";
+           reportStoreError = driveWarnings.length ? `Some coach reports could not be loaded: ${driveWarnings.join("; ")}` : "";
+           reportLoadedAt = Date.now();
++          reportLoadedScope = scope;
+         } catch (error) {
+-          reportStoreStatus = "error";
+-          reportLoadedAt = 0;
++          if (!canApply()) return;
++          reportStoreStatus = hasSnapshot ? "ready" : "error";
+           reportStoreError = error.message || "Unable to load reports from Google Drive.";
+         }
+-      })();
++      });
++      reportLoadPromise = pending;
+       try {
+-        await reportLoadPromise;
++        await pending;
+       } finally {
+-        reportLoadPromise = null;
++        if (reportLoadPromise === pending) reportLoadPromise = null;
+       }
+     }
+ 
+@@ -875,6 +1074,7 @@
+         } else {
+           state.driveConnection = null;
+           connectedCoachDriveIds = Array.isArray(result.connected_coach_ids) ? result.connected_coach_ids : [];
++          coachDriveRoots = result.source_roots || {};
+         }
+       }
+     }
+@@ -1248,6 +1448,7 @@
+     }
+ 
+     async function selectAdminReportCentre(centreId) {
++      invalidateReportReads();
+       activeReportCentreId = adminReportCentres.some(centre => centre.id === centreId) ? centreId : "";
+       adminReportContext = null;
+       adminReportContextCentreId = "";
+@@ -1255,12 +1456,13 @@
+       state.reports = [];
+       state.reportDrafts = {};
+       reportStoreError = "";
+-      await loadReportsFromDrive();
++      refreshReportsInBackground();
+       render();
+     }
+ 
+     function handleReportCentreChange(centreId) {
+       if (!centreId) {
++        invalidateReportReads();
+         activeReportCentreId = "";
+         adminReportContext = null;
+         adminReportContextCentreId = "";
+@@ -1314,8 +1516,8 @@
+       loginError = "";
+       render();
+       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+-      isSigningIn = false;
+       if (error) {
++        isSigningIn = false;
+         loginError = error.message || "Unable to sign in.";
+         return render();
+       }
+@@ -1323,6 +1525,7 @@
+       if (requestedCentre && (!state.auth.centreId || state.auth.centreId !== requestedCentre.id)) {
+         await supabase.auth.signOut();
+         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
++        isSigningIn = false;
+         loginError = `This account does not belong to ${requestedCentre.name}.`;
+         return render();
+       }
+@@ -1332,14 +1535,21 @@
+       if (requestedCentre && state.auth.centreId !== requestedCentre.id) {
+         await supabase.auth.signOut();
+         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
++        isSigningIn = false;
+         loginError = `This account does not belong to ${requestedCentre.name}.`;
+         return render();
+       }
+-      await refreshPrivilegedState().catch(() => {});
+-      await loadReportsFromDrive();
++      await Promise.all([
++        refreshCoachesFromSupabase(),
++        refreshStudentsFromSupabase(),
++        refreshCoachAccountCount(),
++        refreshPrivilegedState().catch(() => {}),
++      ]);
+       state.ui.page = "overview";
+       state.ui.avatarMenuOpen = false;
+       state.ui.reportViewId = null;
++      isSigningIn = false;
++      refreshReportsInBackground();
+       render();
+     }
+ 
+@@ -1452,6 +1662,11 @@
+       const previousUserId = state.auth.userId;
+       const previousCentreId = state.auth.centreId;
+       if (!user) {
++        if (wizardDraftId && state.reportDrafts[wizardDraftId] && hybridWorkspace) {
++          updateWizardDraftFromInputs({ schedule: false });
++          try { await flushDraftSave(state.reportDrafts[wizardDraftId]); } catch {}
++        }
++        invalidateReportReads();
+         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+         state.reports = [];
+         state.reportDrafts = {};
+@@ -1543,6 +1758,7 @@
+         state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
+       }
+       if (previousUserId && (previousUserId !== user.id || previousCentreId !== centreId)) {
++        invalidateReportReads();
+         state.reports = [];
+         state.reportDrafts = {};
+         reportStoreStatus = "idle";
+@@ -1578,13 +1794,17 @@
+       if (!supabase) return;
+       supabase.auth.onAuthStateChange((event, session) => {
+         window.setTimeout(async () => {
++          // Bootstrap and password sign-in already restore this same session.
++          if (authInitializing || isSigningIn) return;
+           await applyAuthUser(session?.user || null);
+-          await refreshCoachesFromSupabase();
+-          await refreshStudentsFromSupabase();
+-          await refreshCoachAccountCount();
++          await Promise.all([
++            refreshCoachesFromSupabase(),
++            refreshStudentsFromSupabase(),
++            refreshCoachAccountCount(),
++          ]);
+           if (event === "SIGNED_IN" && !authInitializing) {
+             await refreshPrivilegedState().catch(() => {});
+-            await loadReportsFromDrive();
++            refreshReportsInBackground();
+           }
+           if (!authInitializing) render();
+         }, 0);
+@@ -1592,6 +1812,12 @@
+     }
+ 
+     async function logout() {
++      if (wizardDraftId && state.reportDrafts[wizardDraftId] && reportLocalStore) {
++        updateWizardDraftFromInputs({ schedule: false });
++        try { await flushDraftSave(state.reportDrafts[wizardDraftId]); }
++        catch { alert("Your latest edits could not be saved. Keep this tab open and retry before signing out."); return; }
++      }
++      invalidateReportReads();
+       if (supabase) await supabase.auth.signOut();
+       state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
+       loginError = "";
+@@ -1632,7 +1858,7 @@
+       persist();
+       scheduleRender();
+       if (page === "reports" && reportRepository) {
+-        loadReportsFromDrive().then(() => scheduleRender()).catch(() => scheduleRender());
++        refreshReportsInBackground();
+       }
+     }
+ 
+@@ -1677,7 +1903,7 @@
+       const reportsLastMonth = getVisibleReportsForMonth(getPreviousMonthPrefix()).length;
+       const activeStudents = getVisibleStudents().filter(student => student.status !== "Inactive").length;
+       const stats = [
+-        { title: "Reports Created This Month", value: reportsThisMonth, footnote: formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
++        { title: "Reports Created This Month", value: reportStoreStatus === "loading" || reportUsingLocalCache ? "…" : reportsThisMonth, footnote: reportStoreStatus === "loading" || reportUsingLocalCache ? "Checking Google Drive totals…" : formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
+         { title: "Total Students", value: activeStudents, footnote: "" }
+       ];
+       if (state.auth.role === "admin") {
+@@ -1840,6 +2066,7 @@
+       return `
+         <section class="page ${state.ui.page === "overview" ? "active" : ""}">
+           ${renderStats()}
++          ${reportStoreStatus === "loading" ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive. You can use the dashboard while they load.</p>' : reportStoreError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)} <button class="plain-link" data-nav="reports">Open reports</button></p>` : ""}
+           <div class="table-card">
+             <div class="table-topline">
+               <div class="section-title">
+@@ -1944,7 +2171,7 @@
+               <div class="section-title">
+                 <h2>Reports</h2>
+               </div>
+-              ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}
++              <div class="profile-actions"><button class="secondary-btn" data-action="refresh-reports" ${reportLoadPromise ? "disabled" : ""}>${reportLoadPromise ? "Refreshing…" : "Refresh"}</button>${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}</div>
+             </div>
+             <div class="reports-filter-bar">
+               <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">
+@@ -2645,7 +2872,8 @@
+         <div id="wizardModal" class="modal-backdrop open">
+           <div class="modal-card">
+             <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
+-            <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || (isCertificatePreview ? "Preview" : "Saved to Google Drive"))}</p>
++            <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || reportSaveMessage())}</p>
++            ${renderHybridNotice()}
+             <div class="wizard-steps">
+               ${[
+                 ["Step 1", "Select Student"],
+@@ -2923,6 +3151,7 @@
+               <p>${escapeHtml(requestedCentre?.name || "JomNittaku")} Coach Reporting System</p>
+               </div>
+             </header>
++            ${renderHybridNotice()}
+             ${pageContent}
+           </main>
+         </div>
+@@ -3192,6 +3421,15 @@
+       // half-typed into the login form (and the caret position) is lost
+       // unless it is carried across explicitly.
+       const activeElement = document.activeElement;
++      // A Drive list may finish while a report search/date filter is in use.
++      // Carry these values and the caret across that asynchronous render.
++      const reportFilterIds = ["reportsSearch", "reportsDateFilter", "reportsStatusFilter", "reportsStudentFilter", "reportsMonthFilter", "reportsDayFilter", "reportsDateFrom", "reportsDateTo", "overviewDateFrom", "overviewDateTo"];
++      const reportFilterState = {
++        values: Object.fromEntries(reportFilterIds.map(id => document.getElementById(id)).filter(Boolean).map(input => [input.id, input.value])),
++        activeId: reportFilterIds.includes(activeElement?.id) ? activeElement.id : null,
++        selectionStart: typeof activeElement?.selectionStart === "number" ? activeElement.selectionStart : null,
++        selectionEnd: typeof activeElement?.selectionEnd === "number" ? activeElement.selectionEnd : null,
++      };
+       const loginForm = app.querySelector(".login-form");
+       const loginFormState = loginForm
+         ? {
+@@ -3230,6 +3468,14 @@
+       app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
+       if (publicCoach) return;
+       attachEvents();
++      Object.entries(reportFilterState.values).forEach(([id, value]) => {
++        const input = document.getElementById(id);
++        if (input) input.value = value;
++      });
++      const reportDateFilter = document.getElementById("reportsDateFilter")?.value;
++      document.getElementById("reportsMonthFilter")?.classList.toggle("hidden", reportDateFilter !== "month");
++      document.getElementById("reportsDayFilter")?.classList.toggle("hidden", reportDateFilter !== "day");
++      document.getElementById("reportsCustomDates")?.classList.toggle("hidden", reportDateFilter !== "custom");
+       fitCustomCertificateHeadingText();
+       // Fonts requested by styles.css can finish loading after first paint.
+       // Refit after readiness without changing font size or saved geometry.
+@@ -3249,17 +3495,17 @@
+         // that have no hydrate step of their own.
+         stampTableLabels();
+       }
+-      if (loginFormState) {
+-        Object.entries(loginFormState.values).forEach(([id, value]) => {
++      for (const formState of [loginFormState, reportFilterState].filter(Boolean)) {
++        Object.entries(formState.values).forEach(([id, value]) => {
+           const input = document.getElementById(id);
+           if (input && value) input.value = value;
+         });
+-        const nextFocus = loginFormState.activeId ? document.getElementById(loginFormState.activeId) : null;
++        const nextFocus = formState.activeId ? document.getElementById(formState.activeId) : null;
+         if (nextFocus && typeof nextFocus.focus === "function") {
+           nextFocus.focus({ preventScroll: true });
+-          if (typeof nextFocus.setSelectionRange === "function" && loginFormState.selectionStart !== null && loginFormState.selectionEnd !== null) {
++          if (typeof nextFocus.setSelectionRange === "function" && formState.selectionStart !== null && formState.selectionEnd !== null) {
+             try {
+-              nextFocus.setSelectionRange(loginFormState.selectionStart, loginFormState.selectionEnd);
++              nextFocus.setSelectionRange(formState.selectionStart, formState.selectionEnd);
+             } catch {
+               // Some input types (e.g. email) disallow selection APIs.
+             }
+@@ -3930,12 +4176,43 @@
+         if (!confirm("Disconnect your Google Drive? Existing reports remain in your Google account, but the dashboard will no longer be able to load or save them until you reconnect.")) return;
+         try {
+           await invokePrivileged("google-drive-oauth", { action: "disconnect", centre_id: state.auth.centreId });
++          invalidateReportReads();
+           await refreshPrivilegedState();
+           state.reports = []; state.reportDrafts = {}; reportStoreStatus = "disconnected";
+           reportLoadedAt = 0;
+           reportStoreError = driveConnectionError || "Connect your Google Drive to view or create your reports.";
+           render();
+         } catch (error) { alert(error.message || "Unable to disconnect Google Drive."); }
++      })();
++      if (action === "refresh-reports") {
++        refreshReportsInBackground({ force: true });
++        return render();
++      }
++      if (action === "retry-local-sync") return syncLocalDrafts();
++      if (action === "export-local-drafts") return (async () => {
++        if (!hybridWorkspace) return;
++        const local = await hybridWorkspace.snapshot();
++        const pendingIds = new Set(local.pending.map(item => item.id));
++        const records = local.records.filter(record => pendingIds.has(record.id));
++        downloadBlob(new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), records }, null, 2)], { type: "application/json" }), "local-report-drafts.json");
++      })();
++      if (action === "copy-local-draft") return (async () => {
++        if (!hybridWorkspace) return;
++        try {
++          const id = event.currentTarget.dataset.draftId;
++          const copy = await hybridWorkspace.copyDraft(id);
++          const local = await hybridWorkspace.snapshot();
++          applyReportRecords(local.records, getReportCentreId());
++          if (wizardDraftId === id) wizardDraftId = copy.id;
++          scheduleHybridSync();
++          render();
++        } catch (error) { alert(error.message); }
++      })();
++      if (action === "clear-report-cache") return (async () => {
++        if (!hybridWorkspace) return;
++        await hybridWorkspace.clearSynced();
++        hybridCacheLoadedScope = "";
++        updateHybridNotice();
+       })();
+       if (action === "sign-in") return signIn();
+       if (action === "logout") return logout();
+@@ -4308,7 +4585,7 @@
+       dirtyReportDraftId = draft.id;
+       const revision = (draftRevisions.get(draft.id) || 0) + 1;
+       draftRevisions.set(draft.id, revision);
+-      updateReportSaveStatus(isCertificatePreview ? "Preview" : "Unsaved changes · saving to Google Drive…");
++      updateReportSaveStatus(isCertificatePreview ? "Preview" : reportLocalStore ? "Saving on this device…" : "Unsaved changes · saving to Google Drive…");
+       clearTimeout(draftSaveTimer);
+       draftSaveTimer = window.setTimeout(() => {
+         draftSaveTimer = null;
+@@ -4317,20 +4594,22 @@
+         saveReportRecord({ ...current, recordType: "draft" }, { centreId: current.centreId || getReportCentreId() })
+           .then(() => {
+             if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
+-            updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
++            updateReportSaveStatus(reportSaveMessage());
+           })
+           .catch(() => {});
+-      }, 500);
++      }, reportLocalStore ? 200 : 500);
+     }
+ 
+     async function flushDraftSave(draft) {
++      const scope = reportReadScope();
+       clearTimeout(draftSaveTimer);
+       draftSaveTimer = null;
+       const revision = draftRevisions.get(draft.id) || 0;
+       dirtyReportDraftId = draft.id;
+       const saved = await saveReportRecord({ ...draft, recordType: "draft" }, { centreId: draft.centreId || getReportCentreId() });
++      if (scope !== reportReadScope()) return saved;
+       if (draftRevisions.get(draft.id) === revision && !draftSaveTimer) dirtyReportDraftId = "";
+-      updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saved to Google Drive");
++      updateReportSaveStatus(reportSaveMessage());
+       return saved;
+     }
+ 
+@@ -4339,6 +4618,13 @@
+       event.preventDefault();
+       event.returnValue = "";
+     });
++    window.addEventListener("online", () => {
++      if (hybridWorkspace) refreshPrivilegedState().catch(() => {}).then(() => syncLocalDrafts());
++    });
++    window.addEventListener("offline", () => updateHybridNotice());
++    if (typeof document !== "undefined") document.addEventListener?.("visibilitychange", () => {
++      if (document.visibilityState === "visible" && hybridWorkspace) syncLocalDrafts();
++    });
+ 
+     async function startReportFlow() {
+       if (!state.auth.role || state.auth.role === "dev") return;
+@@ -4346,6 +4632,7 @@
+         reportStoreStatus = "ready";
+         return createReportDraft(getCurrentCoach());
+       }
++      if (reportLoadPromise || reportStoreStatus === "loading") await loadReportsFromDrive();
+       if (state.auth.role === "admin" && !activeReportCentreId) {
+         state.ui.page = "reports";
+         await loadReportsFromDrive();
+@@ -4353,8 +4640,9 @@
+         return;
+       }
+       const driveConnected = state.auth.role !== "coach" || state.driveConnection?.status === "connected";
++      const hasLocalDraft = hybridWorkspace && Object.values(state.reportDrafts).some(draft => draft.coachId === state.auth.coachId);
+       const listUnavailable = reportStoreStatus === "error" && reportStoreError === "Google Drive returned an invalid report list";
+-      if ((!driveConnected) || (reportStoreStatus !== "ready" && !listUnavailable)) {
++      if ((!driveConnected && !hasLocalDraft) || (reportStoreStatus !== "ready" && !listUnavailable)) {
+         alert(reportStoreError || "Connect Google Drive and wait for reports to load before starting a report.");
+         return;
+       }
+@@ -4496,6 +4784,8 @@
+       if (reportGenerating) return;
+       const draft = state.reportDrafts[wizardDraftId];
+       if (!draft) return;
++      const finalScope = reportReadScope();
++      const finalGeneration = reportLoadGeneration;
+       updateWizardDraftFromInputs({ schedule: false });
+       if (!draft.studentId) {
+         alert("Select a student first.");
+@@ -4521,19 +4811,34 @@
+       clearTimeout(draftSaveTimer);
+       draftSaveTimer = null;
+       reportGenerating = true;
++      // Keep the confirmed snapshot stable while its draft/report is uploading.
++      document.querySelectorAll("#wizardModal input, #wizardModal textarea, #wizardModal select, #wizardModal button").forEach(control => { control.disabled = true; });
++      document.getElementById("wizardModal")?.setAttribute("aria-busy", "true");
+       document.querySelector('[data-action="wizard-generate"]')?.setAttribute("disabled", "");
+       dirtyReportDraftId = draft.id;
+       let savedReport;
+       try {
+         // A pending draft write must finish before finalization removes it.
+-        await reportWriteQueues.get(draft.id);
++        if (!isCertificatePreview && ensureHybridWorkspace()) {
++          await flushDraftSave(draft);
++          if (navigator.onLine === false) throw new Error("This draft is saved on this device. Go online to sync and generate the report.");
++          await hybridWorkspace.confirmDraft(draft.id);
++        } else await reportWriteQueues.get(draft.id);
++        if (finalScope !== reportReadScope() || finalGeneration !== reportLoadGeneration) return;
+         savedReport = await saveReportRecord(finalReport, { draftId: draft.id, centreId: draft.centreId || getReportCentreId() });
+-      } catch {
++      } catch (error) {
++        if (finalScope !== reportReadScope() || finalGeneration !== reportLoadGeneration) return;
++        reportStoreError = error.message || "Sync this draft to Google Drive before generating the report.";
+         reportGenerating = false;
+         render();
+         return;
+       }
++      if (finalScope !== reportReadScope() || finalGeneration !== reportLoadGeneration) return;
+       state.reports.unshift({ ...normalizeReport(savedReport), centreId: draft.centreId || getReportCentreId() });
++      if (hybridWorkspace) {
++        try { await hybridWorkspace.complete(savedReport, draft.id); }
++        catch (error) { hybridLocalError = `Report saved to Drive; local cache update failed: ${error.message}`; }
++      }
+       delete state.reportDrafts[draft.id];
+       dirtyReportDraftId = "";
+       const student = getStudentById(draft.studentId);
+@@ -5374,10 +5679,12 @@
+               state = tenantState;
+               state.auth = liveAuth;
+             }
+-            await refreshCoachesFromSupabase();
+-            await refreshStudentsFromSupabase();
+-            await refreshCoachAccountCount();
+-            await refreshPrivilegedState().catch(() => {});
++            await Promise.all([
++              refreshCoachesFromSupabase(),
++              refreshStudentsFromSupabase(),
++              refreshCoachAccountCount(),
++              refreshPrivilegedState().catch(() => {}),
++            ]);
+             if (driveCallback) {
+               if (!callbackError) {
+                 try {
+@@ -5388,7 +5695,7 @@
+                   // status-read failure must not erase a successful connection.
+                   if (driveResult?.connection) state.driveConnection = driveResult.connection;
+                   else await refreshPrivilegedState();
+-                  reportLoadedAt = 0;
++                  invalidateReportReads();
+                   reportStoreStatus = "idle";
+                 } catch (error) {
+                   callbackError = error.message || "Unable to connect Google Drive.";
+@@ -5402,7 +5709,6 @@
+                 ? `/centre/${encodeURIComponent(requestedCentre.slug)}` : "/");
+               sessionStorage.removeItem("pendingCentreSlug");
+             }
+-            await loadReportsFromDrive();
+             state.centreProfile = await loadPublicCentreProfile();
+           } else {
+             state.centreProfile = normalizeCentreProfile(state.centreProfile);
+@@ -5410,6 +5716,7 @@
+           authInitializing = false;
+           authReady = true;
+           if (callbackError) loginError = callbackError;
++          refreshReportsInBackground();
+           render();
+           subscribeToRealtime();
+         })
+--- a/src/report-drive.js
++++ b/src/report-drive.js
+@@ -111,9 +111,10 @@
+ export function createReportDriveRepository(invoke) {
+   if (typeof invoke !== "function") throw new TypeError("A Drive action invoker is required");
+   let templateSupport = null;
++  let hybridSupport = null;
+ 
+   return {
+-    async list({ centreId = "", onWarnings = null } = {}) {
++    async list({ centreId = "", onWarnings = null, onSources = null } = {}) {
+       let result = await invoke({ action: "report-list", centre_id: centreId || undefined });
+       if (typeof result === "string") {
+         try {
+@@ -138,11 +139,18 @@
+       if (typeof onWarnings === "function") {
+         onWarnings(Array.isArray(result?.warnings) ? result.warnings : []);
+       }
++      if (typeof onSources === "function") onSources(result?.source_roots || {});
+       return records.map(normalizeReportRecord);
+     },
+ 
+-    async save(record, { draftId = "", centreId = "" } = {}) {
++    async save(record, { draftId = "", centreId = "", hybrid = null } = {}) {
+       const normalized = normalizeReportRecord(record);
++      if (hybrid) {
++        hybridSupport ||= Promise.resolve().then(() => invoke({ action: "report-template-capabilities", centre_id: centreId || undefined })).then(result => {
++          if (result?.hybridDraftVersion !== 1) throw new Error("Update the report service to enable local draft sync.");
++        }).catch(error => { hybridSupport = null; throw error; });
++        await hybridSupport;
++      }
+       if (normalized.certificateDesign) {
+         // Check before writing: an older service silently drops unknown fields.
+         templateSupport ||= Promise.resolve().then(() => invoke({ action: "report-template-capabilities", centre_id: centreId || undefined })).then(result => {
+@@ -153,7 +161,9 @@
+         });
+         await templateSupport;
+       }
+-      const result = await invoke({ action: "report-save", record: normalized, draft_id: draftId || undefined, centre_id: centreId || undefined });
++      const body = { action: "report-save", record: normalized, draft_id: draftId || undefined, centre_id: centreId || undefined };
++      if (hybrid) body.hybrid_draft = hybrid;
++      const result = await invoke(body);
+       const saved = normalizeReportRecord(result?.record || normalized);
+       if (normalized.certificateDesign && JSON.stringify(saved.certificateDesign) !== JSON.stringify(normalized.certificateDesign)) {
+         throw new Error("The report service needs the template update before this report can be generated.");
+--- /dev/null
++++ b/src/report-local.js
+@@ -0,0 +1,235 @@
++import { normalizeReportRecord } from "./report-drive.js";
++
++const DB_NAME = "dao-report-hybrid-v1";
++const CACHE_LIMIT = 100;
++const emptyWorkspace = scope => ({ scope, entries: {}, updatedAt: 0 });
++
++export function reportWorkspaceKey({ project, userId, role, centreId }) {
++  if (!project || !userId || !centreId || !["coach", "centre_admin", "admin"].includes(role)) {
++    throw new Error("An authenticated report workspace is required");
++  }
++  return JSON.stringify([project, userId, role, centreId]);
++}
++
++// All changes are read/modify/write transactions, including outbox claims and
++// acknowledgements. Two tabs must not erase edits made while a sync is running.
++export function createIndexedDbReportStore(indexedDB = globalThis.indexedDB) {
++  let opening;
++  function open() {
++    if (!indexedDB) return Promise.reject(new Error("Local report storage is unavailable"));
++    if (!opening) opening = new Promise((resolve, reject) => {
++      const request = indexedDB.open(DB_NAME, 1);
++      request.onupgradeneeded = () => {
++        request.result.createObjectStore("workspaces", { keyPath: "scope" });
++        const entries = request.result.createObjectStore("entries", { keyPath: "key" });
++        entries.createIndex("scope", "scope");
++        entries.createIndex("pending", ["scope", "pending"]);
++      };
++      request.onerror = () => { opening = null; reject(request.error); };
++      request.onblocked = () => { opening = null; reject(new Error("Close other app tabs to enable local saving")); };
++      request.onsuccess = () => {
++        const db = request.result;
++        db.onversionchange = () => { db.close(); opening = null; };
++        resolve(db);
++      };
++    });
++    return opening;
++  }
++  async function transact(scope, change, { id = null, pendingOnly = false, readonly = false } = {}) {
++      const db = await open();
++      return new Promise((resolve, reject) => {
++        const tx = db.transaction(["workspaces", "entries"], readonly ? "readonly" : "readwrite");
++        const meta = tx.objectStore("workspaces"), entries = tx.objectStore("entries");
++        const get = id ? entries.get([scope, id]) : pendingOnly ? entries.index("pending").getAll([scope, 1]) : entries.index("scope").getAll(scope);
++        const getMeta = meta.get(scope);
++        let result, failure, loaded = 0;
++        const apply = () => {
++          if (++loaded !== 2) return;
++          try {
++            const rows = id ? get.result ? [get.result] : [] : get.result;
++            const state = { ...emptyWorkspace(scope), ...getMeta.result, entries: Object.fromEntries(rows.map(row => [row.entry.record.id, row.entry])) };
++            result = change(state);
++            if (readonly) return;
++            for (const row of rows) if (!state.entries[row.entry.record.id]) entries.delete(row.key);
++            for (const entry of Object.values(state.entries)) entries.put({ key: [scope, entry.record.id], scope, pending: entry.dirty ? 1 : 0, entry });
++            meta.put({ scope, updatedAt: state.updatedAt });
++          } catch (error) { failure = error; tx.abort(); }
++        };
++        get.onsuccess = getMeta.onsuccess = apply;
++        tx.oncomplete = () => resolve(result);
++        tx.onabort = tx.onerror = () => reject(failure || tx.error || new Error("Local report save failed"));
++      });
++  }
++  return {
++    update: (scope, change) => transact(scope, change),
++    updateEntry: (scope, id, change) => transact(scope, change, { id }),
++    updatePending: (scope, change) => transact(scope, change, { pendingOnly: true }),
++    read: scope => transact(scope, state => state, { readonly: true }),
++    async summary(scope) {
++      const db = await open();
++      return new Promise((resolve, reject) => {
++        const tx = db.transaction("entries", "readonly");
++        const index = tx.objectStore("entries").index("pending");
++        const dirty = index.getAll([scope, 1]), clean = index.getAllKeys([scope, 0]);
++        tx.oncomplete = () => resolve({
++          pending: dirty.result.map(({ entry }) => ({ id: entry.record.id, error: entry.error || "", blocked: Boolean(entry.blocked) })),
++          syncedDraftIds: clean.result.map(key => key[1]).filter(id => id.startsWith("draft-")),
++        });
++        tx.onabort = tx.onerror = () => reject(tx.error || new Error("Local sync status unavailable"));
++      });
++    },
++  };
++}
++
++export function createHybridReportWorkspace({ store, scope, actorId, remote, getRoot, isActive = () => true, onChange = () => {}, now = Date.now, uuid = () => crypto.randomUUID() }) {
++  let syncing = null;
++  const update = change => store.update(scope, change);
++  const updateEntry = (id, change) => store.updateEntry ? store.updateEntry(scope, id, change) : update(change);
++  const updatePending = change => store.updatePending ? store.updatePending(scope, change) : update(change);
++  function view(state) {
++    return {
++      records: Object.values(state.entries).filter(entry => entry.dirty || !getRoot(entry.record.coachId) || entry.root === getRoot(entry.record.coachId)).map(entry => normalizeReportRecord(entry.record)),
++      pending: Object.values(state.entries).filter(entry => entry.dirty).map(entry => ({
++        id: entry.record.id, error: entry.error || "", blocked: Boolean(entry.blocked),
++      })),
++      updatedAt: state.updatedAt,
++    };
++  }
++  async function snapshot() { return store.read ? view(await store.read(scope)) : update(state => view(state)); }
++  async function notify() { const data = store.summary ? await store.summary(scope) : await snapshot(); if (isActive()) onChange(data); }
++  function prune(state) {
++    const synced = Object.values(state.entries).filter(entry => !entry.dirty)
++      .sort((a, b) => `${b.record.date || ""}T${b.record.time || ""}`.localeCompare(`${a.record.date || ""}T${a.record.time || ""}`));
++    for (const entry of synced.slice(CACHE_LIMIT)) delete state.entries[entry.record.id];
++  }
++  return {
++    snapshot,
++    async cache(records, { complete = true } = {}) {
++      const normalized = records.map(normalizeReportRecord);
++      await update(state => {
++        const seen = new Set(normalized.map(record => record.id));
++        for (const record of normalized) {
++          const old = state.entries[record.id];
++          if (old?.dirty) continue;
++          state.entries[record.id] = { record, base: record, root: getRoot(record.coachId) || "", dirty: false };
++        }
++        if (complete) for (const [id, entry] of Object.entries(state.entries)) {
++          if (!entry.dirty && !seen.has(id)) delete state.entries[id];
++        }
++        state.updatedAt = now();
++        prune(state);
++      });
++      return snapshot();
++    },
++    async queue(record, { baseRecord = null } = {}) {
++      if (!isActive()) throw new Error("Sign in to this workspace before saving");
++      const normalized = normalizeReportRecord(record);
++      if (normalized.recordType !== "draft") throw new Error("Only drafts can be saved locally before Drive confirmation");
++      const root = getRoot(normalized.coachId);
++      await updateEntry(normalized.id, state => {
++        const old = state.entries[normalized.id];
++        if (!root && !old?.root) throw new Error("Connect this coach's Drive before creating a local draft");
++        state.entries[normalized.id] = {
++          ...old, record: normalized, base: old ? old.base : baseRecord ? normalizeReportRecord(baseRecord) : null, root: old?.root || root,
++          dirty: true, revision: uuid(), error: old?.blocked ? old.error : "", blocked: Boolean(old?.blocked),
++        };
++      });
++      await notify();
++      return normalized;
++    },
++    async sync() {
++      if (syncing) return syncing;
++      syncing = (async () => {
++        // A finite pass prevents constant typing from monopolizing the worker.
++        for (let count = 0; count < 20 && isActive(); count++) {
++          const token = uuid();
++          const job = await updatePending(state => {
++            const entry = Object.values(state.entries).sort((a, b) => (a.lastAttemptAt || 0) - (b.lastAttemptAt || 0))
++              .find(item => item.dirty && !item.blocked && getRoot(item.record.coachId) && (!item.lease || item.lease.until < now()));
++            if (!entry) return null;
++            const root = getRoot(entry.record.coachId);
++            if (!root) return null;
++            if (entry.root !== root) {
++              entry.blocked = true;
++              entry.error = "The connected Google account changed. Save a copy to the current Drive or export your local draft.";
++              return { skipped: true };
++            }
++            entry.lease = { token, until: now() + 120000 };
++            entry.lastAttemptAt = now();
++            return structuredClone(entry);
++          });
++          if (!job) break;
++          if (job.skipped) continue;
++          try {
++            if (!isActive()) {
++              await updateEntry(job.record.id, state => { const entry = state.entries[job.record.id]; if (entry?.lease?.token === token) entry.lease = null; });
++              break;
++            }
++            const saved = await remote.save(job.record, {
++              centreId: JSON.parse(scope)[3],
++              hybrid: { version: 1, actor_id: actorId, root_folder_id: job.root, base_record: job.base },
++            });
++            await updateEntry(job.record.id, state => {
++              const entry = state.entries[job.record.id];
++              if (entry?.lease?.token !== token) return;
++              entry.base = normalizeReportRecord(saved);
++              entry.lease = null;
++              entry.error = "";
++              if (entry.revision === job.revision) { entry.record = entry.base; entry.dirty = false; }
++            });
++          } catch (error) {
++            await updateEntry(job.record.id, state => {
++              const entry = state.entries[job.record.id];
++              if (entry?.lease?.token !== token) return;
++              entry.lease = null;
++              entry.error = error.message || "Google Drive sync failed";
++              entry.blocked = ["DRAFT_CONFLICT", "DRIVE_SOURCE_CHANGED"].includes(error.code)
++                || /^(Draft conflict:|Drive account changed:)/.test(entry.error);
++            });
++            break; // Network/config failures retry later, rather than in a loop.
++          }
++        }
++        await notify();
++        return store.summary ? store.summary(scope) : snapshot();
++      })();
++      try { return await syncing; } finally { syncing = null; }
++    },
++    async confirmDraft(id) {
++      await this.sync();
++      const entry = await updateEntry(id, state => structuredClone(state.entries[id] || null));
++      if (!entry || entry.dirty) throw new Error(entry?.error || "This draft is saved on this device. Sync it to Google Drive before generating the report.");
++      return entry.record;
++    },
++    async complete(report, draftId) {
++      const normalized = normalizeReportRecord(report);
++      await update(state => {
++        delete state.entries[draftId];
++        state.entries[normalized.id] = { record: normalized, base: normalized, root: getRoot(normalized.coachId) || "", dirty: false };
++        state.updatedAt = now();
++        prune(state);
++      });
++      await notify();
++    },
++    async copyDraft(id) {
++      const record = await update(state => {
++        const old = state.entries[id];
++        if (!old?.dirty) throw new Error("No local draft needs copying");
++        const root = getRoot(old.record.coachId);
++        if (!root) throw new Error("Connect the coach's Drive before saving a copy");
++        const copy = normalizeReportRecord({ ...old.record, id: `draft-${uuid()}`, ref: `${old.record.ref || "Draft"} (copy)`.slice(0, 80) });
++        state.entries[copy.id] = { record: copy, base: null, root, dirty: true, revision: uuid() };
++        if (old.base) state.entries[id] = { record: old.base, base: old.base, root: old.root, dirty: false };
++        else delete state.entries[id];
++        return copy;
++      });
++      await notify();
++      return record;
++    },
++    async clearSynced() {
++      await update(state => {
++        for (const [id, entry] of Object.entries(state.entries)) if (!entry.dirty) delete state.entries[id];
++      });
++      return snapshot();
++    },
++  };
++}
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -1,6 +1,12 @@
+ /* Consistent headline fonts: default and edited wording use the SAME
+    loaded typefaces. No switching between PNG art and browser lettering. */
+ @import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Lato:ital,wght@0,400;1,400&family=Montserrat:wght@400&family=Outfit:wght@700;800&display=swap");
++
++.report-hybrid-notice:empty { display: none; }
++.report-hybrid-notice { margin: 12px 0; padding: 12px 16px; border: 1px solid #d9e4e5; border-radius: 12px; background: #f5f9f9; color: #33565d; font-size: 13px; }
++.report-hybrid-notice p { margin: 0 0 8px; }
++.report-hybrid-notice .is-error { color: #a72e36; }
++.report-hybrid-notice .profile-actions { flex-wrap: wrap; }
+ 
+ :root {
+       --navy-950: #f8fafc;
+--- a/supabase/functions/google-drive-oauth/index.ts
++++ b/supabase/functions/google-drive-oauth/index.ts
+@@ -3,7 +3,7 @@
+ 
+ const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+ // Exposed on every response so a deployed coach-aware function is identifiable.
+-const DRIVE_API_VERSION = "coach-v3-templates";
++const DRIVE_API_VERSION = "coach-v4-hybrid-drafts";
+ const corsHeaders = {
+   "Access-Control-Allow-Origin": "*",
+   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+@@ -106,12 +106,12 @@
+   return String(created.id);
+ }
+ 
+-async function getReportFolders(accessToken: string, rootFolderId: string) {
++async function getReportFolders(accessToken: string, rootFolderId: string, includeExports = false) {
+   if (!rootFolderId || rootFolderId === "pending") throw new Error("Google Drive root folder is unavailable");
+   const reportsId = await findOrCreateFolder(accessToken, rootFolderId, REPORT_FOLDER);
+   const [recordsId, exportsId] = await Promise.all([
+     findOrCreateFolder(accessToken, reportsId, "Records"),
+-    findOrCreateFolder(accessToken, reportsId, "Exports"),
++    includeExports ? findOrCreateFolder(accessToken, reportsId, "Exports") : Promise.resolve(""),
+   ]);
+   return { recordsId, exportsId };
+ }
+@@ -166,6 +166,12 @@
+   return record;
+ }
+ 
++function stableRecord(value: unknown): string {
++  if (Array.isArray(value)) return `[${value.map(stableRecord).join(",")}]`;
++  if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableRecord(item)}`).join(",")}}`;
++  return JSON.stringify(value) ?? "null";
++}
++
+ async function reportFiles(accessToken: string, recordsId: string, recordId: string, recordType?: string) {
+   const query = `'${driveQueryValue(recordsId)}' in parents and appProperties has { key='${REPORT_FILE_PROPERTY}' and value='${driveQueryValue(recordId)}' } and trashed = false`;
+   const files = await listDriveFiles(accessToken, query, "id,name,mimeType,appProperties,parents");
+@@ -197,18 +203,32 @@
+   return JSON.parse(text);
+ }
+ 
++async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
++  const results = new Array<R>(items.length);
++  let nextIndex = 0;
++  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
++    while (nextIndex < items.length) {
++      const index = nextIndex++;
++      results[index] = await mapper(items[index], index);
++    }
++  }));
++  return results;
++}
++
+ async function listReportRecords(accessToken: string, recordsId: string) {
+   const files = await listDriveFiles(
+     accessToken,
+     `'${driveQueryValue(recordsId)}' in parents and mimeType = 'application/json' and trashed = false`,
+     "id,name,mimeType,appProperties,parents",
+   );
+-  return (await Promise.all(files.map(async file => {
++  // Bound reads even when a coach has hundreds of report files. Coach Drives
++  // use four workers below, keeping media requests bounded to 24 per request.
++  return (await mapWithConcurrency(files, 6, async file => {
+     if (!file.appProperties?.[REPORT_FILE_PROPERTY]) return null;
+     const record = normalizeReportRecord(await readDriveJson(accessToken, String(file.id)));
+     if (record.id !== file.appProperties[REPORT_FILE_PROPERTY]) throw new Error("Drive report identity does not match its record");
+     return record;
+-  }))).filter(Boolean);
++  })).filter(Boolean);
+ }
+ 
+ // Only the Edge Function's service-role client can read encrypted tokens.
+@@ -315,7 +335,7 @@
+       if (error) throw error;
+       const connected = await connectedCoachRows(centreId);
+       const approved = new Set(connected.map(item => item.coach_id));
+-      return json({ connected_coach_ids: (data || []).map(item => item.coach_id).filter(id => approved.has(id)) });
++      return json({ connected_coach_ids: (data || []).map(item => item.coach_id).filter(id => approved.has(id)), source_roots: Object.fromEntries(connected.map(item => [item.coach_id, item.root_folder_id])) });
+     } catch (error) {
+       return json({ error: error instanceof Error ? error.message : "Unable to load Drive status" }, 500);
+     }
+@@ -367,7 +387,7 @@
+       }
+       actorRole = membership.role;
+     }
+-    if (action === "report-template-capabilities") return json({ certificateDesignVersion: 1 });
++    if (action === "report-template-capabilities") return json({ certificateDesignVersion: 1, hybridDraftVersion: 1 });
+     if (action === "report-list") {
+       try {
+         const allConnections = await connectedCoachRows(requestedCentreId);
+@@ -376,9 +396,9 @@
+         const results: Record<string, unknown>[] = [];
+         const warnings: string[] = [];
+         let successfulConnections = 0;
+-        // Read a few coach Drives concurrently to avoid one slow account delaying all others.
+-        for (let offset = 0; offset < connections.length; offset += 4) {
+-          await Promise.all(connections.slice(offset, offset + 4).map(async owner => {
++        // Refill each free slot immediately; a slow coach must not hold the
++        // next batch of accounts until its entire batch has completed.
++        await mapWithConcurrency(connections, 4, async owner => {
+             try {
+               const { accessToken, recordsId } = await connectionAccess(owner);
+               const [records, studentResult] = await Promise.all([
+@@ -404,10 +424,9 @@
+               // Do not silently claim a complete view if one coach's account fails.
+               warnings.push(`One coach's Drive could not be loaded (${error instanceof Error ? error.message : "unknown error"})`);
+             }
+-          }));
+-        }
++        });
+         if (warnings.length && !successfulConnections) return json({ error: warnings.join("; ") }, 502);
+-        return json({ records: results, warnings, connected_coach_ids: connections.map(row => row.coach_id) });
++        return json({ records: results, warnings, connected_coach_ids: connections.map(row => row.coach_id), source_roots: Object.fromEntries(connections.map(row => [row.coach_id, row.root_folder_id])) });
+       } catch (error) {
+         return json({ error: error instanceof Error ? error.message : "Unable to load coach reports" }, 502);
+       }
+@@ -436,6 +455,15 @@
+     if (!connection || connection.status !== "connected" || !connection.encrypted_refresh_token) {
+       return json({ error: "This coach has not connected Google Drive" }, 409);
+     }
++    if (body.hybrid_draft) {
++      const hybrid = body.hybrid_draft;
++      if (action !== "report-save" || hybrid.version !== 1 || hybrid.actor_id !== user.id || body.record?.recordType !== "draft") {
++        return json({ error: "Invalid local draft sync context" }, 403);
++      }
++      if (hybrid.root_folder_id !== connection.root_folder_id) {
++        return json({ error: "Drive account changed: save a copy to the current Drive", code: "DRIVE_SOURCE_CHANGED" }, 409);
++      }
++    }
+     const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
+     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+     const encryptionKey = Deno.env.get("DRIVE_TOKEN_ENCRYPTION_KEY");
+@@ -443,7 +471,7 @@
+     try {
+       const refreshToken = await decryptRefreshToken(connection.encrypted_refresh_token, encryptionKey);
+       const tokens = await getDriveAccessToken(refreshToken, clientId, clientSecret);
+-      const { recordsId, exportsId } = await getReportFolders(tokens.access_token, connection.root_folder_id);
++      const { recordsId, exportsId } = await getReportFolders(tokens.access_token, connection.root_folder_id, action === "report-pdf");
+       if (action === "report-save") {
+         let record: Record<string, unknown>;
+         try {
+@@ -471,12 +499,28 @@
+             return json({ error: "Report student is not part of this centre and coach" }, 403);
+           }
+         }
++        if (body.hybrid_draft) {
++          const finalized = await reportFiles(tokens.access_token, recordsId, `report-${String(record.id).slice(6)}`, "report");
++          if (finalized) return json({ error: "Draft conflict: this draft was already generated. Save local edits as a copy.", code: "DRAFT_CONFLICT" }, 409);
++        }
+         const existing = await reportFiles(tokens.access_token, recordsId, String(record.id), String(record.recordType));
+         if (existing) {
+           const saved = normalizeReportRecord(await readDriveJson(tokens.access_token, String(existing.id)));
+           if (saved.coachId !== record.coachId || (saved.studentId && saved.studentId !== record.studentId)) {
+             return json({ error: "Report identifier is already owned by a different record" }, 409);
+           }
++          if (body.hybrid_draft) {
++            // A lost response may be retried after the exact content was saved.
++            if (stableRecord(saved) === stableRecord(record)) return json({ record: saved, file_id: existing.id });
++            let base;
++            try { base = body.hybrid_draft.base_record ? normalizeReportRecord(body.hybrid_draft.base_record) : null; }
++            catch { return json({ error: "Invalid draft sync baseline" }, 400); }
++            if (!base || base.id !== record.id || stableRecord(base) !== stableRecord(saved)) {
++              return json({ error: "Draft conflict: Google Drive has a different version. Keep your edits by saving a copy.", code: "DRAFT_CONFLICT" }, 409);
++            }
++          }
++        } else if (body.hybrid_draft?.base_record) {
++          return json({ error: "Draft conflict: the Drive draft was removed or finalized. Save your local edits as a copy.", code: "DRAFT_CONFLICT" }, 409);
+         }
+         if (record.recordType === "report" && body.draft_id) {
+           const draftId = String(body.draft_id);
+--- /dev/null
++++ b/tests/drive-performance.cjs
+@@ -0,0 +1,294 @@
++// Tests the supplied controller/repository directly, with no certificate-studio
++// files or installed packages required. Run: node --test tests/drive-performance.cjs
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const vm = require('node:vm');
++const path = require('node:path');
++const controller = fs.readFileSync(path.join(__dirname, '../src/legacy-app.js'), 'utf8');
++const repository = fs.readFileSync(path.join(__dirname, '../src/report-drive.js'), 'utf8');
++const localSource = fs.readFileSync(path.join(__dirname, '../src/report-local.js'), 'utf8');
++const clean = source => source.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
++const tick = () => new Promise(resolve => setImmediate(resolve));
++function deferred() {
++  let resolve, reject;
++  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
++  return { promise, resolve, reject };
++}
++const record = (id = 'report-first') => ({
++  schemaVersion: 1, recordType: 'report', id, coachId: 'coach-1', studentId: 'student-1',
++  date: '2026-10-20', time: '10:30', lessonNumber: 1, summary: { remarks: id },
++});
++function harness({ bootstrap = false, invoke = async () => ({ records: [] }), localDB = null } = {}) {
++  const calls = [], renders = [];
++  const storage = { getItem: () => null, setItem() {}, removeItem() {} };
++  const user = { id: 'coach-1', email: 'coach@example.test', app_metadata: { centre_id: 'centre-1' }, user_metadata: {} };
++  const coach = { id: user.id, name: 'Coach', centre_id: 'centre-1' };
++  const inputs = { loginEmail: { value: user.email }, loginPassword: { value: 'fixture' } };
++  function query(table) {
++    const q = {
++      select() { return q; }, eq() { return q; }, order() { return q; },
++      single: async () => ({ data: null }),
++      maybeSingle: async () => ({ data: table === 'centre_memberships' ? { centre_id: 'centre-1', role: 'coach' } : table === 'coaches' ? coach : null }),
++      then(yes, no) { return Promise.resolve({ data: table === 'coaches' ? [coach] : [], error: null }).then(yes, no); },
++    };
++    return q;
++  }
++  const document = { getElementById: id => inputs[id] || null, activeElement: null, querySelectorAll: () => [] };
++  const sandbox = {
++    console, URLSearchParams, Date, Map, Set, setTimeout, clearTimeout,
++    localStorage: storage, sessionStorage: storage, document,
++    requestAnimationFrame: fn => fn(), __bootstrap: bootstrap,
++    ...(localDB ? { indexedDB: localDB } : {}),
++    navigator: { onLine: true }, structuredClone, crypto: require('node:crypto').webcrypto,
++    createClient: () => ({
++      from: query,
++      auth: {
++        getSession: async () => ({ data: { session: { user } } }),
++        signInWithPassword: async () => ({ data: { user }, error: null }),
++        signOut: async () => ({}), onAuthStateChange() {},
++      },
++      functions: { invoke: async (_name, { body }) => {
++        calls.push(body);
++        const data = body.action === 'connection-status' ? { connection: { status: 'connected', root_folder_id: 'root-1' } } : await invoke(body);
++        return { data, error: null };
++      } },
++    }),
++    __render: snapshot => renders.push(snapshot),
++  };
++  sandbox.window = { location: new URL('https://app.example.test/'), addEventListener() {}, setTimeout };
++  const hook = `
++    globalThis.api = {
++      loadReportsFromDrive, refreshReportsInBackground, invalidateReportReads,
++      saveReportRecord, logout, signIn, selectAdminReportCentre,
++      ensureHybridWorkspace, syncLocalDrafts, resetHybridSession,
++      get state() { return state; },
++      get status() { return reportStoreStatus; },
++      get error() { return reportStoreError; },
++      get pending() { return reportLoadPromise; },
++      get ready() { return authReady && !authInitializing; },
++      seed(role = 'coach', centreId = 'centre-1') {
++        state.auth = { userId: 'coach-1', role, coachId: 'coach-1', centreId };
++        state.driveConnection = { status: 'connected', root_folder_id: 'root-1' };
++        state.ui.page = 'overview';
++      },
++      setUser(id) { state.auth.userId = id; },
++      setCentre(id) { state.auth.centreId = id; invalidateReportReads(); state.reports = []; state.reportDrafts = {}; },
++      setWizard(id) { wizardDraftId = id; },
++      setAdminCentre(id) { activeReportCentreId = id; },
++    };
++    render = () => __render({ ready: authReady && !authInitializing, status: reportStoreStatus, user: state.auth.userId });
++    scheduleRender = () => render();
++    subscribeToRealtime = () => {};
++    persist = () => {};
++    if (!globalThis.__bootstrap) return;
++  `;
++  vm.runInNewContext(clean(repository) + '\n' + clean(localSource) + '\n' + clean(controller).replace('    (async function bootstrap() {', hook + '\n    (async function bootstrap() {'), sandbox);
++  sandbox.initApp({ supabaseUrl: 'https://fixture.supabase.test', supabaseKey: 'publishable-fixture' });
++  return { api: sandbox.api, calls, renders, document };
++}
++
++test('bootstrap renders an authenticated dashboard before a slow Drive list completes', async () => {
++  const list = deferred();
++  const h = harness({ bootstrap: true, invoke: () => list.promise });
++  for (let i = 0; i < 20 && !h.api.ready; i++) await tick();
++  assert.equal(h.api.ready, true);
++  assert.equal(h.renders.at(-1).user, 'coach-1');
++  assert.equal(h.renders.at(-1).status, 'loading');
++  assert.equal(h.calls.filter(c => c.action === 'report-list').length, 1);
++  const pending = h.api.pending;
++  list.resolve({ records: [record()] });
++  await pending;
++  assert.equal(h.api.state.reports.length, 1);
++});
++
++test('password sign-in finishes while the Drive list is still pending', async () => {
++  const list = deferred();
++  const h = harness({ invoke: () => list.promise });
++  await h.api.signIn();
++  assert.equal(h.api.state.auth.userId, 'coach-1');
++  assert.equal(h.renders.at(-1).status, 'loading');
++  assert.ok(h.api.pending);
++  const pending = h.api.pending;
++  list.resolve({ records: [] });
++  await pending;
++});
++
++test('concurrent list calls share one request and repeat navigation uses session memory', async () => {
++  const list = deferred();
++  const h = harness({ invoke: () => list.promise });
++  h.api.seed();
++  const a = h.api.loadReportsFromDrive(), b = h.api.loadReportsFromDrive();
++  await tick();
++  assert.equal(h.calls.length, 1);
++  list.resolve({ records: [record()] });
++  await Promise.all([a, b]);
++  await h.api.loadReportsFromDrive();
++  assert.equal(h.calls.length, 1);
++});
++
++test('forced refresh keeps visible records and a failed refresh preserves them', async () => {
++  const refresh = deferred();
++  let count = 0;
++  const h = harness({ invoke: () => ++count === 1 ? { records: [record()] } : refresh.promise });
++  h.api.seed();
++  await h.api.loadReportsFromDrive();
++  const pending = h.api.loadReportsFromDrive({ force: true });
++  assert.equal(h.api.status, 'ready');
++  assert.equal(h.api.state.reports[0].id, 'report-first');
++  refresh.reject(Error('Google unavailable'));
++  await pending;
++  assert.equal(h.api.status, 'ready');
++  assert.equal(h.api.state.reports[0].id, 'report-first');
++  assert.match(h.api.error, /Google unavailable/);
++});
++
++test('a successful refresh replaces stale records after it completes', async () => {
++  let count = 0;
++  const h = harness({ invoke: () => ({ records: [record(++count === 1 ? 'report-first' : 'report-new')] }) });
++  h.api.seed();
++  await h.api.loadReportsFromDrive();
++  await h.api.loadReportsFromDrive({ force: true });
++  assert.equal(h.api.state.reports[0].id, 'report-new');
++});
++
++test('a late response after logout cannot restore report content', async () => {
++  const list = deferred();
++  const h = harness({ invoke: () => list.promise });
++  h.api.seed();
++  const pending = h.api.loadReportsFromDrive();
++  await tick();
++  await h.api.logout();
++  list.resolve({ records: [record()] });
++  await pending;
++  assert.equal(h.api.state.auth.userId, null);
++  assert.equal(h.api.state.reports.length, 0);
++  assert.equal(h.api.status, 'idle');
++});
++
++test('late failures and finalizers from another centre do not affect its new request', async () => {
++  const old = deferred(), current = deferred();
++  const h = harness({ invoke: body => body.centre_id === 'centre-1' ? old.promise : current.promise });
++  h.api.seed('centre_admin');
++  const a = h.api.loadReportsFromDrive();
++  await tick();
++  h.api.setCentre('centre-2');
++  const b = h.api.loadReportsFromDrive();
++  const currentPromise = h.api.pending;
++  await tick();
++  old.reject(Error('old centre failed'));
++  await a;
++  assert.equal(h.api.error, '');
++  assert.equal(h.api.pending, currentPromise);
++  current.resolve({ records: [record('report-current')] });
++  await b;
++  assert.equal(h.api.state.reports[0].centreId, 'centre-2');
++});
++
++test('an old success cannot overwrite a newer centre snapshot', async () => {
++  const old = deferred();
++  const h = harness({ invoke: body => body.centre_id === 'centre-1' ? old.promise : { records: [record('report-new')] } });
++  h.api.seed('centre_admin');
++  const pending = h.api.loadReportsFromDrive();
++  await tick();
++  h.api.setCentre('centre-2');
++  await h.api.loadReportsFromDrive();
++  old.resolve({ records: [record('report-old')] });
++  await pending;
++  assert.equal(h.api.state.reports[0].id, 'report-new');
++});
++
++test('admin workspace discovery is deduplicated before a centre has been selected', async () => {
++  const context = deferred();
++  const h = harness({ invoke: () => context.promise });
++  h.api.seed('admin', null);
++  const a = h.api.loadReportsFromDrive(), b = h.api.loadReportsFromDrive();
++  await tick();
++  assert.equal(h.calls.length, 1);
++  assert.equal(h.calls[0].action, 'admin-report-context');
++  context.resolve({ centres: [{ id: 'centre-1', name: 'One' }] });
++  await Promise.all([a, b]);
++  assert.equal(h.api.status, 'idle');
++});
++
++test('a new write makes an already running list response obsolete', async () => {
++  const list = deferred();
++  let listCount = 0;
++  const h = harness({ invoke: body => body.action === 'report-save' ? { record: body.record }
++    : ++listCount === 1 ? { records: [record()] } : list.promise });
++  h.api.seed();
++  await h.api.loadReportsFromDrive();
++  const pending = h.api.loadReportsFromDrive({ force: true });
++  await tick();
++  await h.api.saveReportRecord({ schemaVersion: 1, recordType: 'draft', id: 'draft-new', coachId: 'coach-1', summary: { remarks: 'new edit' } });
++  list.resolve({ records: [] });
++  await pending;
++  assert.equal(h.api.state.reportDrafts['draft-new'].summary.remarks, 'new edit');
++  assert.equal(h.api.state.reports.length, 1);
++});
++
++test('refresh does not fetch or overwrite an active wizard', async () => {
++  const h = harness();
++  h.api.seed();
++  h.api.setWizard('draft-editing');
++  await h.api.loadReportsFromDrive({ force: true });
++  assert.equal(h.calls.length, 0);
++});
++
++test('background completion does not rerender a profile form', async () => {
++  const list = deferred();
++  const h = harness({ invoke: () => list.promise });
++  h.api.seed();
++  const pending = h.api.refreshReportsInBackground();
++  h.api.state.ui.page = 'profile';
++  list.resolve({ records: [record()] });
++  await pending;
++  await tick();
++  assert.equal(h.api.state.reports.length, 1);
++  assert.equal(h.renders.length, 0);
++});
++
++test('the controller displays cached records before a slow Drive response after reload', async () => {
++  const { IDBFactory } = require('fake-indexeddb');
++  const localDB = new IDBFactory();
++  const first = harness({ localDB });
++  first.api.seed();
++  await first.api.ensureHybridWorkspace().cache([record('report-cached')]);
++  first.api.resetHybridSession();
++  const list = deferred();
++  const next = harness({ bootstrap: true, localDB, invoke: () => list.promise });
++  for (let i = 0; i < 100 && !next.api.state.reports.length; i++) await tick();
++  assert.equal(next.api.state.reports[0]?.id, 'report-cached');
++  assert.equal(next.api.status, 'ready');
++  const pending = next.api.pending;
++  list.resolve({ records: [record('report-fresh')] });
++  await pending;
++  assert.equal(next.api.state.reports[0].id, 'report-fresh');
++  next.api.resetHybridSession();
++});
++
++test('controller draft saves finish locally while Drive is unavailable', async () => {
++  const { IDBFactory } = require('fake-indexeddb');
++  const h = harness({ localDB: new IDBFactory(), invoke: () => { throw Error('Offline'); } });
++  h.api.seed();
++  const input = { schemaVersion: 1, recordType: 'draft', id: 'draft-offline', coachId: 'coach-1', summary: { remarks: 'Keep my edits' } };
++  h.api.state.reportDrafts[input.id] = input;
++  await h.api.saveReportRecord(input);
++  assert.equal(h.calls.length, 0);
++  await h.api.syncLocalDrafts();
++  const state = await h.api.ensureHybridWorkspace().snapshot();
++  assert.equal(state.pending.length, 1);
++  assert.equal(state.records[0].summary.remarks, 'Keep my edits');
++  h.api.resetHybridSession();
++});
++
++test('caching a large Drive collection does not truncate the online report list', async () => {
++  const { IDBFactory } = require('fake-indexeddb');
++  const records = Array.from({ length: 130 }, (_, i) => record(`report-${i}`));
++  const h = harness({ localDB: new IDBFactory(), invoke: () => ({ records }) });
++  h.api.seed();
++  await h.api.loadReportsFromDrive();
++  assert.equal(h.api.state.reports.length, 130);
++  assert.equal((await h.api.ensureHybridWorkspace().snapshot()).records.length, 100);
++  h.api.resetHybridSession();
++});
+--- a/tests/drive-backend.cjs
++++ b/tests/drive-backend.cjs
+@@ -90,10 +90,12 @@
+   };
+   const context = vm.createContext(sandbox);
+   const code = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, '').replace(/^export /gm, ''), { mode: 'strip' });
+-  vm.runInContext(code + '\nglobalThis.decryptStoredToken = decryptRefreshToken;', context);
++  vm.runInContext(code + '\nglobalThis.decryptStoredToken = decryptRefreshToken; globalThis.drivePerformance = { mapWithConcurrency, getReportFolders, listReportRecords };', context);
+   return {
+     tables, env, googleCalls, authCalls, databaseCalls,
+     decryptStored: sealed => context.decryptStoredToken(sealed, env.DRIVE_TOKEN_ENCRYPTION_KEY),
++    performance: context.drivePerformance,
++    setFetch: fetcher => { sandbox.fetch = fetcher; },
+     request: async (body, { token = 'valid-coach-session', method = 'POST', authorization = null } = {}) => {
+       const headers = { 'content-type': 'application/json' };
+       if (authorization !== null) headers.authorization = authorization;
+@@ -239,3 +241,123 @@
+   assert.equal((await f.request(null, { method: 'GET' })).status, 405);
+   assert.equal(f.authCalls.length, 0);
+ });
++
++test('bounded workers refill free slots while an earlier coach is slow', async () => {
++  const f = fixture();
++  let releaseSlow;
++  const slow = new Promise(resolve => { releaseSlow = resolve; });
++  const started = [];
++  const pending = f.performance.mapWithConcurrency([0, 1, 2, 3, 4, 5], 4, async id => {
++    started.push(id);
++    if (id === 0) await slow;
++    return id;
++  });
++  await new Promise(resolve => setImmediate(resolve));
++  assert.deepEqual(started, [0, 1, 2, 3, 4, 5]);
++  releaseSlow();
++  assert.deepEqual(Array.from(await pending), [0, 1, 2, 3, 4, 5]);
++});
++
++test('record downloads stay bounded and preserve file identity and ordering', async () => {
++  const f = fixture();
++  const files = Array.from({ length: 19 }, (_, index) => ({ id: `file-${index}`, appProperties: { dsmReportId: `report-${index}` } }));
++  let active = 0, peak = 0;
++  f.setFetch(async url => {
++    if (!String(url).includes('alt=media')) return Response.json({ files });
++    active++;
++    peak = Math.max(peak, active);
++    await new Promise(resolve => setImmediate(resolve));
++    active--;
++    const index = /file-(\d+)/.exec(String(url))[1];
++    return Response.json({ schemaVersion: 1, recordType: 'report', id: `report-${index}`, coachId, studentId: 'student-1', summary: {} });
++  });
++  const records = await f.performance.listReportRecords('access-token', 'records-folder');
++  assert.equal(peak, 6);
++  assert.deepEqual(Array.from(records, record => record.id), files.map(file => file.appProperties.dsmReportId));
++  f.setFetch(async url => String(url).includes('alt=media')
++    ? Response.json({ schemaVersion: 1, recordType: 'report', id: 'report-wrong', coachId, studentId: 'student-1', summary: {} })
++    : Response.json({ files: files.slice(0, 1) }));
++  await assert.rejects(f.performance.listReportRecords('access-token', 'records-folder'), /identity does not match/);
++});
++
++test('list/save folder lookup skips Exports and PDF lookup includes it', async () => {
++  const f = fixture();
++  const folders = [];
++  f.setFetch(async url => {
++    const query = new URL(String(url)).searchParams.get('q');
++    const name = /name = '([^']+)'/.exec(query)[1];
++    folders.push(name);
++    return Response.json({ files: [{ id: `${name}-folder` }] });
++  });
++  const recordsOnly = await f.performance.getReportFolders('access-token', 'root-folder');
++  assert.deepEqual(folders, ['Reports', 'Records']);
++  assert.equal(recordsOnly.exportsId, '');
++  folders.length = 0;
++  const withPdf = await f.performance.getReportFolders('access-token', 'root-folder', true);
++  assert.deepEqual(folders, ['Reports', 'Records', 'Exports']);
++  assert.equal(withPdf.exportsId, 'Exports-folder');
++});
++
++async function hybridFixture() {
++  const f = fixture();
++  await finish(f, await start(f));
++  const files = new Map(), uploads = [];
++  f.setFetch(async (url, options = {}) => {
++    url = new URL(String(url));
++    if (url.hostname === 'oauth2.googleapis.com') return Response.json({ access_token: 'access-token' });
++    if (url.pathname.startsWith('/upload/drive/v3/files')) {
++      const record = JSON.parse(new TextDecoder().decode(options.body).split('\r\n\r\n').at(-1).split('\r\n--')[0]);
++      uploads.push(record);
++      files.set(record.id, record);
++      return Response.json({ id: record.id });
++    }
++    if (url.searchParams.get('alt') === 'media') return Response.json(files.get(decodeURIComponent(url.pathname.split('/').at(-1))));
++    const q = url.searchParams.get('q') || '';
++    const folder = /name = '([^']+)'/.exec(q)?.[1];
++    if (folder) return Response.json({ files: [{ id: folder }] });
++    const id = /key='dsmReportId' and value='([^']+)'/.exec(q)?.[1];
++    const record = files.get(id);
++    return Response.json({ files: record ? [{ id, appProperties: { dsmReportId: id, dsmReportKind: record.recordType } }] : [] });
++  });
++  const record = { schemaVersion: 1, recordType: 'draft', id: 'draft-hybrid', coachId, summary: { remarks: 'First edit' } };
++  const hybrid = { version: 1, actor_id: coachId, root_folder_id: f.tables.coach_drive_connections[0].root_folder_id, base_record: null };
++  const save = (value = record, context = hybrid) => f.request({ action: 'report-save', centre_id: centreId, record: value, hybrid_draft: context });
++  return { ...f, files, uploads, record, hybrid, save };
++}
++
++test('hybrid drafts create once, acknowledge exact retries and compare the saved baseline', async () => {
++  const f = await hybridFixture();
++  const first = await f.save();
++  assert.equal(first.status, 200, JSON.stringify(first.body));
++  assert.equal((await f.save()).status, 200);
++  assert.equal(f.uploads.length, 1, 'lost-response retry must not rewrite the same content');
++  const next = { ...f.record, summary: { remarks: 'Next edit' } };
++  const conflict = await f.save(next);
++  assert.equal(conflict.status, 409);
++  assert.equal(conflict.body.code, 'DRAFT_CONFLICT');
++  assert.equal(f.uploads.length, 1);
++  const updated = await f.save(next, { ...f.hybrid, base_record: first.body.record });
++  assert.equal(updated.status, 200, JSON.stringify(updated.body));
++  assert.equal(f.uploads.length, 2);
++});
++
++test('hybrid sync refuses another actor, a changed Google account and stale missing drafts', async () => {
++  const f = await hybridFixture();
++  assert.equal((await f.save(f.record, { ...f.hybrid, actor_id: secondCoachId })).status, 403);
++  const changed = await f.save(f.record, { ...f.hybrid, root_folder_id: 'another-account-root' });
++  assert.equal(changed.status, 409);
++  assert.equal(changed.body.code, 'DRIVE_SOURCE_CHANGED');
++  const missing = await f.save(f.record, { ...f.hybrid, base_record: f.record });
++  assert.equal(missing.status, 409);
++  assert.equal(missing.body.code, 'DRAFT_CONFLICT');
++  assert.equal(f.uploads.length, 0);
++});
++
++test('hybrid retries cannot recreate an already finalized draft', async () => {
++  const f = await hybridFixture();
++  f.files.set('report-hybrid', { ...f.record, id: 'report-hybrid', recordType: 'report', studentId: 'student-1' });
++  const response = await f.save();
++  assert.equal(response.status, 409);
++  assert.equal(response.body.code, 'DRAFT_CONFLICT');
++  assert.equal(f.uploads.length, 0);
++});
+--- a/tests/report-drive.test.js
++++ b/tests/report-drive.test.js
+@@ -84,11 +84,12 @@
+ 
+   assert.equal((await repository.list({ centreId: "centre-1" })).length, 1);
+   assert.equal((await repository.save(report, { draftId: "draft-456", centreId: "centre-1" })).id, report.id);
+-  await repository.savePdf(report.id, "data:application/pdf;base64,AA==", { centreId: "centre-1" });
++  await repository.savePdf(report.id, "data:application/pdf;base64,AA==", { centreId: "centre-1", coachId: report.coachId });
+   assert.deepEqual(calls.map(call => call.action), ["report-list", "report-save", "report-pdf"]);
+   assert.equal(calls[1].draft_id, "draft-456");
+   assert.equal(calls[0].centre_id, "centre-1");
+   assert.equal(calls[1].centre_id, "centre-1");
+   assert.equal(calls[2].centre_id, "centre-1");
++  assert.equal(calls[2].coach_id, report.coachId);
+   assert.equal("arbitrary" in calls[1].record, false);
+ });
+--- /dev/null
++++ b/tests/report-local.test.mjs
+@@ -0,0 +1,198 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { IDBFactory } from "fake-indexeddb";
++import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "../src/report-local.js";
++import { createReportDriveRepository } from "../src/report-drive.js";
++
++const draft = (id = "draft-local", text = "Local edit") => ({ schemaVersion: 1, recordType: "draft", id, coachId: "coach-1", studentId: "student-1", date: "2026-10-29", summary: { remarks: text } });
++const report = id => ({ ...draft(id), recordType: "report" });
++const key = values => reportWorkspaceKey({ project: "https://project.test", userId: "user-1", role: "coach", centreId: "centre-1", ...values });
++const tick = () => new Promise(resolve => setImmediate(resolve));
++function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
++function setup(options = {}) {
++  const store = options.store || createIndexedDbReportStore(options.indexedDB || new IDBFactory());
++  let active = true, root = "root-1";
++  const calls = [];
++  const workspace = createHybridReportWorkspace({
++    store, scope: options.scope || key(), actorId: "user-1",
++    remote: { save: async (record, context) => { calls.push({ record, context }); return options.save ? options.save(record, context) : record; } },
++    getRoot: () => root, isActive: () => active, ...options,
++  });
++  return { workspace, store, calls, setRoot: value => { root = value; }, deactivate: () => { active = false; } };
++}
++
++test("draft queue commits to IndexedDB without waiting for or contacting Drive", async () => {
++  const h = setup({ save: () => new Promise(() => {}) });
++  await h.workspace.queue(draft());
++  assert.equal(h.calls.length, 0);
++  const state = await h.workspace.snapshot();
++  assert.equal(state.pending.length, 1);
++  assert.equal(state.records[0].summary.remarks, "Local edit");
++});
++
++test("new store/workspace instances recover durable edits after a reload", async () => {
++  const indexedDB = new IDBFactory();
++  const first = setup({ indexedDB });
++  await first.workspace.queue(draft());
++  const second = setup({ indexedDB });
++  assert.equal((await second.workspace.snapshot()).records[0].summary.remarks, "Local edit");
++  await second.workspace.sync();
++  assert.equal(second.calls[0].context.hybrid.root_folder_id, "root-1");
++  assert.equal((await second.workspace.snapshot()).pending.length, 0);
++});
++
++test("project, user, centre and role each isolate the local workspace", async () => {
++  const store = createIndexedDbReportStore(new IDBFactory());
++  const first = setup({ store });
++  await first.workspace.queue(draft());
++  for (const change of [{ project: "other" }, { userId: "other" }, { centreId: "other" }, { role: "centre_admin" }]) {
++    assert.equal((await setup({ store, scope: key(change) }).workspace.snapshot()).records.length, 0);
++  }
++  assert.throws(() => key({ userId: "" }), /authenticated/);
++});
++
++test("failed sync retains edits and retry acknowledges the confirmed Drive version", async () => {
++  let offline = true;
++  const h = setup({ save: record => { if (offline) throw Error("Offline"); return record; } });
++  await h.workspace.queue(draft());
++  await h.workspace.sync();
++  assert.match((await h.workspace.snapshot()).pending[0].error, /Offline/);
++  await assert.rejects(h.workspace.confirmDraft("draft-local"), /Offline/);
++  offline = false;
++  await h.workspace.sync();
++  assert.equal((await h.workspace.snapshot()).pending.length, 0);
++  assert.equal((await h.workspace.confirmDraft("draft-local")).id, "draft-local");
++});
++
++test("edits during an upload are not erased by its acknowledgement", async () => {
++  const waiting = deferred();
++  let count = 0;
++  const h = setup({ save: record => ++count === 1 ? waiting.promise : record });
++  await h.workspace.queue(draft());
++  const syncing = h.workspace.sync();
++  while (!h.calls.length) await tick();
++  await h.workspace.queue(draft("draft-local", "Newer typing"));
++  waiting.resolve(h.calls[0].record);
++  await syncing;
++  assert.equal(h.calls.length, 2);
++  assert.equal(h.calls[1].context.hybrid.base_record.summary.remarks, "Local edit");
++  assert.equal((await h.workspace.snapshot()).records[0].summary.remarks, "Newer typing");
++});
++
++test("two tabs claim a pending draft once using real IndexedDB transactions", async () => {
++  const indexedDB = new IDBFactory(), waiting = deferred();
++  const one = setup({ indexedDB, save: () => waiting.promise });
++  const two = setup({ indexedDB });
++  await one.workspace.queue(draft());
++  const firstSync = one.workspace.sync();
++  while (!one.calls.length) await tick();
++  await two.workspace.sync();
++  assert.equal(two.calls.length, 0);
++  waiting.resolve(one.calls[0].record);
++  await firstSync;
++  assert.equal((await two.workspace.snapshot()).pending.length, 0);
++});
++
++test("refresh merges pending edits and preserves missing coaches on a partial result", async () => {
++  const h = setup();
++  await h.workspace.cache([draft(), report("report-cached")]);
++  await h.workspace.queue(draft("draft-local", "Unsynced"));
++  await h.workspace.cache([draft("draft-local", "Older cloud")], { complete: false });
++  const state = await h.workspace.snapshot();
++  assert.equal(state.records.find(r => r.id === "draft-local").summary.remarks, "Unsynced");
++  assert.equal(state.records.some(r => r.id === "report-cached"), true);
++});
++
++test("detected conflicts are held locally and can be copied without overwriting Drive", async () => {
++  const h = setup({ save: () => { throw Object.assign(Error("Draft conflict: changed elsewhere"), { code: "DRAFT_CONFLICT" }); } });
++  await h.workspace.cache([draft("draft-local", "Original")]);
++  await h.workspace.queue(draft("draft-local", "Offline work"));
++  await h.workspace.sync();
++  await h.workspace.sync();
++  assert.equal(h.calls.length, 1);
++  assert.equal((await h.workspace.snapshot()).pending[0].blocked, true);
++  const copy = await h.workspace.copyDraft("draft-local");
++  assert.notEqual(copy.id, "draft-local");
++  assert.equal(copy.summary.remarks, "Offline work");
++  assert.equal((await h.workspace.snapshot()).records.find(r => r.id === "draft-local").summary.remarks, "Original");
++});
++
++test("changing Google accounts hides old synced cache and blocks the old outbox", async () => {
++  const h = setup();
++  await h.workspace.cache([report("report-old")]);
++  await h.workspace.queue(draft());
++  h.setRoot("different-root");
++  await h.workspace.sync();
++  const state = await h.workspace.snapshot();
++  assert.equal(h.calls.length, 0);
++  assert.equal(state.records.some(r => r.id === "report-old"), false);
++  assert.equal(state.pending[0].blocked, true);
++});
++
++test("finalization requires a synced draft and completion removes only that draft", async () => {
++  const h = setup();
++  await h.workspace.queue(draft());
++  await h.workspace.confirmDraft("draft-local");
++  await h.workspace.queue(draft("draft-other"));
++  await h.workspace.complete(report("report-local"), "draft-local");
++  const state = await h.workspace.snapshot();
++  assert.equal(state.records.some(r => r.id === "draft-local"), false);
++  assert.equal(state.records.some(r => r.id === "report-local"), true);
++  assert.equal(state.pending[0].id, "draft-other");
++});
++
++test("cache bounds and clear never evict unsynced drafts", async () => {
++  const h = setup();
++  await h.workspace.queue(draft());
++  await h.workspace.cache(Array.from({ length: 130 }, (_, i) => report(`report-${i}`)));
++  assert.equal((await h.workspace.snapshot()).records.length, 101);
++  await h.workspace.clearSynced();
++  const state = await h.workspace.snapshot();
++  assert.equal(state.records.length, 1);
++  assert.equal(state.pending[0].id, "draft-local");
++});
++
++test("inactive workspaces cannot queue or start uploads", async () => {
++  const h = setup();
++  await h.workspace.queue(draft());
++  h.deactivate();
++  await h.workspace.sync();
++  assert.equal(h.calls.length, 0);
++  await assert.rejects(h.workspace.queue(draft()), /Sign in/);
++});
++
++test("quota failures reject local saving without claiming persistence or contacting Drive", async () => {
++  const h = setup({ store: { update: async () => { throw Error("Quota exceeded"); } } });
++  await assert.rejects(h.workspace.queue(draft()), /Quota exceeded/);
++  assert.equal(h.calls.length, 0);
++});
++
++test("older backends cannot silently discard the draft conflict/source safeguards", async () => {
++  const actions = [];
++  const remote = createReportDriveRepository(async body => { actions.push(body.action); return { certificateDesignVersion: 1 }; });
++  await assert.rejects(remote.save(draft(), { centreId: "centre-1", hybrid: { version: 1 } }), /Update the report service/);
++  assert.deepEqual(actions, ["report-template-capabilities"]);
++});
++
++test("saving and syncing one draft does not read or rewrite the cached report collection", async () => {
++  const h = setup();
++  await h.workspace.cache(Array.from({ length: 100 }, (_, i) => report(`report-${i}`)));
++  h.store.read = () => { throw Error("Full cache read during an edit"); };
++  h.store.update = () => { throw Error("Full cache rewrite during an edit"); };
++  await h.workspace.queue(draft());
++  await h.workspace.sync();
++  assert.equal(h.calls.length, 1);
++  assert.equal((await h.workspace.confirmDraft("draft-local")).id, "draft-local");
++});
++
++test("a disconnected coach does not block another coach's pending draft", async () => {
++  const roots = { "coach-1": "root-1", "coach-2": "root-2" };
++  const h = setup({ scope: key({ role: "centre_admin" }), getRoot: id => roots[id] || "" });
++  await h.workspace.queue(draft());
++  await h.workspace.queue({ ...draft("draft-second"), coachId: "coach-2" });
++  delete roots["coach-1"];
++  await h.workspace.sync();
++  assert.equal(h.calls.length, 1);
++  assert.equal(h.calls[0].record.coachId, "coach-2");
++  assert.equal((await h.workspace.snapshot()).pending[0].id, "draft-local");
++});
+--- a/tests/regressions.cjs
++++ b/tests/regressions.cjs
+@@ -7,6 +7,7 @@
+ const test = require('node:test');
+ const source = fs.readFileSync(path.join(__dirname, '../src/legacy-app.js'), 'utf8');
+ const driveSource = fs.readFileSync(path.join(__dirname, '../src/report-drive.js'), 'utf8');
++const localSource = fs.readFileSync(path.join(__dirname, '../src/report-local.js'), 'utf8');
+ const designSource = fs.readFileSync(path.join(__dirname, '../supabase/functions/_shared/certificate-design.js'), 'utf8');
+ const certEditorSource = fs.readFileSync(path.join(__dirname, '../src/certificate-editor.js'), 'utf8');
+ const certTemplatesSource = fs.readFileSync(path.join(__dirname, '../src/certificate-templates.js'), 'utf8');
+@@ -57,7 +58,7 @@
+   const map = new Map();
+   return { getItem: k => map.get(k) || null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k) };
+ }
+-function harness({ url = 'https://example.test/', bootstrap = false, user = null, invoke = null } = {}) {
++function harness({ url = 'https://example.test/', bootstrap = false, user = null, invoke = null, localDB = null } = {}) {
+   const location = new URL(url);
+   location.assign = value => { location.assigned = value; };
+   const app = new Element();
+@@ -93,6 +94,7 @@
+   const sandbox = {
+     console, URLSearchParams, Date, Map, Set, Event,
+     setTimeout, clearTimeout, crypto: require('node:crypto').webcrypto,
++    ...(localDB ? { indexedDB: localDB } : {}), navigator: { onLine: true }, structuredClone, TextEncoder,
+     localStorage: storage, sessionStorage, document,
+     requestAnimationFrame: fn => fn(),
+     alert: message => { throw Error(`Unexpected alert: ${message}`); },
+@@ -116,7 +118,7 @@
+     }
+   };
+   sandbox.window = {
+-    location, addEventListener() {}, setTimeout,
++    location, addEventListener() {}, setTimeout, requestAnimationFrame: () => {},
+     history: { replaceState: (_s, _t, url) => { history.push(url); const next = new URL(url, location); location.pathname = next.pathname; location.search = next.search; } },
+     getComputedStyle: () => ({ fontSize: '48', fontFamily: 'Arial', fontStyle: 'normal', fontWeight: '700' }),
+     getSelection: () => ({ rangeCount: 0, removeAllRanges() {}, addRange() {} })
+@@ -126,6 +128,16 @@
+       normalizeReportLayout, renderCustomCertificateLayers, renderEditableQr,
+       renderReportLayoutToolbar, beginCertificateTextEditing, fitCustomCertificateHeadingText,
+       updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage,
++      finalizeWizard, closeWizard, ensureHybridWorkspace, resetHybridSession,
++      get wizardId() { return wizardDraftId; },
++      get reportError() { return reportStoreError; },
++      seedWizard() {
++        state.driveConnection = { status: 'connected', root_folder_id: 'root-1' };
++        const draft = { schemaVersion: 1, recordType: 'draft', id: 'draft-hybrid-flow', ref: 'TEST', coachId: 'coach-1', studentId: 'student-1', date: '2026-10-29', time: '10:00', lessonNumber: 1, summary: blankSummary(), step: 4 };
++        state.students = [{ id: 'student-1', coachId: 'coach-1', name: 'Student', lessons: 0 }];
++        state.reportDrafts[draft.id] = draft;
++        wizardDraftId = draft.id;
++      },
+       get state() { return state; }, get driveError() { return driveConnectionError; },
+       get reportStatus() { return reportStoreStatus; },
+       seed(coach) { state.coaches = [coach]; state.auth = { role: 'coach', coachId: coach.id, userId: coach.id, centreId: 'centre-1' }; reportLayoutEditing = true; },
+@@ -136,6 +148,7 @@
+     subscribeToRealtime = () => {};
+     persist = () => {};
+     saveReportLayout = async () => { globalThis.__api.saves++; };
++    saveStudentRecord = async student => student;
+     if (globalThis.__skipBootstrap) return;
+   `;
+   const cleanModule = (str) => str.replace(/^import .*;\r?\n/gm, '').replace(/^export (default )?/gm, '');
+@@ -149,10 +162,11 @@
+     cleanModule(certStudioSource),
+     cleanModule(templatePickerSource),
+     cleanModule(driveSource),
++    cleanModule(localSource),
+     code
+   ].join('\n;\n');
+   vm.runInContext(bundle, context);
+-  context.initApp(bootstrap ? { supabaseUrl: 'https://supabase.example.test', supabaseKey: 'publishable-fixture' } : {});
++  context.initApp(bootstrap || localDB ? { supabaseUrl: 'https://supabase.example.test', supabaseKey: 'publishable-fixture' } : {});
+   return { api: context.__api, context, document, app, preview, calls, history, sessionUrls, location,
+     get clientOptions() { return clientOptions; },
+     items: values => { overlayItems = values; }, spans: values => { headingSpans = values; } };
+@@ -379,3 +393,42 @@
+     else assert.ok(h.api.driveError.includes('authorization URL'));
+   }
+ });
++
++test('closing the hybrid wizard persists its draft without waiting for Drive', async () => {
++  const { IDBFactory } = require('fake-indexeddb');
++  const h = harness({ localDB: new IDBFactory(), invoke: () => { throw Error('Offline'); } });
++  const coach = { id: 'coach-1', name: 'Coach', reportLayout: h.api.normalizeReportLayout() };
++  h.api.seed(coach);
++  h.api.seedWizard();
++  await h.api.closeWizard();
++  assert.equal(h.api.wizardId, null);
++  assert.equal(h.calls.length, 0);
++  const local = await h.api.ensureHybridWorkspace().snapshot();
++  assert.equal(local.pending[0].id, 'draft-hybrid-flow');
++  h.api.resetHybridSession();
++});
++
++test('hybrid finalization waits for draft sync, then confirms the report on Drive', async () => {
++  const { IDBFactory } = require('fake-indexeddb');
++  const h = harness({ localDB: new IDBFactory(), invoke: body => ({ data: body.action === 'report-template-capabilities'
++    ? { certificateDesignVersion: 1, hybridDraftVersion: 1 } : { record: body.record }, error: null }) });
++  h.api.seed({ id: 'coach-1', name: 'Coach', reportLayout: h.api.normalizeReportLayout() });
++  h.api.seedWizard();
++  h.context.navigator.onLine = false;
++  await h.api.finalizeWizard();
++  assert.equal(h.api.state.reports.length, 0);
++  assert.match(h.api.reportError, /Go online/);
++  assert.equal(h.calls.length, 0);
++  h.context.navigator.onLine = true;
++  await h.api.finalizeWizard();
++  const writes = h.calls.filter(call => call.action === 'report-save');
++  assert.deepEqual(writes.map(call => call.record.recordType), ['draft', 'report']);
++  assert.equal(writes[0].hybrid_draft.actor_id, 'coach-1');
++  assert.equal(writes[1].draft_id, 'draft-hybrid-flow');
++  assert.equal(h.api.state.reports[0].id, 'report-hybrid-flow');
++  assert.equal(h.api.wizardId, null);
++  const local = await h.api.ensureHybridWorkspace().snapshot();
++  assert.equal(local.pending.length, 0);
++  assert.equal(local.records[0].recordType, 'report');
++  h.api.resetHybridSession();
++});
+--- a/package.json
++++ b/package.json
+@@ -8,7 +8,8 @@
+     "build": "vite build",
+     "preview": "vite preview",
+     "dev:studio": "vite --open /preview.html",
+-    "build:studio": "vite build --mode studio && node scripts/finalize-preview.mjs"
++    "build:studio": "vite build --mode studio && node scripts/finalize-preview.mjs",
++    "test": "node --test tests/*.cjs tests/*.js tests/*.mjs"
+   },
+   "dependencies": {
+     "@supabase/supabase-js": "^2.56.0",
+@@ -17,6 +18,7 @@
+     "qrcode": "^1.5.4"
+   },
+   "devDependencies": {
++    "fake-indexeddb": "^6.2.6",
+     "vite": "^7.1.3"
+   }
+ }
+--- /dev/null
++++ b/vite.config.js
+@@ -0,0 +1,10 @@
++import { defineConfig } from "vite";
++
++export default defineConfig(({ mode }) => ({
++  build: {
++    rollupOptions: {
++      // finalize-preview.mjs promotes this separate demo entry to index.html.
++      input: mode === "studio" ? "preview.html" : "index.html",
++    },
++  },
++}));
+--- a/architecture.md
++++ b/architecture.md
+@@ -83,7 +83,7 @@
+ - `ui`: current page, selected report, menu state, and notices
+ - `coaches`
+ - `students`
+-- `reports` and `reportDrafts` (Drive-loaded, in-memory session state only)
++- `reports` and `reportDrafts` (Drive records merged with an account-scoped IndexedDB cache and pending local drafts)
+ - `centreProfile`
+ - `devCentres` and dev-console filters/detail state
+ - admin, dev-console, and Drive connection data
+@@ -156,7 +156,7 @@
+ 
+ ### Browser storage
+ 
+-Centre links can fall back to `localStorage` under the key `centre_profile` when Supabase is unavailable. Report content is never placed in browser persistent storage.
++Centre links can fall back to `localStorage` under the key `centre_profile` when Supabase is unavailable. The hybrid report layer stores recent normalized reports and pending drafts in IndexedDB. It never stores reports in localStorage or Supabase dashboard_state. Local copies are separated by Supabase project, user, role and centre; unsynced drafts survive closing the tab and signing out for recovery by the same account.
+ 
+ ### Coach-owned Google Drive report records
+ 
+@@ -166,7 +166,7 @@
+ 
+ A coach can connect, disconnect, or reconnect. Reconnecting the same verified Google account reuses its existing managed root folder where possible; switching Google accounts creates a new root folder and does not migrate prior records. OAuth state is single-use, bound to the initiating user/centre, and expires after 10 minutes. `coach_drive_connections` is accessible only via the service-role Edge Function, and its refresh tokens are never returned to the browser.
+ 
+-Supabase still owns authentication, memberships, profiles, licensing, student `lessons` aggregate, encrypted Drive connection metadata, and control-plane data. Supabase `dashboard_state` excludes report arrays and transient Drive connection state. Failed Drive writes do not fall back to Supabase or browser storage. The old `drive_connections` and `drive_sync_jobs` remain for compatibility, but new coach reports use `coach_drive_connections`. **This upgrade does not migrate previously saved centre-owned Drive records.** Any existing centre Drive reports require a separately approved migration strategy.
++Supabase still owns authentication, memberships, profiles, licensing, student `lessons` aggregate, encrypted Drive connection metadata, and control-plane data. Supabase `dashboard_state` excludes report arrays and transient Drive connection state. Draft edits commit to the local outbox before Drive sync. Failed uploads retain pending local edits and retry while the authenticated app is open; generated reports still require a successful canonical Drive save. Report content never falls back to Supabase. The old `drive_connections` and `drive_sync_jobs` remain for compatibility, but new coach reports use `coach_drive_connections`. **This upgrade does not migrate previously saved centre-owned Drive records.** Any existing centre Drive reports require a separately approved migration strategy.
+ 
+ ## Supabase Storage
+ 
+@@ -176,7 +176,7 @@
+ 
+ ## Supabase Edge Functions
+ 
+-`supabase/config.toml` now declares the `google-drive-oauth` entrypoint and keeps platform JWT verification enabled. Its handler additionally verifies each Bearer user token with `admin.auth.getUser()` before database actions. Frontend/Vercel deployments do not deploy Supabase functions; update the named function in the same Supabase project the frontend is configured to call. Every response from this version includes `x-dao-drive-api-version: coach-v2` to identify the deployed API. Dashboard-based deployments do not need a local config file.
++`supabase/config.toml` now declares the `google-drive-oauth` entrypoint and keeps platform JWT verification enabled. Its handler additionally verifies each Bearer user token with `admin.auth.getUser()` before database actions. Frontend/Vercel deployments do not deploy Supabase functions; update the named function in the same Supabase project the frontend is configured to call. Every response from this version includes `x-dao-drive-api-version: coach-v4-hybrid-drafts` to identify the deployed API. Dashboard-based deployments do not need a local config file.
+ 
+ ### `supabase/functions/dev-console`
+ 
+@@ -225,9 +225,9 @@
+ ### Report creation
+ 
+ 1. Any authenticated dashboard role except `dev` can start a report. Coaches report for themselves; centre admins select a coach in their centre; global admins select a connected centre and a coach in that centre.
+-2. The selected coach must have independently connected Google Drive. Their draft is saved to **that coach's** Drive and held in memory while the wizard is open. The centre ID is request context and is not stored in canonical report content.
+-3. Wizard edits are debounced to Drive; step changes and close flush pending edits first.
+-4. Finalization writes the canonical JSON report to Drive before moving it into in-memory `state.reports`; the student lesson count remains a Supabase profile aggregate.
++2. The selected coach must have independently connected Google Drive. Draft edits are committed to IndexedDB, bound to that coach's managed Drive root, and uploaded in the background. The centre ID is request context and is not stored in canonical report content.
++3. Wizard edits debounce for 200 ms to local storage (500 ms to Drive when IndexedDB is unavailable). Step changes and close flush the local transaction, without waiting for Google. Status text distinguishes Saving on this device, Saved on this device / sync pending, and Saved to Google Drive.
++4. Finalization persists the latest local draft, waits for its confirmed Drive sync, and writes the canonical JSON report to Drive before marking it Generated. The cache then replaces that draft with the generated report; the student lesson count remains a Supabase profile aggregate.
+ 5. The last wizard step offers the three templates and the selected coach's saved designs. A draft stores its chosen `certificateDesign` snapshot and retains it on resume.
+ 6. Finalization stores the snapshot with the report. The report view and PDF/PNG exports use that layout. Legacy records without a snapshot use the coach's current layout. Template editing remains in Certificate Design and updates `coaches.report_layout`.
+ 
+@@ -240,7 +240,7 @@
+ - Report view can open a WhatsApp share composer with report metadata and the reports route.
+ - Certificate design uploads can replace the `brand-logo-art` layer or be kept in the reusable upload tray; image URLs and fit settings are persisted in the coach's `report_layout`, while image bytes stay in Supabase Storage. Uploaded assets can be dragged onto image layers. The report QR pocket starts at the template geometry. All certificate layers, including printed artwork, the TTAM badge, and the QR code, can be dragged and resized. Locks are optional user choices and persist with the layout.
+ 
+-Google Drive remains the sole durable store for reports, but now records are owned by each coach's connected Google account rather than a shared centre Drive. The Edge Function verifies centre membership and refreshes the corresponding coach token before accessing app-managed files. `coach_drive_connections` stores only connection/control-plane metadata; no report IDs, names, URLs, or content. Old centre-owned reports are not automatically transferred by the per-coach upgrade.
++Google Drive remains the authoritative shared store for generated reports. IndexedDB holds device-local cached reports and unconfirmed draft edits. Drive records are owned by each coach's connected Google account rather than a shared centre Drive. The Edge Function verifies centre membership and refreshes the corresponding coach token before accessing app-managed files. `coach_drive_connections` stores only connection/control-plane metadata; no report IDs, names, URLs, or content. Old centre-owned reports are not automatically transferred by the per-coach upgrade.
+ 
+ ## Database and Security Rules
+ 
+@@ -264,7 +264,7 @@
+ - `pnpm build`
+ - `pnpm preview`
+ 
+-Before handoff, run `pnpm build` (or `npm run build` if the environment only has npm). There are currently no test, type-check, or lint scripts defined in `package.json`.
++Before handoff, run `pnpm build` (or `npm run build` if the environment only has npm). `npm test` runs all supplied and hybrid regression suites with Node 24; fake-indexeddb is a test-only dependency. There are no type-check or lint scripts.
+ 
+ ## Maintenance Guidance
+ 
+@@ -288,7 +288,7 @@
+ 
+ `tests/drive-backend.cjs` adds 11 isolated handler regressions for coach connect, verified sessions, cross-centre denial, public-only connection metadata, encrypted token storage, expired/replayed/concurrent OAuth state, same-account reconnect, account switching, missing configuration and report ownership. It uses Node 24's TypeScript stripping with Supabase/Google mocks.
+ 
+-`tests/regressions.cjs` provides 13 focused, dependency-free Node regressions for layout migration/round-tripping, inline heading edits, formatting, escaping, pointer dragging/resizing, optional locks, title fitting and callback handling. DOM and Supabase behavior are mocked; this does not replace browser QA, a production build, or live Google authorization testing.
++`tests/regressions.cjs` provides 15 focused Node regressions (the two hybrid integration cases use the fake-indexeddb dev dependency) for layout migration/round-tripping, inline heading edits, formatting, escaping, pointer dragging/resizing, optional locks, title fitting and callback handling. DOM and Supabase behavior are mocked; this does not replace browser QA, a production build, or live Google authorization testing.
+ 
+ 
+ ## Certificate template studio
+@@ -310,3 +310,34 @@
+ Validation for template selection: 19 dependency-free tests cover real presets, saved choices, snapshot rendering, frontend/backend record round-trips, legacy fallback, validation bounds and capability handling. DOM QA covers selection, Back/Next, close/resume, generation, and preserving generated designs after changing the coach template. Browser visual QA and live authenticated Drive/PDF validation remain unavailable in this environment.
+ 
+ Commands: `npm run build` builds the hosted preview; `npm run build:app` builds the authenticated app; `npm run dev:studio` opens the preview. The source handoff preserves the original app commands and adds `build:studio`. Run `node --test tests/certificate-studio.test.mjs` for the eight layout regressions. Live authenticated upload and report-export verification still belongs in the original staging environment.
++
++## Drive loading performance update (2026-10-29)
++
++Bootstrap, password sign-in and auth-state restoration render the authenticated dashboard without waiting for the Drive report list. Core coach/student/count and connection-status reads run concurrently. Connection-status reads use Supabase connection metadata; reading report JSON from Google Drive happens afterward in the background. Report counts show a loading placeholder until the initial list finishes.
++
++`loadReportsFromDrive()` deduplicates the whole load, including global-admin workspace/context discovery. A successful list remains in session memory for 60 seconds. Navigating back to Reports during that interval reuses it; the Reports Refresh action explicitly bypasses this interval. A separate persistent IndexedDB cache now complements session memory; there is still no Supabase report cache. A refresh retains the previous list until a replacement succeeds, and a failed refresh displays its error while retaining the previous list. Report searches and date filters survive background rerenders.
++
++Report reads are scoped to the signed-in user, role and selected centre. Generation invalidation on logout, account/centre changes, Drive callbacks and disconnect prevents late responses from applying to a new workspace. Read finalizers only clear their own in-flight promise. Active wizards/unsaved drafts skip revalidation, and a write revision prevents an earlier list response from overwriting newer local edits. Background completion does not rerender profile/settings/certificate forms or open modals.
++
++The Edge Function uses four continuously refilled coach workers instead of batches that wait for the slowest coach. Each worker downloads at most six report JSON files concurrently (up to 24 concurrent media reads per list request). Reads and JSON saves resolve only Reports/Records; Reports/Exports is resolved when saving a PDF. Membership, coach/student ownership, encryption, canonical Drive writes and PDF retries retain their existing checks. No database migration is required. The response version header is `coach-v4-hybrid-drafts`.
++
++Validation: `node --test tests/*.cjs tests/*.js tests/*.mjs` passes all 87 tests with Node 24, including the certificate studio, template picker, callback/ownership and Drive performance suites. `npm run build` and `npm run build:studio` build the authenticated app and isolated certificate preview respectively. One existing repository test was corrected to supply the coach ID already required by PDF saving; production PDF ownership enforcement is unchanged.
++
++Source completeness: the follow-up src, public and scripts archives supply the modular studio, report-template picker, artwork and preview finalizer. The Drive change is merged into that newer controller and retains its saved design snapshots, preview-only writes and protection for draft edits made during a save. The added minimal vite.config.js selects preview.html for studio mode so build:studio can produce and promote the correct entry; the normal app still uses index.html. The dependency lockfile and original hosting rewrite configuration were not supplied. Live authenticated Drive timing, browser visual QA and PDF/export testing still require the original staging environment.
++
++
++## Hybrid local drafts and Drive sync
++
++`src/report-local.js` owns IndexedDB access and the outbox. `src/report-drive.js` remains the normalized remote API adapter. The authenticated controller enables local persistence when IndexedDB is available; the isolated certificate preview retains its separate design database and in-memory report adapter.
++
++The local database is dao-report-hybrid-v1. Each normalized report/draft has its own entry, with indexes by workspace and pending state. Local edits, upload claims and acknowledgements use IndexedDB read/modify/write transactions. Editing a draft does not read or rewrite cached report bodies; status updates use pending rows and synced draft keys. A 120-second outbox lease avoids duplicate workers across tabs, and revision tokens keep a late acknowledgement from clearing newer typing. A sync pass handles up to 20 queued writes; remaining/retryable work is checked again after 15 seconds. Uploads also resume on online/visible events or Sync now. No work runs after the app is closed, or for an inactive account/centre.
++
++The cache keeps up to 100 synced records plus every pending draft. A complete remote list removes stale synced cache entries; partial coach failures preserve cached entries and show a warning. Pending local edits take precedence. The online report list still contains the full remote collection, even though only 100 recent synced records are cached. Cached results can paint while Drive is loading; exact overview totals wait for a complete Drive result. Clear cached reports preserves the outbox, and Export local drafts downloads pending edits as JSON.
++
++Every queued draft retains its last confirmed baseline and owner root. Hybrid save requests carry an actor ID, centre context, source root and baseline. The backend verifies membership/coach/student ownership as before, checks actor/root binding, compares the existing normalized draft to the baseline, accepts exact lost-response retries, and rejects deleted/finalized or changed drafts with DRAFT_CONFLICT. DRIVE_SOURCE_CHANGED blocks sync to a different Google account. Blocked edits stay on the device; Save as a separate copy gives them a new opaque draft ID. The client checks hybridDraftVersion: 1 before sending these writes, so an older service cannot silently ignore the safeguards.
++
++The baseline check is a Drive read/compare/write, not an atomic distributed compare-and-swap. This release does not provide simultaneous collaborative editing guarantees across devices; production concurrent-edit behavior still needs staging verification. The same-browser outbox is transactional, but separate devices do not share its lock.
++
++Final reports and PDF derivatives keep their existing online confirmation/retry behavior. Local persistence does not make authentication, student/profile updates, image uploads, or first-time app loading work offline. If IndexedDB is absent, drafts use the original Drive-only path. If a local transaction fails (including quota exhaustion), the app reports it and retains its unsaved-edits guard rather than claiming the draft is saved. Browser storage may be cleared or evicted; local entries are browser-managed and are not separately encrypted. Pending work should be synced or exported before clearing site data.
++
++Deploy google-drive-oauth plus its existing shared validator before the frontend. No database migration or new cloud report table is required. The Edge Function version header is coach-v4-hybrid-drafts. npm test passes 87 tests including actual IndexedDB API emulation, slow cached reads, offline saves/retry, cross-account isolation, tab leases, edits during upload, cache bounds, backend conflicts/source binding and finalization ordering. Production Google authorization, browser/device visual QA and end-to-end PDF timing remain unverified.

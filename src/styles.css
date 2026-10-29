@@ -2,6 +2,12 @@
    loaded typefaces. No switching between PNG art and browser lettering. */
 @import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Lato:ital,wght@0,400;1,400&family=Montserrat:wght@400&family=Outfit:wght@700;800&display=swap");
 
+.report-hybrid-notice:empty { display: none; }
+.report-hybrid-notice { margin: 12px 0; padding: 12px 16px; border: 1px solid #d9e4e5; border-radius: 12px; background: #f5f9f9; color: #33565d; font-size: 13px; }
+.report-hybrid-notice p { margin: 0 0 8px; }
+.report-hybrid-notice .is-error { color: #a72e36; }
+.report-hybrid-notice .profile-actions { flex-wrap: wrap; }
+
 :root {
       --navy-950: #f8fafc;
       --navy-900: #111827;

@@ -832,6 +832,14 @@
       margin-bottom: 18px;
     }
 
+    .dev-licensing-console {
+      min-width: 0;
+    }
+
+    .dev-centre-delete-label {
+      display: none;
+    }
+
     .centre-create-fields {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2708,6 +2716,71 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
+      }
+
+      /* Remove intrinsic table sizing on phones so long codes cannot widen
+         the console. Keep each field and the action buttons inside its card. */
+      .dev-centres-table,
+      .dev-centres-table tbody {
+        display: block;
+        width: 100%;
+      }
+
+      .dev-centres-table tbody tr {
+        margin-bottom: 12px;
+      }
+
+      .dev-centres-table tbody td {
+        display: grid;
+        grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+        gap: 12px;
+        overflow-wrap: anywhere;
+      }
+
+      .dev-centres-table tbody td > * {
+        min-width: 0;
+        max-width: 100%;
+        justify-self: end;
+      }
+
+      .dev-centres-table tbody td[colspan] {
+        display: block;
+        text-align: center;
+      }
+
+      .dev-centres-table tbody td[colspan]::before {
+        display: none;
+      }
+
+      .dev-centres-table .centre-sport {
+        white-space: normal;
+      }
+
+      .dev-centres-table .centre-sport-emoji {
+        flex-shrink: 0;
+      }
+
+      .dev-centres-table tbody td.dev-centre-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .dev-centres-table .dev-centre-actions::before {
+        grid-column: 1 / -1;
+      }
+
+      .dev-centres-table .dev-centre-actions > button {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+
+      .dev-centres-table .dev-centre-delete-label {
+        display: inline;
       }
 
       .icon-btn,

@@ -80,7 +80,12 @@ export function onboardingStepError(stepId, data) {
   if (stepId === "profile" && !String(data.name || "").trim()) return "Enter your name, or skip for now.";
   if (stepId === "drive" && data.driveStatus !== "connected") return "Connect Google Drive, or skip for now.";
   if (stepId === "design" && !data.templateId) return "Choose a design, or skip for now.";
-  if (stepId === "qr" && data.qrEnabled && !isValidQrLink(data.qrUrl)) return "Enter a full link like https://instagram.com/yourcentre.";
+  if (stepId === "qr" && data.qrMode === "custom" && !isValidQrLink(data.qrUrl)) return "Enter a full link like https://instagram.com/yourcentre.";
+  if (stepId === "qr" && data.qrMode === "page") {
+    const filled = (data.qrLinks || []).filter(link => String(link.url || "").trim());
+    if (!filled.length) return "Add at least 1 link for your page, or skip for now.";
+    if (filled.some(link => !isValidQrLink(link.url))) return "One of your links isn't complete. Use a full link like https://wa.me/60123456789.";
+  }
   if (stepId === "students" && !(data.studentCount > 0)) return "Add at least 1 student, or skip for now.";
   return "";
 }
@@ -135,7 +140,7 @@ export function createCoachOnboarding(deps) {
     profile: { name: "", phone: "", photo: "" },
     templateId: "",
     certView: "base",
-    qr: { enabled: true, url: "" },
+    qr: { mode: "page", url: "", links: [] },
     student: { name: "", age: "", parentHp: "" },
     newStudentId: "",
     driveChecked: false,
@@ -151,7 +156,8 @@ export function createCoachOnboarding(deps) {
     ui.profile = { name: coach.name && coach.name !== "Coach" ? coach.name : "", phone: coach.phone || "", photo: coach.photo || "" };
     ui.templateId = deps.currentTemplateId() || deps.templates[0]?.id || "classic";
     const qr = deps.currentQr();
-    ui.qr = { enabled: qr.enabled, url: qr.url };
+    const links = (qr.links || []).map((link, index) => ({ id: link.id || `link-${index + 1}`, title: link.title || "", url: link.url || "" }));
+    ui.qr = { mode: qr.mode || "page", url: qr.url || "", links: links.length ? links : [{ id: "link-1", title: "", url: "" }] };
     ui.lastRenderedStep = -1;
   }
 
@@ -169,8 +175,9 @@ export function createCoachOnboarding(deps) {
       name: ui.profile.name,
       driveStatus: deps.getDriveStatus(),
       templateId: ui.templateId,
-      qrEnabled: ui.qr.enabled,
+      qrMode: ui.qr.mode,
       qrUrl: ui.qr.url,
+      qrLinks: ui.qr.links,
       studentCount: deps.getStudents().length
     };
   }
@@ -222,7 +229,13 @@ export function createCoachOnboarding(deps) {
     return run(async () => {
       if (current === "profile") await deps.saveProfile({ ...ui.profile, name: ui.profile.name.trim(), phone: ui.profile.phone.trim() });
       if (current === "design" && ui.templateId !== deps.currentTemplateId()) await deps.applyTemplate(ui.templateId);
-      if (current === "qr") await deps.applyQr({ enabled: ui.qr.enabled, url: ui.qr.enabled ? normalizeQrLink(ui.qr.url) : "" });
+      if (current === "qr") {
+        await deps.applyQr({
+          mode: ui.qr.mode,
+          url: ui.qr.mode === "custom" ? normalizeQrLink(ui.qr.url) : "",
+          links: ui.qr.links.filter(link => String(link.url).trim()).map(link => ({ ...link, url: normalizeQrLink(link.url), title: link.title.trim() }))
+        });
+      }
       ui.skipped = ui.skipped.filter(id => id !== current);
       await moveTo(ui.step + 1);
     });
@@ -372,34 +385,70 @@ export function createCoachOnboarding(deps) {
       <p class="cob-note">You can edit your design anytime in Certificate Design.</p>`;
   }
 
+  function qrTarget() {
+    if (ui.qr.mode === "page") return deps.coachPageUrl();
+    if (ui.qr.mode === "custom" && isValidQrLink(ui.qr.url)) return normalizeQrLink(ui.qr.url);
+    return "";
+  }
+
+  function qrCaption() {
+    if (ui.qr.mode === "none") return "Your certificate without a QR code";
+    const target = qrTarget();
+    return target ? `QR opens: <span>${esc(target.replace(/^https?:\/\//, ""))}</span>` : "Your QR appears here when the link is complete";
+  }
+
   function qrStatus() {
+    if (ui.qr.mode !== "custom") return { cls: "", text: "" };
     if (!ui.qr.url.trim()) return { cls: "", text: "Paste the link parents should open." };
     return isValidQrLink(ui.qr.url) ? { cls: "is-ok", text: "Link looks good" } : { cls: "is-error", text: "This doesn't look like a full link yet" };
   }
 
+  function linkRow(link, index) {
+    const platform = deps.linkPlatform(link.url);
+    const filled = String(link.url || "").trim();
+    return `<div class="cob-link-row" data-link-index="${index}">
+      <span class="cob-link-badge" style="--brand:${esc(platform.color)}" title="${esc(platform.label)}">${esc(filled ? platform.badge : "+")}</span>
+      <div class="cob-link-fields">
+        <input class="text-input" id="cobLinkUrl${index}" type="url" inputmode="url" data-cob-link="url" data-index="${index}" placeholder="${index === 0 ? "https://wa.me/60123456789" : "https://instagram.com/yourcentre"}" value="${esc(link.url)}" aria-label="Link ${index + 1}">
+        <input class="text-input" id="cobLinkTitle${index}" data-cob-link="title" data-index="${index}" placeholder="${esc(filled ? `Button text (e.g. ${platform.id === "whatsapp" ? "Book a class on WhatsApp" : platform.id === "instagram" ? "Follow us on Instagram" : platform.label})` : "Button text (optional)")}" value="${esc(link.title)}" aria-label="Button text ${index + 1}">
+      </div>
+      ${ui.qr.links.length > 1 ? `<button type="button" class="cob-link-remove" data-cob-remove-link="${index}" aria-label="Remove link ${index + 1}">&times;</button>` : ""}
+    </div>`;
+  }
+
   function screenQr() {
     const status = qrStatus();
+    const target = qrTarget();
+    const modes = [["page", "My link page"], ["custom", "Custom link"], ["none", "No QR"]];
+    let form;
+    if (ui.qr.mode === "page") {
+      form = `
+        <p class="cob-qr-help">Parents scan the QR and see your own link page, like Linktree. Add the buttons you want on it. The first one is the main button.</p>
+        <div class="cob-links">${ui.qr.links.map(linkRow).join("")}</div>
+        ${ui.qr.links.length < 8 ? `<button type="button" class="cob-add-link" data-cob="add-link">+ Add a link</button>` : ""}
+        <p class="cob-examples-title">Works with WhatsApp, Instagram, TikTok, Facebook, YouTube and any website.</p>`;
+    } else if (ui.qr.mode === "custom") {
+      form = `
+        <div class="cob-field"><label for="cobQrUrl">Link</label><input id="cobQrUrl" class="text-input" type="url" inputmode="url" autocomplete="url" data-cob-input="qr.url" placeholder="https://instagram.com/yourcentre" value="${esc(ui.qr.url)}"></div>
+        <p class="cob-qr-status ${status.cls}" data-cob-qr-status>${esc(status.text)}</p>
+        <p class="cob-examples-title">Links can look like this:</p>
+        <ul class="cob-examples">${QR_LINK_EXAMPLES.map(example => `<li><code>${esc(example)}</code></li>`).join("")}</ul>`;
+    } else {
+      form = `<div class="cob-panel"><strong>No QR code</strong><small>Your certificate will be printed without a QR code. You can add one later in Certificate Design.</small></div>`;
+    }
     return `
       <h2 id="cob-title" tabindex="-1">Add a QR code</h2>
-      <p class="cob-lead">Parents scan it on the certificate to open your page. It's optional.</p>
-      <div class="cob-seg is-always" role="radiogroup" aria-label="QR code">
-        <button type="button" role="radio" aria-selected="${ui.qr.enabled}" data-cob-qr="on">With QR</button>
-        <button type="button" role="radio" aria-selected="${!ui.qr.enabled}" data-cob-qr="off">No QR</button>
+      <p class="cob-lead">Parents scan it on the certificate. It's optional.</p>
+      <div class="cob-seg is-always is-three" role="radiogroup" aria-label="QR code">
+        ${modes.map(([id, label]) => `<button type="button" role="radio" aria-selected="${ui.qr.mode === id}" data-cob-qr="${id}">${label}</button>`).join("")}
       </div>
-      ${ui.qr.enabled ? `
-        <div class="cob-qr">
-          <div class="cob-qr-form">
-            <div class="cob-field"><label for="cobQrUrl">Link</label><input id="cobQrUrl" class="text-input" type="url" inputmode="url" autocomplete="url" data-cob-input="qr.url" placeholder="https://instagram.com/yourcentre" value="${esc(ui.qr.url)}"></div>
-            <p class="cob-qr-status ${status.cls}" data-cob-qr-status>${esc(status.text)}</p>
-            <p class="cob-examples-title">Links can look like this:</p>
-            <ul class="cob-examples">${QR_LINK_EXAMPLES.map(example => `<li><code>${esc(example)}</code></li>`).join("")}</ul>
-          </div>
-          <div class="cob-qr-preview">
-            <div class="cob-qr-box ${isValidQrLink(ui.qr.url) ? "is-ready" : ""}" data-cob-qr-box><img alt="QR code preview" data-cob-qr-img hidden>${icon("qr")}</div>
-            <small>Live preview</small>
-          </div>
-        </div>` : `
-        <div class="cob-panel"><strong>No QR code</strong><small>Your certificate will be printed without a QR code. You can add one later in Certificate Design.</small></div>`}`;
+      <div class="cob-qr">
+        <div class="cob-qr-form">${form}</div>
+        <figure class="cob-qr-cert">
+          <div class="cob-paper" data-cob-qr-cert>${deps.renderQrCertificate({ visible: ui.qr.mode !== "none", url: target || deps.coachPageUrl() })}</div>
+          <figcaption data-cob-qr-caption>${qrCaption()}</figcaption>
+        </figure>
+      </div>`;
   }
 
   function screenStudents() {
@@ -472,21 +521,18 @@ export function createCoachOnboarding(deps) {
   }
 
   function updateQrPreview(shell) {
-    const box = shell.querySelector("[data-cob-qr-box]");
-    const img = shell.querySelector("[data-cob-qr-img]");
     const statusEl = shell.querySelector("[data-cob-qr-status]");
-    if (!box || !img) return;
     const status = qrStatus();
     if (statusEl) { statusEl.className = `cob-qr-status ${status.cls}`; statusEl.textContent = status.text; }
-    const valid = isValidQrLink(ui.qr.url);
-    box.classList.toggle("is-ready", valid);
-    if (!valid) { img.hidden = true; return; }
-    const link = normalizeQrLink(ui.qr.url);
-    Promise.resolve(deps.qrDataUrl(link)).then(dataUrl => {
-      if (!dataUrl || normalizeQrLink(ui.qr.url) !== link) return;
-      img.src = dataUrl;
-      img.hidden = false;
-    }).catch(() => { img.hidden = true; });
+    const img = shell.querySelector("[data-cob-qr-cert] img[data-qr-url]");
+    const target = qrTarget();
+    const caption = shell.querySelector("[data-cob-qr-caption]");
+    if (caption) caption.innerHTML = qrCaption();
+    if (!img || !target) return;
+    img.dataset.qrUrl = target;
+    Promise.resolve(deps.qrDataUrl(target)).then(dataUrl => {
+      if (dataUrl && qrTarget() === target) img.src = dataUrl;
+    }).catch(() => {});
   }
 
   function attach(root) {
@@ -500,15 +546,25 @@ export function createCoachOnboarding(deps) {
       ui.lastProgress = to;
     }
     shell.addEventListener("click", event => {
-      const control = event.target.closest("[data-cob],[data-cob-template],[data-cob-view],[data-cob-qr]");
+      const control = event.target.closest("[data-cob],[data-cob-template],[data-cob-view],[data-cob-qr],[data-cob-remove-link]");
       if (!control || control.disabled) return;
       if (control.dataset.cobTemplate) { ui.templateId = control.dataset.cobTemplate; ui.error = ""; deps.render(); return; }
       if (control.dataset.cobView) { ui.certView = control.dataset.cobView; deps.render(); return; }
-      if (control.dataset.cobQr) { ui.qr.enabled = control.dataset.cobQr === "on"; ui.error = ""; deps.render(); return; }
+      if (control.dataset.cobQr) { ui.qr.mode = control.dataset.cobQr; ui.error = ""; deps.render(); return; }
+      if (control.dataset.cobRemoveLink !== undefined) {
+        ui.qr.links.splice(Number(control.dataset.cobRemoveLink), 1);
+        deps.render();
+        return;
+      }
       const action = control.dataset.cob;
       if (action === "next") next();
       else if (action === "back") back();
       else if (action === "skip") skip();
+      else if (action === "add-link") {
+        ui.qr.links.push({ id: `link-${Date.now()}`, title: "", url: "" });
+        ui.focusId = `cobLinkUrl${ui.qr.links.length - 1}`;
+        deps.render();
+      }
       else if (action === "close") { ui.open = false; ui.lastRenderedStep = -1; ui.lastProgress = 0; deps.render(); }
       else if (action === "photo") shell.querySelector("[data-cob-file]")?.click();
       else if (action === "connect-drive") run(() => deps.connectDrive());
@@ -521,6 +577,19 @@ export function createCoachOnboarding(deps) {
         if (group === "qr") {
           clearTimeout(ui.qrTimer);
           ui.qrTimer = setTimeout(() => updateQrPreview(shell), 250);
+        }
+      });
+    });
+    shell.querySelectorAll("[data-cob-link]").forEach(input => {
+      input.addEventListener("input", () => {
+        const link = ui.qr.links[Number(input.dataset.index)];
+        if (!link) return;
+        link[input.dataset.cobLink] = input.value;
+        if (ui.error) { ui.error = ""; shell.querySelector(".cob-error").textContent = ""; }
+        if (input.dataset.cobLink === "url") {
+          const badge = input.closest(".cob-link-row")?.querySelector(".cob-link-badge");
+          const platform = deps.linkPlatform(input.value);
+          if (badge) { badge.textContent = input.value.trim() ? platform.badge : "+"; badge.style.setProperty("--brand", platform.color); badge.title = platform.label; }
         }
       });
     });

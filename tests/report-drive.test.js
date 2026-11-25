@@ -56,21 +56,23 @@ test("report normalization rejects missing identity and unsupported type", () =>
   assert.throws(() => normalizeReportRecord({ ...report, schemaVersion: undefined }), /Unsupported report schema version/);
 });
 
-test("dashboard serializer excludes report content and report-specific UI state without mutation", () => {
+test("dashboard serializer excludes reports, people data and report-specific UI state without mutation", () => {
   const state = {
     dataVersion: 3,
     reports: [report],
     reportDrafts: { "draft-1": { summary: { remarks: "private" } } },
-    students: [{ id: "student-1", lessons: 4 }],
+    students: [{ id: "student-1", lessons: 4, parentHp: "012-345 6789" }],
+    coaches: [{ id: "coach-1", name: "Coach" }],
+    devCentres: [{ id: "centre-1" }],
     ui: { page: "report-view", reportViewId: "report-123", reportDraftId: "draft-1", avatarMenuOpen: false }
   };
   const payload = createDashboardStatePayload(state);
   assert.deepEqual(payload, {
     dataVersion: 3,
-    students: [{ id: "student-1", lessons: 4 }],
     ui: { page: "overview", avatarMenuOpen: false }
   });
   assert.equal(state.reports.length, 1);
+  assert.equal(state.students.length, 1);
 });
 
 test("Drive repository maps list/save/pdf actions through its invoker", async () => {

@@ -1,3 +1,4 @@
+import "./polyfills.js";
 import "./styles.css";
 import "./certificate-studio.css";
 import "./certificate-editor.css";

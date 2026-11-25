@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createDashboardStatePayload, createReportDriveRepository, normalizeReportRecord } from "./report-drive.js";
 import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
 import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
+import { createCoachOnboarding, needsCoachOnboarding } from "./coach-onboarding.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
 const CENTRE_PROFILE_KEY = "centre_profile";
@@ -213,6 +214,34 @@ export function initApp(config = {}) {
     let renderQueued = false;
     let appEventsBound = false;
     let reportFilterTimer = null;
+    // Created on first use, after the rest of the controller is ready.
+    let coachOnboardingInstance = null;
+    const getCoachOnboarding = () => coachOnboardingInstance || (coachOnboardingInstance = createCoachOnboarding({
+      escapeHtml: value => escapeHtml(value),
+      templates: REPORT_TEMPLATES,
+      get centreName() { return requestedCentre?.name || ""; },
+      get logoUrl() { return requestedCentre?.logo_url || ""; },
+      getCoach: () => getOnboardingCoach(),
+      getStudents: () => {
+        const coach = getOnboardingCoach();
+        return coach ? state.students.filter(student => student.coachId === coach.id) : [];
+      },
+      getDriveStatus: () => isCertificatePreview ? (previewDriveConnected ? "connected" : "disconnected") : state.driveConnection?.status === "connected" ? "connected" : state.driveConnection ? "disconnected" : "unknown",
+      getDriveEmail: () => state.driveConnection?.google_account_email || "",
+      getDriveError: () => driveConnectionError || state.driveConnection?.last_error || "",
+      refreshDrive: () => isCertificatePreview ? undefined : refreshPrivilegedState(),
+      connectDrive: () => onboardingConnectDrive(),
+      uploadPhoto: file => uploadProfileImage(file, "coach", getOnboardingCoach().id),
+      saveProfile: values => saveOnboardingProfile(values),
+      currentTemplateId: () => getReportLayout(getOnboardingCoach()).templateId,
+      applyTemplate: templateId => applyOnboardingTemplate(templateId),
+      renderCertificate: (templateId, mode, previewId) => renderOnboardingCertificate(templateId, mode, previewId),
+      addStudent: values => addOnboardingStudent(values),
+      saveProgress: progress => saveOnboardingProgress(progress),
+      finish: () => { state.ui.page = "overview"; persist(); },
+      render: () => scheduleRender()
+    }));
+    let previewDriveConnected = false;
     let overviewDateFilter = "";
     let overviewMonthFilter = "";
     let overviewWeekFilter = "week1";
@@ -1300,16 +1329,16 @@ export function initApp(config = {}) {
     }
 
     function getReportTemplateData(report) {
-      const coach = getCoachById(report.coachId);
-      const student = getStudentById(report.studentId);
+      const coach = report.previewCoach || getCoachById(report.coachId);
+      const student = report.previewStudent || getStudentById(report.studentId);
       const summary = normalizeSummary(report.summary);
       return {
         report,
         coach,
         student,
         session: {
-          date: formatDate(report.date),
-          time: formatTime(report.time),
+          date: report.date ? formatDate(report.date) : "",
+          time: report.time ? formatTime(report.time) : "",
           centre: coach.branch,
           coachName: coach.name
         },
@@ -3461,6 +3490,11 @@ export function initApp(config = {}) {
         attachEvents();
         return;
       }
+      // New coaches finish the guided setup before using the dashboard.
+      if (state.auth.role === "coach" && !publicCoach && (isMatchingCentreSession || !requestedCentre) && !/^\/centre\/?$/i.test(window.location.pathname) && needsCoachOnboarding(getOnboardingCoach())) {
+        renderCoachOnboarding(app);
+        return;
+      }
       if (!requestedCentre && /^\/centre\/?$/i.test(window.location.pathname)) {
         app.innerHTML = renderCentrePage();
         return;
@@ -5326,6 +5360,153 @@ export function initApp(config = {}) {
       return supabase.storage.from(PROFILE_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
     }
 
+    // ---------- Coach onboarding helpers ----------
+    // Strict lookup: never fall back to another coach's record.
+    function getOnboardingCoach() {
+      return state.coaches.find(coach => coach.id === state.auth.coachId) || null;
+    }
+
+    function renderCoachOnboarding(app) {
+      const onboarding = getCoachOnboarding();
+      onboarding.rememberFocus();
+      app.innerHTML = onboarding.render();
+      onboarding.attach(app);
+      fitCustomCertificateHeadingText();
+      hydrateQrImages();
+      if (document.fonts?.ready) {
+        void document.fonts.ready.then(() => requestAnimationFrame(() => fitCustomCertificateHeadingText())).catch(() => {});
+      }
+    }
+
+    function onboardingAvatar(initials, background) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="${background}"/><circle cx="60" cy="46" r="22" fill="#ffffff" opacity=".9"/><path d="M18 120c4-26 22-40 42-40s38 14 42 40z" fill="#ffffff" opacity=".9"/><text x="60" y="54" text-anchor="middle" font-family="Arial" font-size="20" font-weight="700" fill="${background}">${initials}</text></svg>`;
+      return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
+    // Base: the plain template with no photos or report details.
+    // Example: the same template filled in with sample details.
+    function renderOnboardingCertificate(templateId, mode, previewId) {
+      const coach = getOnboardingCoach();
+      const layout = defaultStudioLayout(templateId);
+      const base = mode === "base";
+      if (base) layout.layers.forEach(layer => { if (layer.id === "student-photo" || layer.id === "coach-photo") layer.visible = false; });
+      const today = new Date();
+      const report = base ? {
+        id: "onboarding-base",
+        coachId: coach?.id || "",
+        previewCoach: { name: "", branch: "", centreContact: "", branchAddress: "", photo: "" },
+        previewStudent: { name: "", photo: "" },
+        date: "", time: "", lessonNumber: 1,
+        summary: { whatTaught: "", beforeCoaching: "", afterTraining: "", nextLesson: "", remarks: "" }
+      } : {
+        id: "onboarding-example",
+        coachId: coach?.id || "",
+        previewCoach: {
+          name: coach?.name && coach.name !== "Coach" ? coach.name : "Coach Ahmad",
+          branch: requestedCentre?.name || (coach?.branch && coach.branch !== "Unassigned" ? coach.branch : "JomNittaku Academy"),
+          centreContact: coach?.phone || "+60 12-345 6789",
+          branchAddress: requestedCentre?.name || "JomNittaku Academy",
+          photo: coach?.photo || onboardingAvatar("C", "#162a4a")
+        },
+        previewStudent: { name: "Mei Sim", photo: onboardingAvatar("S", "#c81e45") },
+        date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
+        time: "10:00",
+        lessonNumber: 4,
+        summary: {
+          whatTaught: "Forehand drive\nFootwork drills",
+          beforeCoaching: "Short strokes\nLate to the ball",
+          afterTraining: "Full swing\nBetter timing",
+          nextLesson: "Backhand push\nServe practice",
+          remarks: "Great effort today. Mei kept her focus and her forehand is getting stronger. Keep practising at home."
+        }
+      };
+      const editing = reportLayoutEditing;
+      const selection = selectedReportOverlay;
+      reportLayoutEditing = false;
+      selectedReportOverlay = "";
+      try {
+        return renderReportTemplate(report, layout, previewId);
+      } finally {
+        reportLayoutEditing = editing;
+        selectedReportOverlay = selection;
+      }
+    }
+
+    async function saveOnboardingProfile(values) {
+      const coach = getOnboardingCoach();
+      if (!coach) throw new Error("Your coach profile could not be found.");
+      const updated = { ...coach, name: values.name, phone: values.phone, photo: values.photo || "", photo_url: values.photo || "" };
+      if (isCertificatePreview) {
+        Object.assign(coach, updated);
+        return;
+      }
+      const saved = await saveCoachRecord(updated);
+      state.coaches = state.coaches.map(item => item.id === saved.id ? saved : item);
+      persist();
+    }
+
+    async function applyOnboardingTemplate(templateId) {
+      const coach = getOnboardingCoach();
+      if (!coach) throw new Error("Your coach profile could not be found.");
+      const current = getReportLayout(coach);
+      const variants = { ...(current.variants || {}), [current.templateId]: layoutSnapshot(current) };
+      const next = normalizeReportLayout(variants[templateId] || defaultStudioLayout(templateId));
+      coach.reportLayout = { ...next, variants, designs: current.designs || [], uploads: current.uploads || [] };
+      if (isCertificatePreview) return;
+      const saved = await saveCoachRecord(coach);
+      state.coaches = state.coaches.map(item => item.id === saved.id ? saved : item);
+      persist();
+    }
+
+    async function addOnboardingStudent(values) {
+      const coach = getOnboardingCoach();
+      if (!coach) throw new Error("Your coach profile could not be found.");
+      const student = {
+        id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)),
+        name: values.name,
+        coachId: coach.id,
+        centreId: state.auth.centreId || null,
+        lessons: 0,
+        parentHp: values.parentHp || "",
+        photo: "",
+        status: "Active",
+        age: values.age || "",
+        centre: requestedCentre?.name || ""
+      };
+      const saved = isCertificatePreview ? normalizeStudent(student) : await saveStudentRecord(student);
+      state.students.push(saved);
+      coach.studentIds = [...(coach.studentIds || []), saved.id];
+      if (!isCertificatePreview) persist();
+      return saved;
+    }
+
+    async function saveOnboardingProgress({ step, completed = false }) {
+      const coach = getOnboardingCoach();
+      if (!coach) return;
+      const changes = { onboarding_step: step };
+      if (completed) changes.onboarding_completed_at = new Date().toISOString();
+      if (!isCertificatePreview && supabase) {
+        const { error } = await supabase.from("coaches").update(changes).eq("id", coach.id);
+        if (error) throw new Error(completed ? "Your setup could not be saved. Try again." : error.message);
+      }
+      Object.assign(coach, changes);
+    }
+
+    async function onboardingConnectDrive() {
+      if (isCertificatePreview) {
+        await new Promise(resolve => setTimeout(resolve, 700));
+        previewDriveConnected = true;
+        return;
+      }
+      driveConnectionError = "";
+      const result = await invokePrivileged("google-drive-oauth", { action: "connect", centre_id: state.auth.centreId });
+      if (!result?.authorization_url) throw new Error("Google Drive did not return a sign-in link. Try again.");
+      if (requestedCentre?.slug) sessionStorage.setItem("pendingCentreSlug", requestedCentre.slug);
+      window.location.assign(result.authorization_url);
+      // Keep the button busy while the browser leaves the page.
+      await new Promise(() => {});
+    }
+
     async function saveCoachRecord(coach) {
       if (!supabase) throw new Error("Supabase is not configured.");
       const { data, error } = await supabase
@@ -5613,6 +5794,11 @@ export function initApp(config = {}) {
         state.coaches=[normalizeCoach({id:"preview-coach",name:"Daniel Lim",branch:"JomNittaku Academy",centreContact:"+60 12-345 6789",branchAddress:"JomNittaku Table Tennis Academy",slug:"daniel-lim",reportLayout:saved || defaultStudioLayout("classic")})];
         state.students=[normalizeStudent({id:"preview-student",name:"Alex Tan",coachId:"preview-coach",lessons:7})];
         state.reports=[{id:"sample-report",ref:"TRAINING PREVIEW",coachId:"preview-coach",studentId:"preview-student",date:"2026-10-29",time:"10:00",lessonNumber:8,summary:{whatTaught:"Forehand drive technique\nFootwork and recovery",beforeCoaching:"Inconsistent contact point\nDeveloping balance",afterTraining:"Improved shot consistency\nConfident weight transfer",nextLesson:"Backhand control\nServe and receive",remarks:"Great focus and effort throughout the session.\nKeep practising your footwork for 10 minutes daily.\nSmall improvements lead to lasting progress."}}];
+        // Preview the coach setup guide with /preview.html?onboarding
+        if (new URLSearchParams(window.location.search).has("onboarding")) {
+          Object.assign(state.coaches[0],{name:"",photo:"",photo_url:"",onboarding_step:0,onboarding_completed_at:null});
+          state.students=[];state.reports=[];
+        }
         authReady=true;authInitializing=false;render();return;
       }
 

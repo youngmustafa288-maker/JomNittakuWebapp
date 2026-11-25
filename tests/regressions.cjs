@@ -13,6 +13,7 @@ const certEditorSource = fs.readFileSync(path.join(__dirname, '../src/certificat
 const certTemplatesSource = fs.readFileSync(path.join(__dirname, '../src/certificate-templates.js'), 'utf8');
 const certStudioSource = fs.readFileSync(path.join(__dirname, '../src/certificate-studio.js'), 'utf8');
 const templatePickerSource = fs.readFileSync(path.join(__dirname, '../src/report-template-picker.js'), 'utf8');
+const onboardingSource = fs.readFileSync(path.join(__dirname, '../src/coach-onboarding.js'), 'utf8');
 const headings = ['brand-name', 'brand-subtitle', 'brand-tagline', 'report-title-art'];
 
 class Element {
@@ -161,6 +162,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     cleanModule(certEditorSource),
     cleanModule(certStudioSource),
     cleanModule(templatePickerSource),
+    cleanModule(onboardingSource),
     cleanModule(driveSource),
     cleanModule(localSource),
     code

@@ -8,6 +8,7 @@ const path = require('node:path');
 const controller = fs.readFileSync(path.join(__dirname, '../src/legacy-app.js'), 'utf8');
 const repository = fs.readFileSync(path.join(__dirname, '../src/report-drive.js'), 'utf8');
 const localSource = fs.readFileSync(path.join(__dirname, '../src/report-local.js'), 'utf8');
+const onboardingSource = fs.readFileSync(path.join(__dirname, '../src/coach-onboarding.js'), 'utf8');
 const clean = source => source.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
@@ -83,7 +84,7 @@ function harness({ bootstrap = false, invoke = async () => ({ records: [] }), lo
     persist = () => {};
     if (!globalThis.__bootstrap) return;
   `;
-  vm.runInNewContext(clean(repository) + '\n' + clean(localSource) + '\n' + clean(controller).replace('    (async function bootstrap() {', hook + '\n    (async function bootstrap() {'), sandbox);
+  vm.runInNewContext(clean(repository) + '\n' + clean(localSource) + '\n' + clean(onboardingSource) + '\n' + clean(controller).replace('    (async function bootstrap() {', hook + '\n    (async function bootstrap() {'), sandbox);
   sandbox.initApp({ supabaseUrl: 'https://fixture.supabase.test', supabaseKey: 'publishable-fixture' });
   return { api: sandbox.api, calls, renders, document };
 }

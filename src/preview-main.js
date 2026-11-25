@@ -2,6 +2,7 @@ import './styles.css';
 import './certificate-studio.css';
 import './certificate-editor.css';
 import './report-template-picker.css';
+import './coach-onboarding.css';
 import {initApp} from './legacy-app.js';
 document.getElementById('app').classList.add('app-shell');
 // Demo is isolated from credentials, authentication and live records.

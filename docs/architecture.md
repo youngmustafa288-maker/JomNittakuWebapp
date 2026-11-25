@@ -242,6 +242,10 @@ Coach/admin forms update the in-memory student, then `saveStudentRecord()` upser
 
 Google Drive remains the sole durable store for reports, but now records are owned by each coach's connected Google account rather than a shared centre Drive. The Edge Function verifies centre membership and refreshes the corresponding coach token before accessing app-managed files. `coach_drive_connections` stores only connection/control-plane metadata; no report IDs, names, URLs, or content. Old centre-owned reports are not automatically transferred by the per-coach upgrade.
 
+### New coach setup guide
+
+`src/coach-onboarding.js` (screens and step rules) and `src/coach-onboarding.css` (motion and phone layout) add a required six-step guide: Welcome, Profile, Google Drive, Certificate design, Students, Done. `render()` shows it instead of the dashboard when the signed-in coach has `coaches.onboarding_completed_at = null`. Progress is saved in `coaches.onboarding_step` (with a localStorage copy), so the Drive sign-in redirect returns to the same step. Migration `20261125_000019_coach_onboarding.sql` adds the columns and marks every existing coach as complete, so only new coaches see the guide. If the migration is not deployed, the column is missing and the guide stays off. Preview it with `npm run dev:studio` at `/preview.html?onboarding`.
+
 ## Database and Security Rules
 
 Database changes must be new, ordered migrations in `supabase/migrations/`. Do not edit an already-applied migration.

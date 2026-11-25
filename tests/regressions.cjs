@@ -517,6 +517,11 @@ test('coach link page shows public details safely, skips placeholder links and n
   assert.equal(h.api.linkPlatform('tiktok.com/@club').id, 'tiktok');
   assert.equal(h.api.linkPlatform('https://myclub.com').id, 'website');
   assert.match(h.api.renderCoachLinkPage({ status: 'missing' }), /Page not found/);
+  const logoPage = h.api.renderCoachLinkPage({ status: 'ready', page: { name: 'Mei', photo: '', centre_name: 'LiverPool', centre_logo: 'https://cdn.test/logo.png', links: [] } });
+  assert.match(logoPage, /link-page-photo is-logo[^]*logo\.png/);
+  const photoPage = h.api.renderCoachLinkPage({ status: 'ready', page: { name: 'Mei', photo: 'https://cdn.test/me.jpg', centre_name: 'LiverPool', centre_logo: 'https://cdn.test/logo.png', links: [] } });
+  assert.match(photoPage, /me\.jpg/);
+  assert.doesNotMatch(photoPage, /is-logo/);
 });
 
 test('certificate footer uses the centre name unless the coach wrote their own text', () => {

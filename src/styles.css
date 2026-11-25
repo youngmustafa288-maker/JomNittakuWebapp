@@ -2826,6 +2826,7 @@
     .link-page-card { width: min(100%, 460px); text-align: center; display: flex; flex-direction: column; align-items: center; }
     .link-page-photo { width: 112px; height: 112px; border-radius: 50%; border: 4px solid #c81e45; padding: 3px; background: #fff; box-shadow: 0 14px 30px rgba(200, 30, 69, .18); overflow: hidden; display: grid; place-items: center; animation: link-pop .6s cubic-bezier(.2, .8, .2, 1) both; }
     .link-page-photo img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .link-page-photo.is-logo img { object-fit: contain; background: #fff; padding: 10px; box-sizing: border-box; }
     .link-page-photo span { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; background: #edf1f8; color: #162a4a; font-size: 34px; font-weight: 700; }
     .link-page h1 { margin: 16px 0 4px; font-size: 1.6rem; font-weight: 700; color: #111827; animation: link-rise .5s ease both .1s; }
     .link-page-sub { margin: 0; color: #60708f; font-size: .95rem; animation: link-rise .5s ease both .16s; }

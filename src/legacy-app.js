@@ -3618,7 +3618,7 @@ export function initApp(config = {}) {
       return `
         <main class="link-page">
           <div class="link-page-card">
-            <div class="link-page-photo">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(page.name || "Coach")}">` : `<span>${escapeHtml(initials(page.name || "Coach"))}</span>`}</div>
+            <div class="link-page-photo ${!photo && page.centre_logo ? "is-logo" : ""}">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(page.name || "Coach")}">` : page.centre_logo ? `<img src="${escapeHtml(page.centre_logo)}" alt="${escapeHtml(centre || "Centre")} logo">` : `<span>${escapeHtml(initials(page.name || "Coach"))}</span>`}</div>
             <h1>${escapeHtml(page.name || "Coach")}</h1>
             <p class="link-page-sub">${escapeHtml([page.role || "Coach", centre].filter(Boolean).join(" · "))}</p>
             ${page.bio ? `<p class="link-page-bio">${escapeHtml(page.bio)}</p>` : ""}

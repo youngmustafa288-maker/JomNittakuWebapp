@@ -197,6 +197,7 @@ export function initApp(config = {}) {
     // link being opened. Used to point people to the right place.
     let authHomeCentre = null;
     let requestedCentre = null;
+    let centreRouteLoadFailed = false;
     let centreRouteUnavailable = false;
     let devConsoleTab = "centres";
     let devCentreCoachFilter = "";
@@ -772,6 +773,48 @@ export function initApp(config = {}) {
         }
       } catch (error) {}
       return localProfile;
+    }
+
+    // Find an active centre by its link. Uses the get_centre_by_slug database
+    // function, which works whether or not someone is signed in. A failed
+    // request (for example while the sign-in token is being renewed on a
+    // refresh) is retried before giving up, and is reported separately from
+    // "this centre does not exist".
+    async function fetchCentreBySlug(slug, client = supabase) {
+      if (!client || !slug) return { centre: null };
+      const columns = "id,name,slug,sport,status,logo_url,activated_at";
+      let lastError = null;
+      let useTable = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          let centre = null;
+          if (!useTable) {
+            const { data, error } = await client.rpc("get_centre_by_slug", { target_slug: slug });
+            if (error && (error.code === "PGRST202" || /get_centre_by_slug/.test(error.message || ""))) {
+              useTable = true; // The database function is not installed yet.
+            } else if (error) {
+              throw error;
+            } else {
+              centre = Array.isArray(data) ? data[0] || null : data || null;
+            }
+          }
+          if (useTable) {
+            const { data, error } = await client.from("centres").select(columns).eq("slug", slug).maybeSingle();
+            if (error) throw error;
+            centre = data?.status === "active" ? data : null;
+          }
+          if (centre) return { centre };
+          // Not found: with the database function that is a real answer.
+          // The older table lookup can hide centres while a session is
+          // settling, so give it one more try.
+          if (!useTable || attempt > 0) return { centre: null };
+        } catch (error) {
+          lastError = error;
+        }
+        try { await client.auth.getSession(); } catch { /* keep retrying */ }
+        await new Promise(resolve => window.setTimeout(resolve, 400 * (attempt + 1)));
+      }
+      return lastError ? { centre: null, error: lastError } : { centre: null };
     }
 
     async function invokePrivileged(functionName, body) {
@@ -3540,6 +3583,11 @@ export function initApp(config = {}) {
         : null;
       const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
       const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
+      if (centreRouteLoadFailed) {
+        app.innerHTML = '<main class="login-screen"><div class="login-panel"><div class="brand-copy"><h1>Couldn\'t load this centre</h1><p class="muted">Check your internet connection and try again.</p></div><div class="wrong-centre-actions"><button type="button" class="primary-btn" data-action="reload-page">Try again</button></div></div></main>';
+        attachEvents();
+        return;
+      }
       if (centreRouteUnavailable) {
         app.innerHTML = '<main class="login-screen"><div class="login-panel"><div class="brand-copy"><h1>Centre login unavailable</h1><p class="muted">This centre link is invalid, inactive, or temporarily unavailable.</p></div></div></main>';
         return;
@@ -4229,6 +4277,7 @@ export function initApp(config = {}) {
       if(action==="simple-copy-layer")return copyCertificateEditorLayer();
       if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
       if (action?.startsWith("studio-")) return handleStudioAction(action);
+      if (action === "reload-page") return window.location.reload();
       if (action === "setup-open") return getCoachOnboarding().openAt(event.currentTarget.dataset.step || "profile");
       if (action === "setup-dismiss") {
         setupCardDismissed = true;
@@ -5986,8 +6035,9 @@ export function initApp(config = {}) {
       if (centrePath && supabase) {
         let slug = "";
         try { slug = decodeURIComponent(centrePath[1]); } catch { slug = ""; }
-        const { data, error } = await supabase.from("centres").select("id,name,slug,sport,status,logo_url,activated_at").eq("slug", slug).maybeSingle();
-        if (!error && data?.status === "active") requestedCentre = data;
+        const result = await fetchCentreBySlug(slug);
+        if (result.centre) requestedCentre = result.centre;
+        else if (result.error) centreRouteLoadFailed = true;
         else centreRouteUnavailable = true;
       } else if (centrePath) {
         centreRouteUnavailable = true;
@@ -6000,8 +6050,10 @@ export function initApp(config = {}) {
         driveOAuthState = driveCallback ? callbackParams.get("state") || "" : "";
         const callbackCentreSlug = callbackParams.get("centre") || driveOAuthState.split("|")[1] || sessionStorage.getItem("pendingCentreSlug");
         if (callbackCentreSlug) {
-          const { data } = await supabase.from("centres").select("id,name,slug,sport,status,logo_url,activated_at").eq("slug", callbackCentreSlug).maybeSingle();
-          if (data?.status === "active") {
+          const { centre: data, error: lookupError } = await fetchCentreBySlug(callbackCentreSlug);
+          if (lookupError) {
+            centreRouteLoadFailed = true;
+          } else if (data?.status === "active") {
             requestedCentre = data;
             sessionStorage.removeItem("pendingCentreSlug");
             // Let Supabase consume its own sign-in callback before removing

@@ -1988,7 +1988,7 @@
     }
 
     .template-session {
-      font-family: "Kalam", cursive;
+      font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
       /* cqw, not rem: the certificate is a fixed-layout document with
          absolutely positioned text, so it can only scale as a single unit.
          A rem size stays 24px while the sheet shrinks from 794px to 332px on
@@ -2147,7 +2147,7 @@
 
     .template-footer-number {
       text-align: center;
-      font-family: "Kalam", cursive;
+      font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
       font-size: 2.9cqw;
       font-weight: 700;
       font-style: italic;
@@ -2175,7 +2175,7 @@
 
     .template-footer-address {
       text-align: center;
-      font-family: "Kalam", cursive;
+      font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
       font-size: 2.7cqw;
       font-weight: 700;
       font-style: italic;
@@ -2815,3 +2815,8 @@
 .certificate-locked-note { display:inline-flex; align-items:center; font-size:.75rem; font-weight:600; color:#64748b; white-space:nowrap; padding:0 8px; }
 /* Selection highlights must never inherit text-resize or altered font styles. */
 .template-art-slice[data-editable-heading="true"].is-selected > img { transform:none; font-size:inherit; }
+
+    /* Signed in, but on another centre's link */
+    .wrong-centre-panel .brand-copy p { margin-top: 10px; line-height: 1.5; }
+    .wrong-centre-actions { display: grid; gap: 10px; margin-top: 22px; }
+    .wrong-centre-actions a.primary-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }

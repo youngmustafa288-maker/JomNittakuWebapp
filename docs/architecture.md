@@ -253,6 +253,10 @@ Google Drive remains the sole durable store for reports, but now records are own
 
 Migrations: `20261125_000019_coach_onboarding.sql` (columns, and marks existing coaches complete) and `20261125_000020_coach_onboarding_skip_and_qr.sql` (skip list, 7 steps). Preview the guide with `npm run dev:studio` at `/preview.html?onboarding`.
 
+### One account, one centre
+
+`applyAuthUser` reads all of an account's `centre_memberships` rows and picks the centre whose link was opened, then the one saved on the account. Only a brand-new Google account (no centre, no staff role) joins a centre from its link, as a coach (`dev-console` `provision-google-member`). The function refuses to move an existing account or change its role. An account signed in at another centre's link sees `renderWrongCentre()`, with a link to its own centre and a sign-out button. Migration `20261125_000021_one_centre_per_account.sql` adds a unique index on `centre_memberships(user_id)` once no account belongs to two centres.
+
 ## Database and Security Rules
 
 Database changes must be new, ordered migrations in `supabase/migrations/`. Do not edit an already-applied migration.

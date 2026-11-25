@@ -45,17 +45,17 @@ export function initApp(config = {}) {
     const REPORT_TEMPLATE_FOOTER_TOP_DEFAULT = 75.95;
     const REPORT_CANVAS_FOOTER_Y_DEFAULT = 950;
     const DEFAULT_REPORT_LAYOUT = {
-      date: { left: 17.9, top: 27.2, width: 23, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
-      time: { left: 17.9, top: 29.58, width: 23, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
-      centre: { left: 17.9, top: 31.94, width: 25, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
-      coach: { left: 24.25, top: 34.34, width: 19, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
+      date: { left: 17.9, top: 27.2, width: 23, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
+      time: { left: 17.9, top: 29.58, width: 23, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
+      centre: { left: 17.9, top: 31.94, width: 25, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
+      coach: { left: 24.25, top: 34.34, width: 19, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
       whatTaught: { left: 11.8, top: 44.9, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       beforeCoaching: { left: 11.8, top: 52.8, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       afterTraining: { left: 55.4, top: 44.9, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       nextLesson: { left: 55.4, top: 52.8, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       remarks: { left: 10.1, top: 62.4, width: 86, height: 12.9, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.9, fontFamily: "Kalam", color: "#111111", fontWeight: 700 },
-      address: { left: 34.55, top: 86.35, width: 31.2, height: 4, fontSize: 2.7, fontFamily: "Kalam", color: "#111111", fontWeight: 700 }
+      contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.9, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
+      address: { left: 34.55, top: 86.35, width: 31.2, height: 4, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 }
     };
     const ARTWORK_SLICES = {
       "decor-top-left": { left: 1.8, top: 1.2, width: 23, height: 15 },
@@ -111,10 +111,10 @@ export function initApp(config = {}) {
       // The default AND customized heading texts use these same loaded fonts.
       // Font sizes are in container-width units (cqw); selection preserves them.
       // These are visual approximations, not verified original PNG typefaces.
-      "brand-name": { fontFamily: "Outfit", fontSize: 4.35, color: "#171525", fontWeight: 800, fontStyle: "normal" },
-      "brand-subtitle": { fontFamily: "Montserrat", fontSize: 2.95, color: "#171525", fontWeight: 400, fontStyle: "normal" },
-      "brand-tagline": { fontFamily: "Lato", fontSize: 2.65, color: "#171525", fontWeight: 400, fontStyle: "italic" },
-      "report-title-art": { fontFamily: "Cinzel Decorative", fontSize: 5.4, color: "#814b28", fontWeight: 700, fontStyle: "normal" }
+      "brand-name": { fontFamily: "Arial", fontSize: 4.35, color: "#171525", fontWeight: 800, fontStyle: "normal" },
+      "brand-subtitle": { fontFamily: "Arial", fontSize: 2.95, color: "#171525", fontWeight: 400, fontStyle: "normal" },
+      "brand-tagline": { fontFamily: "Arial", fontSize: 2.65, color: "#171525", fontWeight: 400, fontStyle: "italic" },
+      "report-title-art": { fontFamily: "Arial", fontSize: 5.4, color: "#814b28", fontWeight: 700, fontStyle: "normal" }
     };
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -193,6 +193,9 @@ export function initApp(config = {}) {
     let centreOnboardingModal = null;
     let studentEditModal = null;
     let loginError = "";
+    // The centre this account belongs to, when it differs from the centre
+    // link being opened. Used to point people to the right place.
+    let authHomeCentre = null;
     let requestedCentre = null;
     let centreRouteUnavailable = false;
     let devConsoleTab = "centres";
@@ -570,7 +573,20 @@ export function initApp(config = {}) {
       try { const u=new URL(source); return ["https:","http:"].includes(u.protocol) && !!u.hostname && source.length<=600; } catch { return false; }
     }
 
+    // Certificates use Arial. Designs saved before this change still carry the
+    // old template fonts, so they are switched to Arial once (fontVersion 2).
+    const RETIRED_CERTIFICATE_FONTS = new Set(["Kalam", "Outfit", "Montserrat", "Lato", "Cinzel Decorative", "Georgia"]);
+    function upgradeCertificateFonts(saved) {
+      if (!saved || typeof saved !== "object" || saved.fontVersion === 2) return saved;
+      const fix = item => item && typeof item === "object" && RETIRED_CERTIFICATE_FONTS.has(item.fontFamily) ? { ...item, fontFamily: "Arial" } : item;
+      const upgraded = { ...saved };
+      Object.keys(DEFAULT_REPORT_LAYOUT).forEach(key => { if (upgraded[key]) upgraded[key] = fix(upgraded[key]); });
+      if (Array.isArray(upgraded.layers)) upgraded.layers = upgraded.layers.map(fix);
+      return upgraded;
+    }
+
     function normalizeReportLayout(saved = {}) {
+      saved = upgradeCertificateFonts(saved);
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
       const legacyLayout = saved?.editorVersion !== 2;
       const savedLayers = Array.isArray(saved?.layers) ? saved.layers : [];
@@ -607,7 +623,7 @@ export function initApp(config = {}) {
             source: isCertificatePreview ? asset.source : asset.source.slice(0, 2048)
           }))
         : [];
-      return { ...keyed, layers, uploads, editorVersion: 2,
+      return { ...keyed, layers, uploads, editorVersion: 2, fontVersion: 2,
         templateId: String(saved?.templateId || "classic"),
         baseTemplateId: ["classic","performance","heritage"].includes(saved?.baseTemplateId) ? saved.baseTemplateId : (["performance","heritage"].includes(saved?.templateId) ? saved.templateId : "classic"),
         designName: String(saved?.designName || "Classic").slice(0,80),
@@ -762,14 +778,15 @@ export function initApp(config = {}) {
       if (!supabase) throw new Error("Supabase is not configured.");
       const { data, error } = await supabase.functions.invoke(functionName, { body, ...(body.hybrid_draft ? { timeout: 45000 } : body.action === "report-template-capabilities" ? { timeout: 15000 } : {}) });
       if (error) {
-        let detail = "", code = "";
+        let detail = "", code = "", extra = {};
         try {
           const response = error.context;
           const payload = response && typeof response.json === "function" ? await response.json() : null;
           detail = payload?.error || "";
           code = payload?.code || "";
+          extra = payload?.centre ? { centre: payload.centre } : {};
         } catch (parseError) {}
-        throw Object.assign(new Error(detail || error.message || "The server rejected this request."), { code });
+        throw Object.assign(new Error(detail || error.message || "The server rejected this request."), { code, ...extra });
       }
       // Older Edge Function deployments can return the JSON body as text when
       // their content type is not propagated through the gateway. Normalize it
@@ -782,7 +799,7 @@ export function initApp(config = {}) {
           // Preserve the original response for callers that handle plain text.
         }
       }
-      if (payload?.error) throw Object.assign(new Error(payload.error), { code: payload.code || "" });
+      if (payload?.error) throw Object.assign(new Error(payload.error), { code: payload.code || "", ...(payload.centre ? { centre: payload.centre } : {}) });
       return payload;
     }
 
@@ -1558,7 +1575,9 @@ export function initApp(config = {}) {
         await supabase.auth.signOut();
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
         isSigningIn = false;
-        loginError = `This account does not belong to ${requestedCentre.name}.`;
+        loginError = authHomeCentre?.name
+          ? `This account belongs to ${authHomeCentre.name}, not ${requestedCentre.name}. Use your centre's own link to sign in.`
+          : `This account does not belong to ${requestedCentre.name}.`;
         return render();
       }
       const targetId = dashboardStateId();
@@ -1568,7 +1587,9 @@ export function initApp(config = {}) {
         await supabase.auth.signOut();
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
         isSigningIn = false;
-        loginError = `This account does not belong to ${requestedCentre.name}.`;
+        loginError = authHomeCentre?.name
+          ? `This account belongs to ${authHomeCentre.name}, not ${requestedCentre.name}. Use your centre's own link to sign in.`
+          : `This account does not belong to ${requestedCentre.name}.`;
         return render();
       }
       await Promise.all([
@@ -1724,34 +1745,40 @@ export function initApp(config = {}) {
       const metadataCentreId = user.app_metadata?.centre_id || null;
       const isGoogleUser = user.app_metadata?.provider === "google"
         || user.identities?.some(identity => identity.provider === "google");
-      let centreId = metadataCentreId;
+      let centreId = supabase ? null : metadataCentreId;
       let centreMembership = null;
-      if (supabase && metadataCentreId) {
-        const { data } = await supabase
+      authHomeCentre = null;
+      if (supabase) {
+        // An account can have several membership rows (older data). Read them
+        // all instead of expecting exactly one, then prefer the centre being
+        // opened, then the centre saved on the account, then any.
+        const { data: memberships, error: membershipError } = await supabase
           .from("centre_memberships")
-          .select("centre_id, role")
-          .eq("centre_id", metadataCentreId)
-          .eq("user_id", user.id)
-          .maybeSingle();
-        centreMembership = data || null;
-        if (!centreMembership) centreId = null;
-      }
-      if (supabase && !centreMembership) {
-        const { data } = await supabase
-          .from("centre_memberships")
-          .select("centre_id, role")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        centreMembership = data || null;
+          .select("centre_id, role, centres(name, slug)")
+          .eq("user_id", user.id);
+        const list = Array.isArray(memberships) ? memberships : [];
+        centreMembership = (requestedCentre && list.find(item => item.centre_id === requestedCentre.id))
+          || (metadataCentreId && list.find(item => item.centre_id === metadataCentreId))
+          || list[0]
+          || null;
         if (centreMembership) centreId = centreMembership.centre_id;
-      }
-      if (supabase && requestedCentre && isGoogleUser && !centreMembership) {
-        try {
-          const result = await invokePrivileged("dev-console", { action: "provision-google-member", centre_id: requestedCentre.id });
-          centreMembership = result.membership || null;
-          if (centreMembership) centreId = centreMembership.centre_id;
-        } catch (error) {
-          console.warn("Unable to provision Google centre membership", error);
+        if (requestedCentre && centreMembership && centreMembership.centre_id !== requestedCentre.id) {
+          authHomeCentre = { name: centreMembership.centres?.name || "", slug: centreMembership.centres?.slug || "" };
+        }
+        // Only a brand-new Google account (no centre, no staff role) joins the
+        // centre whose link it opened, as a coach. Existing accounts are never
+        // moved to another centre or given a different role.
+        const canJoin = !membershipError && !list.length && requestedCentre && isGoogleUser
+          && !["dev", "admin", "centre_admin"].includes(String(appRole || ""));
+        if (canJoin) {
+          try {
+            const result = await invokePrivileged("dev-console", { action: "provision-google-member", centre_id: requestedCentre.id });
+            centreMembership = result.membership || null;
+            if (centreMembership) centreId = centreMembership.centre_id;
+          } catch (error) {
+            if (error?.code === "other_centre" && error.centre) authHomeCentre = error.centre;
+            console.warn("Unable to provision Google centre membership", error);
+          }
         }
       }
       let coach = state.coaches.find(item => item.id === coachId)
@@ -1822,7 +1849,9 @@ export function initApp(config = {}) {
       }
       if (!state.auth.role) {
         await supabase.auth.signOut();
-        loginError = "This account is not assigned as an admin or coach.";
+        loginError = requestedCentre
+          ? `This account isn't part of ${requestedCentre.name} yet. Ask your centre admin to add you.`
+          : "This account isn't part of a centre yet. Sign in from your centre's link, or ask your centre admin to add you.";
       }
     }
 
@@ -2001,6 +2030,35 @@ export function initApp(config = {}) {
           </div>
         </section>
       `;
+    }
+
+    // Shown when someone is signed in, but opened another centre's link.
+    // Nothing about the account is changed.
+    function renderWrongCentre() {
+      const home = authHomeCentre?.slug ? authHomeCentre : null;
+      const isStaff = ["dev", "admin"].includes(state.auth.role);
+      const message = isStaff
+        ? "You're signed in with a JomNittaku staff account. To use this centre's page, sign out and sign in with a centre account."
+        : home
+          ? `You're signed in with an account that belongs to ${home.name || "another centre"}. Each account can only use its own centre.`
+          : "You're signed in with an account from another centre. Each account can only use its own centre.";
+      const primary = isStaff
+        ? `<a class="primary-btn" href="/">Go to dashboard</a>`
+        : home ? `<a class="primary-btn" href="/centre/${encodeURIComponent(home.slug)}">Go to ${escapeHtml(home.name || "my centre")}</a>` : "";
+      return `
+        <section class="login-screen">
+          <div class="login-panel wrong-centre-panel">
+            <div class="brand-copy">
+              <h1>${escapeHtml(requestedCentre?.name || "Centre")}</h1>
+              <p class="muted">${escapeHtml(message)}</p>
+              ${state.auth.email ? `<p class="muted">Signed in as <strong>${escapeHtml(state.auth.email)}</strong></p>` : ""}
+            </div>
+            <div class="wrong-centre-actions">
+              ${primary}
+              <button type="button" class="secondary-btn" data-action="logout">Sign out</button>
+            </div>
+          </div>
+        </section>`;
     }
 
     function renderCentreActivationGate() {
@@ -3490,7 +3548,7 @@ export function initApp(config = {}) {
         && state.auth.centreId === requestedCentre.id
         && ["centre_admin", "coach"].includes(state.auth.role);
       if (requestedCentre && !isMatchingCentreSession) {
-        app.innerHTML = renderLogin();
+        app.innerHTML = state.auth.userId && state.auth.role ? renderWrongCentre() : renderLogin();
         attachEvents();
         return;
       }
@@ -3597,7 +3655,7 @@ export function initApp(config = {}) {
       });
       document.querySelectorAll("[data-qr-centre]").forEach(image => {
         if (image.dataset.qrReady === "true") return;
-        getQrCodeLib().then(QRCode=>QRCode.toDataURL(image.dataset.qrUrl || "https://jom-nittaku-webapp.vercel.app/centre", {width:320,margin:4,errorCorrectionLevel:"M"})).then(dataUrl => {
+        getQrCodeLib().then(QRCode=>QRCode.toDataURL(image.dataset.qrUrl || "https://jom-nittaku-webapp.vercel.app/centre", {width:320,margin:0,errorCorrectionLevel:"M"})).then(dataUrl => {
           image.src = dataUrl;
           image.dataset.qrReady = "true";
         }).catch(() => {});

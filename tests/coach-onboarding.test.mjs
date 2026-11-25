@@ -30,9 +30,12 @@ test("steps ask for input unless the coach skips them", () => {
   assert.match(onboardingStepError("drive", { driveStatus: "disconnected" }), /Google Drive/);
   assert.equal(onboardingStepError("drive", { driveStatus: "connected" }), "");
   assert.match(onboardingStepError("students", { studentCount: 0 }), /1 student/);
-  assert.equal(onboardingStepError("qr", { qrEnabled: false, qrUrl: "" }), "");
-  assert.match(onboardingStepError("qr", { qrEnabled: true, qrUrl: "not a link" }), /full link/);
-  assert.equal(onboardingStepError("qr", { qrEnabled: true, qrUrl: "instagram.com/liverpooltt" }), "");
+  assert.equal(onboardingStepError("qr", { qrMode: "none" }), "");
+  assert.match(onboardingStepError("qr", { qrMode: "custom", qrUrl: "not a link" }), /full link/);
+  assert.equal(onboardingStepError("qr", { qrMode: "custom", qrUrl: "instagram.com/liverpooltt" }), "");
+  assert.match(onboardingStepError("qr", { qrMode: "page", qrLinks: [{ url: "" }] }), /at least 1 link/);
+  assert.match(onboardingStepError("qr", { qrMode: "page", qrLinks: [{ url: "my whatsapp" }] }), /isn't complete/);
+  assert.equal(onboardingStepError("qr", { qrMode: "page", qrLinks: [{ url: "wa.me/60123456789" }, { url: "" }] }), "");
 });
 
 test("QR links get https added and the examples are valid", () => {
@@ -69,7 +72,10 @@ function fakeDeps(coach, extra = {}) {
     saveProfile: async () => {},
     currentTemplateId: () => "classic",
     applyTemplate: async () => {},
-    currentQr: () => ({ enabled: true, url: "" }),
+    currentQr: () => ({ mode: "page", url: "", links: [] }),
+    coachPageUrl: () => "https://example.test/coach/ahmad",
+    linkPlatform: url => /wa\.me/.test(url) ? { id: "whatsapp", label: "WhatsApp", badge: "WA", color: "#25d366" } : { id: "website", label: "Website", badge: "W", color: "#c81e45" },
+    renderQrCertificate: ({ visible, url }) => `<div data-qr-cert="${visible}" data-url="${url}"></div>`,
     applyQr: async () => {},
     qrDataUrl: async () => "",
     renderCertificate: (id, mode) => `<div data-cert="${id}-${mode}"></div>`,
@@ -95,8 +101,10 @@ test("QR step shows link examples and the done step shows the finished certifica
   const qrCoach = { id: "c3", name: "Ahmad", onboarding_step: 4, onboarding_completed_at: null };
   const qrHtml = createCoachOnboarding(fakeDeps(qrCoach)).render();
   assert.match(qrHtml, /Add a QR code/);
-  assert.match(qrHtml, /instagram\.com\/yourcentre/);
+  assert.match(qrHtml, /My link page/);
   assert.match(qrHtml, /No QR/);
+  assert.match(qrHtml, /data-qr-cert="true" data-url="https:\/\/example\.test\/coach\/ahmad"/);
+  assert.match(qrHtml, /Add a link/);
   const doneCoach = { id: "c4", name: "Ahmad", onboarding_step: 6, onboarding_completed_at: null, onboarding_skipped: ["qr"] };
   const doneHtml = createCoachOnboarding(fakeDeps(doneCoach)).render();
   assert.match(doneHtml, /data-cert="classic-final"/);

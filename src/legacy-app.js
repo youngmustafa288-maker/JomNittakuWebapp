@@ -116,6 +116,19 @@ export function initApp(config = {}) {
       "brand-tagline": { fontFamily: "Arial", fontSize: 2.65, color: "#171525", fontWeight: 400, fontStyle: "italic" },
       "report-title-art": { fontFamily: "Arial", fontSize: 5.4, color: "#814b28", fontWeight: 700, fontStyle: "normal" }
     };
+    const DEFAULT_FOOTER_TEXT = "JOMNITTAKU\nPassion · Focus · Exilent";
+    // The certificate footer shows the centre's own name. A coach who typed
+    // their own footer text keeps it.
+    function certificateCentreName() {
+      const coach = state.auth.role === "coach" ? state.coaches.find(item => item.id === state.auth.coachId) : null;
+      const branch = coach?.branch && !["Unassigned", "Centre"].includes(coach.branch) ? coach.branch : "";
+      return requestedCentre?.name || branch || "";
+    }
+    function footerTextForCentre(text) {
+      const centre = certificateCentreName();
+      if (!centre || String(text || "") !== DEFAULT_FOOTER_TEXT) return text;
+      return `${centre.toUpperCase()}\nPassion · Focus · Excellent`;
+    }
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
@@ -131,7 +144,7 @@ export function initApp(config = {}) {
         color: "#d8b477",
         fontWeight: 400,
         fill: "transparent",
-        text: "JOMNITTAKU\nPassion · Focus · Exilent",
+        text: DEFAULT_FOOTER_TEXT,
         zIndex: 30
       }
     };
@@ -197,6 +210,8 @@ export function initApp(config = {}) {
     // link being opened. Used to point people to the right place.
     let authHomeCentre = null;
     let requestedCentre = null;
+    // { status: "loading" | "ready" | "missing" | "error", page }
+    let publicCoachPage = null;
     let centreRouteLoadFailed = false;
     let centreRouteUnavailable = false;
     let devConsoleTab = "centres";
@@ -240,6 +255,9 @@ export function initApp(config = {}) {
       currentTemplateId: () => getReportLayout(getOnboardingCoach()).templateId,
       applyTemplate: templateId => applyOnboardingTemplate(templateId),
       currentQr: () => getOnboardingQr(),
+      coachPageUrl: () => { const coach = getOnboardingCoach(); return coach ? coachPublicUrl(coach) : ""; },
+      linkPlatform: url => linkPlatform(url),
+      renderQrCertificate: ({ visible, url }) => renderOnboardingCertificate(getReportLayout(getOnboardingCoach() || {}).templateId, "final", "cob-cert-qr", { qrVisible: visible, qrUrl: url }),
       applyQr: values => applyOnboardingQr(values),
       qrDataUrl: link => getQrCodeLib().then(QRCode => QRCode.toDataURL(link, { width: 320, margin: 2, errorCorrectionLevel: "M" })),
       renderCertificate: (templateId, mode, previewId) => renderOnboardingCertificate(templateId, mode, previewId),
@@ -775,6 +793,19 @@ export function initApp(config = {}) {
       return localProfile;
     }
 
+    async function fetchPublicCoachPage(slug) {
+      if (!supabase || !slug) return { status: "missing" };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const { data, error } = await supabase.rpc("get_public_coach_page", { target_slug: slug.toLowerCase() });
+        if (!error) {
+          const page = Array.isArray(data) ? data[0] : data;
+          return page ? { status: "ready", page } : { status: "missing" };
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 500));
+      }
+      return { status: "error" };
+    }
+
     // Find an active centre by its link. Uses the get_centre_by_slug database
     // function, which works whether or not someone is signed in. A failed
     // request (for example while the sign-in token is being renewed on a
@@ -912,11 +943,14 @@ export function initApp(config = {}) {
 
     function hybridNoticeContent() {
       if (!hybridWorkspace && !hybridLocalError) return "";
+      // Only speak up when something needs attention: unsynced drafts, an
+      // error, or a list shown from this device because Drive is unavailable.
+      if (!hybridPending.length && !hybridLocalError && !reportUsingLocalCache) return "";
       const message = hybridPending.length
         ? `${hybridPending.length} draft(s) saved on this device. ${navigator.onLine === false ? "Offline. " : ""}Google Drive sync pending.`
         : reportUsingLocalCache ? "Showing recent reports saved on this device. The cached list may be out of date while Google Drive is unavailable or loading." : "Recent reports are cached on this device. Google Drive holds the permanent copies.";
       const error = hybridLocalError || hybridPending.find(item => item.error)?.error;
-      return `<p>${escapeHtml(message)}</p>${error ? `<p class="is-error">${escapeHtml(error)}</p>` : ""}<div class="profile-actions">${hybridPending.length ? '<button class="secondary-btn" data-action="retry-local-sync">Sync now</button><button class="ghost-btn" data-action="export-local-drafts">Export local drafts</button>' : '<button class="ghost-btn" data-action="clear-report-cache">Clear cached reports</button>'}${hybridPending.filter(item => item.blocked).slice(0, 5).map(item => `<button class="secondary-btn" data-action="copy-local-draft" data-draft-id="${escapeHtml(item.id)}">Save ${escapeHtml(state.reportDrafts[item.id]?.ref || "draft")} as a separate copy</button>`).join("")}</div>`;
+      return `<p>${escapeHtml(message)}</p>${error ? `<p class="is-error">${escapeHtml(error)}</p>` : ""}<div class="profile-actions">${hybridPending.length ? '<button class="secondary-btn" data-action="retry-local-sync">Sync now</button><button class="ghost-btn" data-action="export-local-drafts">Export local drafts</button>' : ''}${hybridPending.filter(item => item.blocked).slice(0, 5).map(item => `<button class="secondary-btn" data-action="copy-local-draft" data-draft-id="${escapeHtml(item.id)}">Save ${escapeHtml(state.reportDrafts[item.id]?.ref || "draft")} as a separate copy</button>`).join("")}</div>`;
     }
 
     function renderHybridNotice() { return `<div class="report-hybrid-notice" data-hybrid-notice role="status">${hybridNoticeContent()}</div>`; }
@@ -1711,7 +1745,7 @@ export function initApp(config = {}) {
           ? (layer.source ? `<img src="${escapeHtml(layer.source)}" alt="" style="width:100%;height:100%;object-fit:${escapeHtml(layer.objectFit || "cover")};object-position:${escapeHtml(layer.objectPosition || "center")};">` : "")
           : isFooterText
             ? (() => {
-              const [title = "", ...subtitleParts] = String(layer.text || "").split(/\n+/);
+              const [title = "", ...subtitleParts] = String(footerTextForCentre(layer.text) || "").split(/\n+/);
               return `<span class="template-footer-title">${escapeHtml(title)}</span><span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>`;
             })()
           : escapeHtml(layer.text || "");
@@ -2643,7 +2677,7 @@ export function initApp(config = {}) {
                     </div>
                   </div>
                 </div>
-                <div class="report-bottom-bar">JOMNITTAKU - Passion · Focus · Excellent</div>
+                <div class="report-bottom-bar">${escapeHtml((certificateCentreName() || "JomNittaku").toUpperCase())} - Passion · Focus · Excellent</div>
               </div>
             </div>
           </div>
@@ -3527,28 +3561,78 @@ export function initApp(config = {}) {
     }
 
     function renderPublicCoachPage(coach) {
-      const coachLinks = (coach.links || [])
-        .filter(link => link.visible !== false && String(link.url || "").trim())
-        .map(link => ({ ...link, title: link.title || link.label || "Coach link" }));
-      const links = coachLinks.sort((a, b) => (a.order || 0) - (b.order || 0));
-      const avatar = coach.photo_url || coach.photo;
+      return renderCoachLinkPage({
+        status: "ready",
+        page: { name: coach.name, role: coach.role, bio: coach.bio, photo: coach.photo_url || coach.photo, links: coach.links, centre_name: requestedCentre?.name || coach.branch || "", centre_logo: requestedCentre?.logo_url || "" }
+      });
+    }
+
+    const LINK_PLATFORMS = [
+      { id: "whatsapp", label: "WhatsApp", badge: "WA", color: "#25d366", test: /(^|\.)(wa\.me|whatsapp\.com)$/i },
+      { id: "instagram", label: "Instagram", badge: "IG", color: "#d6249f", test: /(^|\.)instagram\.com$/i },
+      { id: "tiktok", label: "TikTok", badge: "TT", color: "#111111", test: /(^|\.)tiktok\.com$/i },
+      { id: "facebook", label: "Facebook", badge: "FB", color: "#1877f2", test: /(^|\.)(facebook\.com|fb\.com)$/i },
+      { id: "youtube", label: "YouTube", badge: "YT", color: "#ff0000", test: /(^|\.)(youtube\.com|youtu\.be)$/i },
+      { id: "x", label: "X", badge: "X", color: "#111111", test: /(^|\.)(x\.com|twitter\.com)$/i },
+      { id: "threads", label: "Threads", badge: "@", color: "#111111", test: /(^|\.)threads\.net$/i }
+    ];
+    // Which platform a link points to, for its icon. Unknown links are "website".
+    function linkPlatform(url) {
+      const text = String(url || "").trim();
+      if (/^mailto:/i.test(text)) return { id: "email", label: "Email", badge: "@", color: "#c81e45" };
+      if (/^tel:/i.test(text)) return { id: "phone", label: "Call", badge: "☎", color: "#162a4a" };
+      try {
+        const host = new URL(/^[a-z]+:\/\//i.test(text) ? text : `https://${text}`).hostname;
+        return LINK_PLATFORMS.find(platform => platform.test.test(host)) || { id: "website", label: "Website", badge: "W", color: "#c81e45" };
+      } catch {
+        return { id: "website", label: "Website", badge: "W", color: "#c81e45" };
+      }
+    }
+    // Links a parent can actually open (skips old placeholders like "/reports" or an empty "mailto:").
+    function publicCoachLinks(links) {
+      return (Array.isArray(links) ? links : [])
+        .filter(link => link && link.visible !== false)
+        .map(link => ({ ...link, url: String(link.url || "").trim(), title: String(link.title || link.label || "").trim() }))
+        .filter(link => /^https?:\/\/[^/\s]+\.[^/\s]+/i.test(link.url) || /^mailto:[^@\s]+@[^@\s]+$/i.test(link.url) || /^tel:\+?[0-9 ()-]{6,}$/i.test(link.url))
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+
+    // Style B link page: light background, coach photo on top, one main
+    // button, then the rest. The footer shows the centre name.
+    function renderCoachLinkPage(result) {
+      if (result.status === "loading") return '<main class="link-page"><div class="link-page-card"><div class="app-loading" role="status">Loading…</div></div></main>';
+      if (result.status !== "ready") {
+        const title = result.status === "error" ? "Couldn\'t load this page" : "Page not found";
+        const text = result.status === "error" ? "Check your internet connection and try again." : "This link may be out of date. Ask your coach for a new one.";
+        return `<main class="link-page"><div class="link-page-card"><h1>${title}</h1><p class="link-page-bio">${text}</p>${result.status === "error" ? '<a class="link-btn is-main" href="">Try again</a>' : ""}</div></main>`;
+      }
+      const page = result.page || {};
+      const links = publicCoachLinks(page.links);
+      const socials = [];
+      links.forEach(link => {
+        const platform = linkPlatform(link.url);
+        if (!["website", "email", "phone"].includes(platform.id) && !socials.some(item => item.platform.id === platform.id)) socials.push({ link, platform });
+      });
+      const centre = page.centre_name || "";
+      const photo = page.photo || "";
       return `
-        <main class="public-coach-page">
-          <section class="public-coach-card">
-            <div class="public-coach-avatar" ${avatar ? `style="background-image:url('${avatar}')"` : ""}>
-              ${avatar ? "" : escapeHtml(initials(coach.name))}
+        <main class="link-page">
+          <div class="link-page-card">
+            <div class="link-page-photo">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(page.name || "Coach")}">` : `<span>${escapeHtml(initials(page.name || "Coach"))}</span>`}</div>
+            <h1>${escapeHtml(page.name || "Coach")}</h1>
+            <p class="link-page-sub">${escapeHtml([page.role || "Coach", centre].filter(Boolean).join(" · "))}</p>
+            ${page.bio ? `<p class="link-page-bio">${escapeHtml(page.bio)}</p>` : ""}
+            ${socials.length ? `<div class="link-page-socials">${socials.map(({ link, platform }) => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(platform.label)}" style="--brand:${platform.color}">${escapeHtml(platform.badge)}</a>`).join("")}</div>` : ""}
+            <div class="link-page-buttons">
+              ${links.length ? links.map((link, index) => {
+                const platform = linkPlatform(link.url);
+                const external = /^https?:/i.test(link.url);
+                return `<a class="link-btn ${index === 0 ? "is-main" : ""}" href="${escapeHtml(link.url)}" ${external ? 'target="_blank" rel="noopener noreferrer"' : ""} style="--i:${index};--brand:${platform.color}"><span class="link-btn-icon">${escapeHtml(platform.badge)}</span><span>${escapeHtml(link.title || platform.label)}</span></a>`;
+              }).join("") : '<p class="link-page-empty">No links added yet.</p>'}
             </div>
-            <p class="public-coach-kicker">${escapeHtml(coach.role || "Coach")}</p>
-            <h1>${escapeHtml(coach.name)}</h1>
-            <p class="public-coach-bio">${escapeHtml(coach.bio || coach.branch || "")}</p>
-            ${links.length ? "" : `<div class="public-coach-links-empty">No centre or coach links have been added yet.</div>`}
-            <div class="public-coach-links">
-              ${links.map(link => `<a href="${escapeHtml(link.url)}" class="public-coach-link" ${/^https?:|^mailto:|^tel:/.test(link.url) ? 'target="_blank" rel="noreferrer"' : ""}><span>${escapeHtml(link.icon || "↗")}</span>${escapeHtml(link.title)}</a>`).join("")}
-            </div>
-            <small>${escapeHtml(coach.branch || "")}</small>
-          </section>
-        </main>
-      `;
+            ${centre ? `<footer class="link-page-footer">${page.centre_logo ? `<img src="${escapeHtml(page.centre_logo)}" alt="">` : ""}<span>${escapeHtml(centre)}</span></footer>` : ""}
+          </div>
+        </main>`;
     }
 
     function scheduleRender() {
@@ -3592,6 +3676,10 @@ export function initApp(config = {}) {
           }
         : null;
       const publicMatch = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
+      if (publicMatch && publicCoachPage) {
+        app.innerHTML = renderCoachLinkPage(publicCoachPage);
+        return;
+      }
       const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
       if (centreRouteLoadFailed) {
         app.innerHTML = '<main class="login-screen"><div class="login-panel"><div class="brand-copy"><h1>Couldn\'t load this centre</h1><p class="muted">Check your internet connection and try again.</p></div><div class="wrong-centre-actions"><button type="button" class="primary-btn" data-action="reload-page">Try again</button></div></div></main>';
@@ -5527,7 +5615,7 @@ export function initApp(config = {}) {
     // base: the empty design, with no photos or QR.
     // example: filled in with sample photos, notes and a QR code.
     // final: the coach's own design, name, photo and QR, with a sample student.
-    function renderOnboardingCertificate(templateId, mode, previewId) {
+    function renderOnboardingCertificate(templateId, mode, previewId, options = null) {
       const coach = getOnboardingCoach();
       const base = mode === "base";
       const final = mode === "final";
@@ -5535,6 +5623,11 @@ export function initApp(config = {}) {
         ? normalizeReportLayout(layoutSnapshot(getReportLayout(coach)))
         : defaultStudioLayout(templateId);
       if (base) layout.layers.forEach(layer => { if (["student-photo", "coach-photo", "qr"].includes(layer.id)) layer.visible = false; });
+      if (options) {
+        const qr = layout.layers.find(layer => layer.id === "qr");
+        if (qr) qr.visible = options.qrVisible !== false;
+        if (options.qrUrl && validStudioQrUrl(options.qrUrl)) layout.qrUrl = options.qrUrl;
+      }
       if (mode === "example") {
         const qr = layout.layers.find(layer => layer.id === "qr");
         if (qr) qr.visible = true;
@@ -5555,9 +5648,9 @@ export function initApp(config = {}) {
         coachId: coach?.id || "",
         previewCoach: {
           name: coachName,
-          branch: requestedCentre?.name || (coach?.branch && coach.branch !== "Unassigned" ? coach.branch : "JomNittaku Academy"),
+          branch: certificateCentreName() || "Your Centre",
           centreContact: coach?.phone || "+60 12-345 6789",
-          branchAddress: requestedCentre?.name || "JomNittaku Academy",
+          branchAddress: certificateCentreName() || "Your Centre",
           photo: final && coach?.photo ? coach.photo : onboardingIllustration("coach")
         },
         previewStudent: { name: "Mei Sim", photo: onboardingIllustration("student") },
@@ -5586,18 +5679,31 @@ export function initApp(config = {}) {
 
     const DEFAULT_QR_URL_PATTERN = /^https:\/\/jom-nittaku-webapp\.vercel\.app\/centre\/?$/;
     function getOnboardingQr() {
-      const layout = getReportLayout(getOnboardingCoach() || {});
+      const coach = getOnboardingCoach();
+      const layout = getReportLayout(coach || {});
       const layer = layout.layers.find(item => item.id === "qr");
-      const url = layout.qrUrl && !DEFAULT_QR_URL_PATTERN.test(layout.qrUrl) ? layout.qrUrl : "";
-      return { enabled: layer?.visible !== false, url };
+      const pageUrl = coach ? coachPublicUrl(coach) : "";
+      const links = publicCoachLinks(coach?.links).map(link => ({ id: link.id, title: link.title, url: link.url }));
+      const customUrl = layout.qrUrl && !DEFAULT_QR_URL_PATTERN.test(layout.qrUrl) && layout.qrUrl !== pageUrl ? layout.qrUrl : "";
+      const mode = layer?.visible === false ? "none" : customUrl ? "custom" : "page";
+      return { mode, url: customUrl, links };
     }
 
-    async function applyOnboardingQr({ enabled, url }) {
+    // mode "page": the QR opens the coach's link page and the links are saved
+    // as the page's buttons. "custom": one link. "none": no QR printed.
+    async function applyOnboardingQr({ mode, url, links }) {
       const coach = getOnboardingCoach();
       if (!coach) throw new Error("Your coach profile could not be found.");
       const current = getReportLayout(coach);
-      const layers = current.layers.map(layer => layer.id === "qr" ? { ...layer, visible: !!enabled } : layer);
-      coach.reportLayout = { ...current, layers, qrUrl: enabled && validStudioQrUrl(url) ? url : current.qrUrl };
+      const layers = current.layers.map(layer => layer.id === "qr" ? { ...layer, visible: mode !== "none" } : layer);
+      const qrUrl = mode === "page" ? coachPublicUrl(coach) : mode === "custom" && validStudioQrUrl(url) ? url : current.qrUrl;
+      coach.reportLayout = { ...current, layers, qrUrl };
+      if (mode === "page") {
+        coach.links = (links || []).map((link, index) => {
+          const title = link.title || linkPlatform(link.url).label;
+          return { id: link.id || `link-${index + 1}`, title, label: title, url: link.url, icon: "", visible: true, order: index + 1 };
+        });
+      }
       if (isCertificatePreview) return;
       const saved = await saveCoachRecord(coach);
       state.coaches = state.coaches.map(item => item.id === saved.id ? saved : item);
@@ -6078,6 +6184,20 @@ export function initApp(config = {}) {
         authInitializing = false;
         render();
         state.centreProfile = await loadPublicCentreProfile();
+        render();
+        return;
+      }
+      // Coach link page (opened from the certificate QR). Anyone can view it,
+      // so it loads without waiting for a sign-in.
+      const coachPagePath = window.location.pathname.match(/^\/coach\/([^/]+)\/?$/i);
+      if (coachPagePath && supabase) {
+        let slug = "";
+        try { slug = decodeURIComponent(coachPagePath[1]); } catch { slug = ""; }
+        publicCoachPage = { status: "loading" };
+        authReady = true;
+        authInitializing = false;
+        render();
+        publicCoachPage = await fetchPublicCoachPage(slug);
         render();
         return;
       }

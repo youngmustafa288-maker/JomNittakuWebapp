@@ -93,7 +93,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     return q;
   }
   const sandbox = {
-    console, URLSearchParams, Date, Map, Set, Event,
+    console, URL, URLSearchParams, Date, Map, Set, Event,
     setTimeout, clearTimeout, crypto: require('node:crypto').webcrypto,
     ...(localDB ? { indexedDB: localDB } : {}), navigator: { onLine: true }, structuredClone, TextEncoder,
     localStorage: storage, sessionStorage, document,
@@ -131,6 +131,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
       renderReportLayoutToolbar, beginCertificateTextEditing, fitCustomCertificateHeadingText,
       updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage, render,
       fetchCentreBySlugWith: (client, slug) => fetchCentreBySlug(slug, client),
+      renderCoachLinkPage, publicCoachLinks, linkPlatform, footerTextForCentre, hybridNoticeContent,
       finalizeWizard, closeWizard, ensureHybridWorkspace, resetHybridSession,
       get wizardId() { return wizardDraftId; },
       get reportError() { return reportStoreError; },
@@ -492,4 +493,36 @@ test('a centre link that fails to load once is retried instead of showing "unava
   const missing = await api.fetchCentreBySlugWith({ rpc: async () => ({ data: [], error: null }), auth: fake.auth }, 'nope');
   assert.equal(missing.centre, null);
   assert.equal(missing.error, undefined);
+});
+
+test('coach link page shows public details safely, skips placeholder links and names the centre', () => {
+  const h = harness();
+  const html = h.api.renderCoachLinkPage({ status: 'ready', page: {
+    name: '<b>Ahmad</b>', role: 'Table Tennis Coach', bio: 'Hi', photo: '', centre_name: 'LiverPool', centre_logo: '',
+    links: [
+      { id: 'a', title: 'Book a class', url: 'https://wa.me/60123456789', visible: true, order: 1 },
+      { id: 'b', title: 'View Reports', url: '/reports', visible: true, order: 2 },
+      { id: 'c', title: 'Contact', url: 'mailto:', visible: true, order: 3 },
+      { id: 'd', title: 'Insta', url: 'https://instagram.com/liverpooltt', visible: true, order: 4 },
+      { id: 'e', title: 'Bad', url: 'javascript:alert(1)', visible: true, order: 5 }
+    ] } });
+  assert.doesNotMatch(html, /<b>Ahmad<\/b>/);
+  assert.match(html, /Book a class/);
+  assert.match(html, /Insta/);
+  assert.doesNotMatch(html, /View Reports|javascript:/);
+  assert.match(html, /link-page-footer[^]*LiverPool/);
+  assert.equal((html.match(/class="link-btn /g) || []).length, 2);
+  assert.match(html, /link-btn is-main/);
+  assert.equal(h.api.linkPlatform('https://wa.me/601').id, 'whatsapp');
+  assert.equal(h.api.linkPlatform('tiktok.com/@club').id, 'tiktok');
+  assert.equal(h.api.linkPlatform('https://myclub.com').id, 'website');
+  assert.match(h.api.renderCoachLinkPage({ status: 'missing' }), /Page not found/);
+});
+
+test('certificate footer uses the centre name unless the coach wrote their own text', () => {
+  const h = harness();
+  h.api.state.auth = { role: 'coach', coachId: 'coach-x', userId: 'coach-x', centreId: 'c', email: '' };
+  h.api.state.coaches = [{ id: 'coach-x', branch: 'LiverPool' }];
+  assert.match(h.api.footerTextForCentre('JOMNITTAKU\nPassion · Focus · Exilent'), /^LIVERPOOL\n/);
+  assert.equal(h.api.footerTextForCentre('MY OWN TEXT'), 'MY OWN TEXT');
 });

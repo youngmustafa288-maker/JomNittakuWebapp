@@ -2820,3 +2820,29 @@
     .wrong-centre-panel .brand-copy p { margin-top: 10px; line-height: 1.5; }
     .wrong-centre-actions { display: grid; gap: 10px; margin-top: 22px; }
     .wrong-centre-actions a.primary-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+    /* Coach link page (style B), opened from the certificate QR */
+    .link-page { min-height: 100vh; min-height: 100dvh; display: flex; justify-content: center; padding: 40px 18px 28px; background: #f6f8fc; font-family: "Outfit", sans-serif; color: #111827; box-sizing: border-box; }
+    .link-page-card { width: min(100%, 460px); text-align: center; display: flex; flex-direction: column; align-items: center; }
+    .link-page-photo { width: 112px; height: 112px; border-radius: 50%; border: 4px solid #c81e45; padding: 3px; background: #fff; box-shadow: 0 14px 30px rgba(200, 30, 69, .18); overflow: hidden; display: grid; place-items: center; animation: link-pop .6s cubic-bezier(.2, .8, .2, 1) both; }
+    .link-page-photo img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .link-page-photo span { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; background: #edf1f8; color: #162a4a; font-size: 34px; font-weight: 700; }
+    .link-page h1 { margin: 16px 0 4px; font-size: 1.6rem; font-weight: 700; color: #111827; animation: link-rise .5s ease both .1s; }
+    .link-page-sub { margin: 0; color: #60708f; font-size: .95rem; animation: link-rise .5s ease both .16s; }
+    .link-page-bio { margin: 12px 0 0; color: #30405f; line-height: 1.5; max-width: 360px; animation: link-rise .5s ease both .22s; }
+    .link-page-socials { display: flex; justify-content: center; gap: 12px; margin: 18px 0 4px; animation: link-rise .5s ease both .28s; }
+    .link-page-socials a { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: #edf1f8; color: #162a4a; font-size: 12px; font-weight: 700; text-decoration: none; transition: background .2s, color .2s, transform .15s; }
+    .link-page-socials a:hover { background: var(--brand); color: #fff; transform: translateY(-2px); }
+    .link-page-buttons { width: 100%; display: grid; gap: 12px; margin-top: 22px; }
+    .link-btn { position: relative; display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 56px; border-radius: 16px; border: 1px solid #d7deeb; background: #fff; color: #111827; font-weight: 600; text-decoration: none; box-shadow: 0 4px 12px rgba(15, 26, 51, .05); transition: transform .15s, box-shadow .2s, border-color .2s; animation: link-rise .45s ease both; animation-delay: calc(.34s + var(--i, 0) * .07s); }
+    .link-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(15, 26, 51, .1); border-color: #c81e45; }
+    .link-btn:active { transform: scale(.98); }
+    .link-btn.is-main { background: #c81e45; border-color: #c81e45; color: #fff; box-shadow: 0 12px 24px rgba(200, 30, 69, .28); }
+    .link-btn-icon { position: absolute; left: 12px; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; }
+    .link-btn.is-main .link-btn-icon { background: rgba(255, 255, 255, .22); }
+    .link-page-empty { color: #60708f; }
+    .link-page-footer { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 34px; color: #8c96ab; font-size: .9rem; font-weight: 600; }
+    .link-page-footer img { width: 24px; height: 24px; border-radius: 6px; object-fit: contain; }
+    @keyframes link-pop { 0% { opacity: 0; transform: scale(.5); } 70% { transform: scale(1.06); } 100% { opacity: 1; transform: scale(1); } }
+    @keyframes link-rise { from { opacity: 0; transform: translateY(12px); } }
+    @media (prefers-reduced-motion: reduce) { .link-page *, .link-page *::before { animation: none !important; transition: none !important; } }

@@ -1547,7 +1547,7 @@ export function initApp(config = {}) {
         : sourceLines).slice(0, positions.length);
       lines = displayLines;
       return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" data-overlay-text="true" style="${overlayStyle(layout)}">
-        ${positions.map((_position, index) => `<div class="template-text template-bullet ${ruled ? "is-ruled" : ""} ${lines[index] ? "" : "empty"}" style="left:0;top:${index * rowHeight}%;width:100%;${ruled ? `height:${rowHeight}%;` : `max-height:${rowHeight}%;`}"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
+        ${positions.map((_position, index) => `<div class="template-text template-bullet ${ruled ? "is-ruled" : ""} ${lines[index] ? "" : "empty"}" style="left:0;width:100%;${ruled ? `top:auto;bottom:${(100 - (index + 1) * rowHeight).toFixed(3)}%;` : `top:${index * rowHeight}%;max-height:${rowHeight}%;`}"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
         ${reportLayoutEditing ? renderCertificateResizeHandles() : ""}
       </div>`;
     }

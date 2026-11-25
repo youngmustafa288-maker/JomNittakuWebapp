@@ -531,3 +531,29 @@ test('certificate footer uses the centre name unless the coach wrote their own t
   assert.match(h.api.footerTextForCentre('JOMNITTAKU\nPassion · Focus · Exilent'), /^LIVERPOOL\n/);
   assert.equal(h.api.footerTextForCentre('MY OWN TEXT'), 'MY OWN TEXT');
 });
+
+test('old report design copies are upgraded: Arial fonts, QR moved off the frame corner, photos out of the title', () => {
+  const h = harness();
+  const old = {
+    editorVersion: 2, templateId: 'classic', baseTemplateId: 'classic',
+    date: { left: 17.9, top: 27.2, width: 23, fontSize: 2.7, fontFamily: 'Kalam' },
+    layers: [
+      { id: 'brand-name', type: 'text', text: 'Dao Sports Method', fontFamily: 'Outfit' },
+      { id: 'report-title-art', type: 'text', text: 'THIS IS A TRAINING REPORT', fontFamily: 'Cinzel Decorative' },
+      { id: 'qr', left: 87.7, top: 91.88, width: 9.5, height: 7.12 },
+      { id: 'student-photo', left: 46, top: 0, width: 11.2, height: 9.7 },
+      { id: 'coach-photo', left: 70, top: 30, width: 11.2, height: 9.7 }
+    ]
+  };
+  const layout = h.api.normalizeReportLayout(old);
+  assert.equal(layout.date.fontFamily, 'Arial');
+  assert.equal(layout.layers.find(l => l.id === 'brand-name').fontFamily, 'Arial');
+  assert.equal(layout.layers.find(l => l.id === 'report-title-art').fontFamily, 'Arial');
+  const qr = layout.layers.find(l => l.id === 'qr');
+  assert.notEqual(qr.left, 87.7);
+  assert.ok(qr.top < 88);
+  assert.ok(layout.layers.find(l => l.id === 'student-photo').top > 18);
+  // A photo the coach placed somewhere sensible is kept.
+  assert.equal(layout.layers.find(l => l.id === 'coach-photo').left, 70);
+  assert.equal(layout.layers.find(l => l.id === 'coach-photo').top, 30);
+});

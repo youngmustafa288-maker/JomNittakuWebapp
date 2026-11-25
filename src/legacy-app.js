@@ -53,9 +53,9 @@ export function initApp(config = {}) {
       beforeCoaching: { left: 11.8, top: 52.8, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       afterTraining: { left: 55.4, top: 44.9, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       nextLesson: { left: 55.4, top: 52.8, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      remarks: { left: 10.1, top: 62.4, width: 86, height: 12.9, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.9, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
-      address: { left: 34.55, top: 86.35, width: 31.2, height: 4, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 }
+      remarks: { left: 10.1, top: 61.9, width: 79.5, height: 11.6, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.3, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
+      address: { left: 34.55, top: 86.35, width: 31.2, height: 4, fontSize: 2, fontFamily: "Arial", color: "#111111", fontWeight: 700 }
     };
     const ARTWORK_SLICES = {
       "decor-top-left": { left: 1.8, top: 1.2, width: 23, height: 15 },
@@ -133,7 +133,8 @@ export function initApp(config = {}) {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
-      qr: { left: 87.7, top: 91.88, width: 9.5, height: 7.12, zIndex: 50 },
+      // Inside the dark corner pocket of the classic frame (square on the 896x1200 sheet).
+      qr: { left: 87, top: 88.3, width: 8.4, height: 6.27, zIndex: 50 },
       "footer-text-overlay": {
         left: 27,
         top: 91.55,
@@ -596,12 +597,42 @@ export function initApp(config = {}) {
     // old template fonts, so they are switched to Arial once (fontVersion 2).
     const RETIRED_CERTIFICATE_FONTS = new Set(["Kalam", "Outfit", "Montserrat", "Lato", "Cinzel Decorative", "Georgia"]);
     function upgradeCertificateFonts(saved) {
-      if (!saved || typeof saved !== "object" || saved.fontVersion === 2) return saved;
-      const fix = item => item && typeof item === "object" && RETIRED_CERTIFICATE_FONTS.has(item.fontFamily) ? { ...item, fontFamily: "Arial" } : item;
+      if (!saved || typeof saved !== "object" || saved.fontVersion >= 4) return saved;
       const upgraded = { ...saved };
-      Object.keys(DEFAULT_REPORT_LAYOUT).forEach(key => { if (upgraded[key]) upgraded[key] = fix(upgraded[key]); });
-      if (Array.isArray(upgraded.layers)) upgraded.layers = upgraded.layers.map(fix);
+      if (saved.fontVersion !== 2) {
+        const fix = item => item && typeof item === "object" && RETIRED_CERTIFICATE_FONTS.has(item.fontFamily) ? { ...item, fontFamily: "Arial" } : item;
+        Object.keys(DEFAULT_REPORT_LAYOUT).forEach(key => { if (upgraded[key]) upgraded[key] = fix(upgraded[key]); });
+        if (Array.isArray(upgraded.layers)) upgraded.layers = upgraded.layers.map(fix);
+      }
+      // Version 3: Arial is wider than the old handwriting font, so the
+      // contact box sizes that were never changed by the coach get smaller.
+      const oldSizes = saved.fontVersion >= 3 ? {} : { contact: 2.9, address: 2.7 };
+      Object.entries(oldSizes).forEach(([key, size]) => {
+        if (upgraded[key] && Number(upgraded[key].fontSize) === size) upgraded[key] = { ...upgraded[key], fontSize: DEFAULT_REPORT_LAYOUT[key].fontSize };
+      });
+      // Remarks used to run past the ruled lines on the right.
+      if (upgraded.remarks && Number(upgraded.remarks.width) === 86) upgraded.remarks = { ...upgraded.remarks, width: DEFAULT_REPORT_LAYOUT.remarks.width };
+      // Version 4: remarks rows sit on the ruled lines.
+      if (upgraded.remarks && Number(upgraded.remarks.top) === 62.4 && Number(upgraded.remarks.height) === 12.9) {
+        upgraded.remarks = { ...upgraded.remarks, top: DEFAULT_REPORT_LAYOUT.remarks.top, height: DEFAULT_REPORT_LAYOUT.remarks.height };
+      }
       return upgraded;
+    }
+
+    // Fix photo/QR positions that can't be right: missing numbers, the old
+    // QR spot on the classic frame's corner, or a photo pushed up into the
+    // classic title area. Anything else the coach placed is kept.
+    function repairLayerGeometry(defaultLayer, savedLayer, saved) {
+      if (!["student-photo", "coach-photo", "qr"].includes(defaultLayer.id) || !savedLayer || !Object.keys(savedLayer).length) return savedLayer;
+      const fields = ["left", "top", "width", "height"];
+      const invalid = fields.some(field => savedLayer[field] !== undefined && !Number.isFinite(Number(savedLayer[field])));
+      const isClassic = !saved?.baseTemplateId || saved.baseTemplateId === "classic";
+      const oldQrSpot = defaultLayer.id === "qr" && isClassic && [[87.7, 91.88], [76.5, 78.2], [70.5, 79.3], [88.2, 87.9]].some(([left, top]) => Number(savedLayer.left) === left && Number(savedLayer.top) === top);
+      const photoInTitle = defaultLayer.id !== "qr" && isClassic && Number.isFinite(Number(savedLayer.top)) && Number(savedLayer.top) < 18;
+      if (!invalid && !oldQrSpot && !photoInTitle) return savedLayer;
+      const repaired = { ...savedLayer };
+      fields.forEach(field => { repaired[field] = defaultLayer[field]; });
+      return repaired;
     }
 
     function normalizeReportLayout(saved = {}) {
@@ -610,7 +641,7 @@ export function initApp(config = {}) {
       const legacyLayout = saved?.editorVersion !== 2;
       const savedLayers = Array.isArray(saved?.layers) ? saved.layers : [];
       const layers = DEFAULT_CERTIFICATE_LAYERS.map(defaultLayer => {
-        const savedLayer = savedLayers.find(layer => layer.id === defaultLayer.id) || {};
+        const savedLayer = repairLayerGeometry(defaultLayer, savedLayers.find(layer => layer.id === defaultLayer.id) || {}, saved);
         const isHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, defaultLayer.id);
         const merged = {
           ...defaultLayer, ...savedLayer,
@@ -642,7 +673,7 @@ export function initApp(config = {}) {
             source: isCertificatePreview ? asset.source : asset.source.slice(0, 2048)
           }))
         : [];
-      return { ...keyed, layers, uploads, editorVersion: 2, fontVersion: 2,
+      return { ...keyed, layers, uploads, editorVersion: 2, fontVersion: 4,
         templateId: String(saved?.templateId || "classic"),
         baseTemplateId: ["classic","performance","heritage"].includes(saved?.baseTemplateId) ? saved.baseTemplateId : (["performance","heritage"].includes(saved?.templateId) ? saved.templateId : "classic"),
         designName: String(saved?.designName || "Classic").slice(0,80),
@@ -1481,13 +1512,42 @@ export function initApp(config = {}) {
       `).join("");
     }
 
+    // Split text into lines that fit a width (in cqw) at a font size (in cqw).
+    let textMeasureContext = null;
+    function wrapTextToWidth(text, widthCqw, fontCqw) {
+      const words = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+      if (!words.length) return [];
+      if (!textMeasureContext) {
+        try { textMeasureContext = document.createElement("canvas").getContext("2d"); } catch { textMeasureContext = null; }
+      }
+      const fits = line => {
+        if (!textMeasureContext) return line.length <= Math.floor(widthCqw / (fontCqw * 0.52));
+        textMeasureContext.font = "400 100px Arial";
+        return (textMeasureContext.measureText(line).width / 100) * fontCqw <= widthCqw * 0.97;
+      };
+      const lines = [];
+      let current = "";
+      words.forEach(word => {
+        const next = current ? `${current} ${word}` : word;
+        if (!current || fits(next)) current = next;
+        else { lines.push(current); current = word; }
+      });
+      if (current) lines.push(current);
+      return lines;
+    }
+
     function renderPlainBulletOverlays(lines, positions, layout, field) {
       if(layout.visible===false)return "";
       const rowHeight = 100 / positions.length;
-      const displayLines = String(layout.textOverride ?? lines.join("\n")).split(/\n+/).slice(0, positions.length);
+      const sourceLines = String(layout.textOverride ?? lines.join("\n")).split(/\n+/);
+      // Remarks: wrap the text so each line sits on one ruled line.
+      const ruled = field === "remarks";
+      const displayLines = (ruled
+        ? sourceLines.flatMap(line => wrapTextToWidth(line, Number(layout.width) || 79.5, Number(layout.fontSize) || 1.55))
+        : sourceLines).slice(0, positions.length);
       lines = displayLines;
       return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" data-overlay-text="true" style="${overlayStyle(layout)}">
-        ${positions.map((_position, index) => `<div class="template-text template-bullet ${lines[index] ? "" : "empty"}" style="left:0;top:${index * rowHeight}%;width:100%;max-height:${rowHeight}%;"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
+        ${positions.map((_position, index) => `<div class="template-text template-bullet ${ruled ? "is-ruled" : ""} ${lines[index] ? "" : "empty"}" style="left:0;width:100%;${ruled ? `top:auto;bottom:${(100 - (index + 1) * rowHeight).toFixed(3)}%;` : `top:${index * rowHeight}%;max-height:${rowHeight}%;`}"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
         ${reportLayoutEditing ? renderCertificateResizeHandles() : ""}
       </div>`;
     }
@@ -1502,7 +1562,10 @@ export function initApp(config = {}) {
 
     function renderReportTemplate(report, layoutOverride = null, previewId = "reportTemplatePreview") {
       const data = getReportTemplateData(report);
-      const layout = layoutOverride || report.certificateDesign?.layout || getReportLayout(data.coach);
+      // Saved reports keep a copy of the design from the day they were made.
+      // Run every layout through the same upgrade as live designs, so older
+      // copies also get Arial and repaired photo/QR positions.
+      const layout = normalizeReportLayout(layoutOverride || report.certificateDesign?.layout || getReportLayout(data.coach));
       const footerTop = data.remarksLines.length
         ? Math.min(
             REPORT_TEMPLATE_FOOTER_TOP_DEFAULT,
@@ -1746,7 +1809,9 @@ export function initApp(config = {}) {
           : isFooterText
             ? (() => {
               const [title = "", ...subtitleParts] = String(footerTextForCentre(layer.text) || "").split(/\n+/);
-              return `<span class="template-footer-title">${escapeHtml(title)}</span><span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>`;
+              // Long centre names shrink to stay on one line inside the bar.
+              const scale = Math.max(0.4, Math.min(1, 8.5 / Math.max(1, title.trim().length)));
+              return `<span class="template-footer-title" style="font-size:${(3.5 * scale).toFixed(2)}cqw">${escapeHtml(title)}</span><span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>`;
             })()
           : escapeHtml(layer.text || "");
         const isSelected = reportLayoutEditing && selectedReportOverlay === layer.id;

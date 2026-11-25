@@ -26,10 +26,10 @@ export function makeTemplateLayout(base, id) {
     if (layer) Object.assign(layer, {visible: true}, values);
   };
   patch('brand-logo-art', {left: 8, top: 6.3, width: 7.5, height: 5.8});
-  patch('brand-name', {left: 18, top: 7.1, width: 66, height: 3.9, color: ink, fontSize: 3.7, fontFamily: elegant ? 'Georgia' : 'Outfit', fontWeight: 700});
+  patch('brand-name', {left: 18, top: 7.1, width: 66, height: 3.9, color: ink, fontSize: 3.7, fontFamily: 'Arial', fontWeight: 700});
   patch('brand-subtitle', {left: 18, top: 11, width: 65, height: 2.1, color: accent, fontFamily: 'Arial', fontSize: 1.55});
-  patch('brand-tagline', {left: 8, top: 16.5, width: 84, height: 2.6, color: elegant ? '#8d7656' : '#617087', fontSize: 1.8, fontFamily: 'Lato'});
-  patch('report-title-art', {left: 8, top: 20.4, width: 84, height: 5.1, text: elegant ? 'TRAINING REPORT' : 'YOUR PROGRESS. ON RECORD.', color: ink, fontFamily: elegant ? 'Georgia' : 'Outfit', fontSize: elegant ? 4.4 : 4.1});
+  patch('brand-tagline', {left: 8, top: 16.5, width: 84, height: 2.6, color: elegant ? '#8d7656' : '#617087', fontSize: 1.8, fontFamily: 'Arial'});
+  patch('report-title-art', {left: 8, top: 20.4, width: 84, height: 5.1, text: elegant ? 'TRAINING REPORT' : 'YOUR PROGRESS. ON RECORD.', color: ink, fontFamily: 'Arial', fontSize: elegant ? 4.4 : 4.1});
   patch('student-photo', {left: 66, top: 29.4, width: 10.8, height: 9.2});
   patch('coach-photo', {left: 79, top: 29.4, width: 10.8, height: 9.2});
   patch('qr', {left: 81.5, top: 86.1, width: 10.5, height: 7.84, zIndex: 60});
@@ -37,7 +37,7 @@ export function makeTemplateLayout(base, id) {
   const fields = {date:[20,29.4,33],time:[20,31.9,33],centre:[20,34.4,39],coach:[20,36.9,39],whatTaught:[9.5,46.5,37],beforeCoaching:[9.5,56,37],afterTraining:[54,46.5,37],nextLesson:[54,56,37],remarks:[9.5,68,81],contact:[8,85.7,60],address:[8,89.1,62]};
   Object.entries(fields).forEach(([id,[left,top,width]]) => Object.assign(layout[id],{left,top,width,color:ink,fontFamily:'Arial',fontSize: id==='contact'?2: id==='address'?1.65: id==='coach'||id==='centre'||id==='date'||id==='time'?1.9:1.65,fontWeight:400}));
   layout.remarks.height = 10;
-  const label = (id,text,left,top,width=38,size=1.75) => layout.layers.push({id:`studio-${id}`, name:text, type:'text', text, left,top,width,height:2.6,fontFamily:elegant?'Georgia':'Arial',fontSize:size,color:accent,fontWeight:700,visible:true,locked:false,zIndex:24});
+  const label = (id,text,left,top,width=38,size=1.75) => layout.layers.push({id:`studio-${id}`, name:text, type:'text', text, left,top,width,height:2.6,fontFamily:'Arial',fontSize:size,color:accent,fontWeight:700,visible:true,locked:false,zIndex:24});
   label('date','DATE',8,29.4,12,1.3); label('time','TIME',8,31.9,12,1.3);
   label('centre','CENTRE',8,34.4,12,1.3);label('coach','COACH',8,36.9,12,1.3);
   label('taught','01  WHAT WAS TAUGHT',9.5,42.4);label('after','02  AFTER TRAINING',54,42.4);

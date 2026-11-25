@@ -59,7 +59,7 @@ function memoryStorage() {
   const map = new Map();
   return { getItem: k => map.get(k) || null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k) };
 }
-function harness({ url = 'https://example.test/', bootstrap = false, user = null, invoke = null, localDB = null } = {}) {
+function harness({ url = 'https://example.test/', bootstrap = false, user = null, invoke = null, localDB = null, memberships = null } = {}) {
   const location = new URL(url);
   location.assign = value => { location.assigned = value; };
   const app = new Element();
@@ -88,7 +88,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
       select() { return q; }, eq() { return q; }, order() { return q; },
       single: async () => ({ data: null, error: null }),
       maybeSingle: async () => ({ data: table === 'centres' ? centre : table === 'centre_memberships' ? { centre_id: centre.id, role: 'coach' } : table === 'coaches' ? coach : null }),
-      then(resolve, reject) { return Promise.resolve({ data: table === 'coaches' ? [coach] : [], error: null }).then(resolve, reject); }
+      then(resolve, reject) { return Promise.resolve({ data: table === 'coaches' ? [coach] : table === 'centre_memberships' ? (memberships || [{ centre_id: centre.id, role: 'coach', centres: { name: centre.name, slug: centre.slug } }]) : [], error: null }).then(resolve, reject); }
     };
     return q;
   }
@@ -128,7 +128,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     globalThis.__api = {
       normalizeReportLayout, renderCustomCertificateLayers, renderEditableQr,
       renderReportLayoutToolbar, beginCertificateTextEditing, fitCustomCertificateHeadingText,
-      updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage,
+      updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage, render,
       finalizeWizard, closeWizard, ensureHybridWorkspace, resetHybridSession,
       get wizardId() { return wizardDraftId; },
       get reportError() { return reportStoreError; },
@@ -433,4 +433,44 @@ test('hybrid finalization waits for draft sync, then confirms the report on Driv
   assert.equal(local.pending.length, 0);
   assert.equal(local.records[0].recordType, 'report');
   h.api.resetHybridSession();
+});
+
+test('signing in at another centre\'s link never moves the account and points to its own centre', async () => {
+  const user = { id: 'admin-9', email: 'admin@example.test', app_metadata: { role: 'centre_admin', centre_id: 'centre-2', provider: 'google' }, user_metadata: {}, identities: [{ provider: 'google' }] };
+  const h = harness({
+    url: 'https://example.test/centre/test-centre', bootstrap: true, user,
+    memberships: [{ centre_id: 'centre-2', role: 'centre_admin', centres: { name: 'LiverPool', slug: 'liverpool' } }]
+  });
+  await settled(h);
+  assert.equal(h.calls.filter(c => c.action === 'provision-google-member').length, 0);
+  assert.equal(h.api.state.auth.role, 'centre_admin');
+  assert.equal(h.api.state.auth.centreId, 'centre-2');
+  h.api.render();
+  assert.match(h.app.innerHTML, /belongs to LiverPool/);
+  assert.match(h.app.innerHTML, /href="\/centre\/liverpool"/);
+  assert.match(h.app.innerHTML, /data-action="logout"/);
+});
+
+test('an account with two centre rows still signs in to the centre whose link was opened', async () => {
+  const h = harness({
+    url: 'https://example.test/centre/test-centre', bootstrap: true, user: true,
+    memberships: [
+      { centre_id: 'centre-2', role: 'coach', centres: { name: 'Other', slug: 'other' } },
+      { centre_id: 'centre-1', role: 'coach', centres: { name: 'Test Centre', slug: 'test-centre' } }
+    ]
+  });
+  await settled(h);
+  assert.equal(h.api.state.auth.role, 'coach');
+  assert.equal(h.api.state.auth.centreId, 'centre-1');
+});
+
+test('a brand-new Google account with no centre joins the opened centre as coach', async () => {
+  const user = { id: 'coach-1', email: 'coach@example.test', app_metadata: { provider: 'google' }, user_metadata: {}, identities: [{ provider: 'google' }] };
+  const h = harness({
+    url: 'https://example.test/centre/test-centre', bootstrap: true, user, memberships: [],
+    invoke: body => ({ data: body.action === 'provision-google-member' ? { membership: { centre_id: 'centre-1', user_id: 'coach-1', role: 'coach' } } : body.action === 'report-list' ? { records: [] } : { connection: { status: 'connected' } }, error: null })
+  });
+  await settled(h);
+  assert.equal(h.calls.filter(c => c.action === 'provision-google-member').length, 1);
+  assert.equal(h.api.state.auth.role, 'coach');
 });

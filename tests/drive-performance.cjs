@@ -31,7 +31,7 @@ function harness({ bootstrap = false, invoke = async () => ({ records: [] }), lo
       select() { return q; }, eq() { return q; }, order() { return q; },
       single: async () => ({ data: null }),
       maybeSingle: async () => ({ data: table === 'centre_memberships' ? { centre_id: 'centre-1', role: 'coach' } : table === 'coaches' ? coach : null }),
-      then(yes, no) { return Promise.resolve({ data: table === 'coaches' ? [coach] : [], error: null }).then(yes, no); },
+      then(yes, no) { return Promise.resolve({ data: table === 'coaches' ? [coach] : table === 'centre_memberships' ? [{ centre_id: 'centre-1', role: 'coach', centres: { name: 'Centre', slug: 'centre' } }] : [], error: null }).then(yes, no); },
     };
     return q;
   }

@@ -68,8 +68,19 @@ Deno.serve(async (request) => {
     if (!centreId) return json({ error: "centre_id is required" }, 400);
     const { data: centre } = await admin.from("centres").select("id,name,status").eq("id", centreId).maybeSingle();
     if (!centre || centre.status !== "active") return json({ error: "This centre is unavailable" }, 400);
-    const { data: existing } = await admin.from("centre_memberships").select("centre_id, user_id, role").eq("centre_id", centreId).eq("user_id", user.id).maybeSingle();
-    if (existing) return json({ membership: existing });
+    // One account belongs to one centre. Never move an existing account or
+    // change its role here: only brand-new accounts join, and only as coach.
+    const { data: memberships, error: lookupError } = await admin.from("centre_memberships").select("centre_id, user_id, role, centres(name, slug)").eq("user_id", user.id);
+    if (lookupError) return json({ error: lookupError.message }, 500);
+    const existing = (memberships || []).find((item) => item.centre_id === centreId);
+    if (existing) return json({ membership: { centre_id: existing.centre_id, user_id: existing.user_id, role: existing.role } });
+    if ((memberships || []).length) {
+      const home = (memberships || [])[0] as any;
+      return json({ error: "This account belongs to another centre", code: "other_centre", centre: { name: home.centres?.name || "", slug: home.centres?.slug || "" } }, 409);
+    }
+    if (["dev", "admin", "centre_admin"].includes(String(user.app_metadata?.role || ""))) {
+      return json({ error: "This account can't join a centre as a coach", code: "has_role" }, 409);
+    }
     const { error: membershipError } = await admin.from("centre_memberships").insert({ centre_id: centreId, user_id: user.id, role: "coach" });
     if (membershipError) return json({ error: membershipError.message }, 500);
     const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Coach";
@@ -247,6 +258,10 @@ Deno.serve(async (request) => {
     const userId = String(body.user_id || "");
     const role = body.role === "centre_admin" ? "centre_admin" : "coach";
     if (!centreId || !userId) return json({ error: "centre_id and user_id are required" }, 400);
+    // Keep one centre per account: refuse to add someone who already
+    // belongs to a different centre.
+    const { data: otherMemberships } = await admin.from("centre_memberships").select("centre_id").eq("user_id", userId).neq("centre_id", centreId);
+    if ((otherMemberships || []).length) return json({ error: "This account already belongs to another centre" }, 409);
     const { data: membership, error: membershipError } = await admin.from("centre_memberships")
       .upsert({ centre_id: centreId, user_id: userId, role }, { onConflict: "centre_id,user_id" })
       .select()

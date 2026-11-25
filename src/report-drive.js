@@ -99,8 +99,11 @@ export function normalizeReportRecord(value) {
   return record;
 }
 
+// The dashboard_state row is shared by everyone in a centre, so it must not
+// carry people data. Coaches and students always load from their own tables,
+// where database rules decide who can see what.
 export function createDashboardStatePayload(state) {
-  const { reports: _reports, reportDrafts: _drafts, driveConnection: _connection, ...persisted } = state || {};
+  const { reports: _reports, reportDrafts: _drafts, driveConnection: _connection, coaches: _coaches, students: _students, devCentres: _devCentres, ...persisted } = state || {};
   const ui = { ...(persisted.ui || {}) };
   delete ui.reportViewId;
   delete ui.reportDraftId;

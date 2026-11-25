@@ -1235,6 +1235,11 @@ export function initApp(config = {}) {
       const liveCentreProfile = state.centreProfile;
       const liveReports = state.reports;
       const liveReportDrafts = state.reportDrafts;
+      // People data never comes from the shared row; keep what was loaded
+      // from the coaches/students tables for this account.
+      const liveCoaches = state.coaches;
+      const liveStudents = state.students;
+      const liveDevCentres = state.devCentres;
       const focusedWizardField = document.activeElement?.closest("#wizardModal input, #wizardModal textarea, #wizardModal select");
       const localWizardDraft = focusedWizardField && wizardDraftId && state.reportDrafts?.[wizardDraftId]
         ? {
@@ -1248,6 +1253,9 @@ export function initApp(config = {}) {
       state.centreProfile = liveCentreProfile;
       state.reports = liveReports;
       state.reportDrafts = liveReportDrafts;
+      state.coaches = liveCoaches;
+      state.students = liveStudents;
+      state.devCentres = liveDevCentres;
       if (localWizardDraft) {
         // Realtime echoes must not replace the wizard while a field is active.
         // Keep the locally edited draft until the field loses focus or the user
@@ -1829,12 +1837,14 @@ export function initApp(config = {}) {
       if (!coach && supabase) {
         // OAuth account provisioning runs in a database trigger and can lag
         // behind the auth session by a few hundred milliseconds.
-        for (let attempt = 0; attempt < 10 && !coach; attempt += 1) {
+        // Centre admins don't need a coach row, so don't wait for one.
+        const coachAttempts = centreMembership?.role === "centre_admin" || ["dev", "admin"].includes(String(appRole || "")) ? 1 : 10;
+        for (let attempt = 0; attempt < coachAttempts && !coach; attempt += 1) {
           const { data } = await supabase.from("coaches").select("*").eq("id", user.id).maybeSingle();
           if (data) {
             coach = normalizeCoach(data);
             state.coaches = [coach, ...state.coaches.filter(item => item.id !== coach.id)];
-          } else if (attempt < 9) {
+          } else if (attempt < coachAttempts - 1) {
             await new Promise(resolve => window.setTimeout(resolve, 300));
           }
         }

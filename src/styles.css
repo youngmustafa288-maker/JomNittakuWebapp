@@ -2852,3 +2852,7 @@
     /* Contact box values sit in the middle of the box */
     .template-report-overlay .template-text[data-overlay-id="contact"],
     .template-report-overlay .template-text[data-overlay-id="address"] { text-align: center; }
+
+    /* Remarks: one line of text resting on each ruled line */
+    .template-bullet-group .template-bullet.is-ruled { display: flex; align-items: flex-end; padding-bottom: 0.15%; box-sizing: border-box; }
+    .template-bullet-group .template-bullet.is-ruled span { white-space: nowrap; overflow: hidden; text-overflow: clip; padding-left: 0; line-height: 1; }

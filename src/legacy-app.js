@@ -53,7 +53,7 @@ export function initApp(config = {}) {
       beforeCoaching: { left: 11.8, top: 52.8, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       afterTraining: { left: 55.4, top: 44.9, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       nextLesson: { left: 55.4, top: 52.8, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      remarks: { left: 10.1, top: 62.4, width: 79.5, height: 12.9, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      remarks: { left: 10.1, top: 61.9, width: 79.5, height: 11.6, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.3, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
       address: { left: 34.55, top: 86.35, width: 31.2, height: 4, fontSize: 2, fontFamily: "Arial", color: "#111111", fontWeight: 700 }
     };
@@ -134,7 +134,7 @@ export function initApp(config = {}) {
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
       // Inside the light area, right of the contact box (square on the 896x1200 sheet).
-      qr: { left: 76.5, top: 78.2, width: 11.5, height: 8.59, zIndex: 50 },
+      qr: { left: 70.5, top: 79.3, width: 10.5, height: 7.84, zIndex: 50 },
       "footer-text-overlay": {
         left: 27,
         top: 91.55,
@@ -597,7 +597,7 @@ export function initApp(config = {}) {
     // old template fonts, so they are switched to Arial once (fontVersion 2).
     const RETIRED_CERTIFICATE_FONTS = new Set(["Kalam", "Outfit", "Montserrat", "Lato", "Cinzel Decorative", "Georgia"]);
     function upgradeCertificateFonts(saved) {
-      if (!saved || typeof saved !== "object" || saved.fontVersion >= 3) return saved;
+      if (!saved || typeof saved !== "object" || saved.fontVersion >= 4) return saved;
       const upgraded = { ...saved };
       if (saved.fontVersion !== 2) {
         const fix = item => item && typeof item === "object" && RETIRED_CERTIFICATE_FONTS.has(item.fontFamily) ? { ...item, fontFamily: "Arial" } : item;
@@ -606,12 +606,16 @@ export function initApp(config = {}) {
       }
       // Version 3: Arial is wider than the old handwriting font, so the
       // contact box sizes that were never changed by the coach get smaller.
-      const oldSizes = { contact: 2.9, address: 2.7 };
+      const oldSizes = saved.fontVersion >= 3 ? {} : { contact: 2.9, address: 2.7 };
       Object.entries(oldSizes).forEach(([key, size]) => {
         if (upgraded[key] && Number(upgraded[key].fontSize) === size) upgraded[key] = { ...upgraded[key], fontSize: DEFAULT_REPORT_LAYOUT[key].fontSize };
       });
       // Remarks used to run past the ruled lines on the right.
       if (upgraded.remarks && Number(upgraded.remarks.width) === 86) upgraded.remarks = { ...upgraded.remarks, width: DEFAULT_REPORT_LAYOUT.remarks.width };
+      // Version 4: remarks rows sit on the ruled lines.
+      if (upgraded.remarks && Number(upgraded.remarks.top) === 62.4 && Number(upgraded.remarks.height) === 12.9) {
+        upgraded.remarks = { ...upgraded.remarks, top: DEFAULT_REPORT_LAYOUT.remarks.top, height: DEFAULT_REPORT_LAYOUT.remarks.height };
+      }
       return upgraded;
     }
 
@@ -623,7 +627,7 @@ export function initApp(config = {}) {
       const fields = ["left", "top", "width", "height"];
       const invalid = fields.some(field => savedLayer[field] !== undefined && !Number.isFinite(Number(savedLayer[field])));
       const isClassic = !saved?.baseTemplateId || saved.baseTemplateId === "classic";
-      const oldQrSpot = defaultLayer.id === "qr" && Number(savedLayer.left) === 87.7 && Number(savedLayer.top) === 91.88;
+      const oldQrSpot = defaultLayer.id === "qr" && ((Number(savedLayer.left) === 87.7 && Number(savedLayer.top) === 91.88) || (Number(savedLayer.left) === 76.5 && Number(savedLayer.top) === 78.2));
       const photoInTitle = defaultLayer.id !== "qr" && isClassic && Number.isFinite(Number(savedLayer.top)) && Number(savedLayer.top) < 18;
       if (!invalid && !oldQrSpot && !photoInTitle) return savedLayer;
       const repaired = { ...savedLayer };
@@ -669,7 +673,7 @@ export function initApp(config = {}) {
             source: isCertificatePreview ? asset.source : asset.source.slice(0, 2048)
           }))
         : [];
-      return { ...keyed, layers, uploads, editorVersion: 2, fontVersion: 3,
+      return { ...keyed, layers, uploads, editorVersion: 2, fontVersion: 4,
         templateId: String(saved?.templateId || "classic"),
         baseTemplateId: ["classic","performance","heritage"].includes(saved?.baseTemplateId) ? saved.baseTemplateId : (["performance","heritage"].includes(saved?.templateId) ? saved.templateId : "classic"),
         designName: String(saved?.designName || "Classic").slice(0,80),
@@ -1508,13 +1512,42 @@ export function initApp(config = {}) {
       `).join("");
     }
 
+    // Split text into lines that fit a width (in cqw) at a font size (in cqw).
+    let textMeasureContext = null;
+    function wrapTextToWidth(text, widthCqw, fontCqw) {
+      const words = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+      if (!words.length) return [];
+      if (!textMeasureContext) {
+        try { textMeasureContext = document.createElement("canvas").getContext("2d"); } catch { textMeasureContext = null; }
+      }
+      const fits = line => {
+        if (!textMeasureContext) return line.length <= Math.floor(widthCqw / (fontCqw * 0.52));
+        textMeasureContext.font = "400 100px Arial";
+        return (textMeasureContext.measureText(line).width / 100) * fontCqw <= widthCqw * 0.97;
+      };
+      const lines = [];
+      let current = "";
+      words.forEach(word => {
+        const next = current ? `${current} ${word}` : word;
+        if (!current || fits(next)) current = next;
+        else { lines.push(current); current = word; }
+      });
+      if (current) lines.push(current);
+      return lines;
+    }
+
     function renderPlainBulletOverlays(lines, positions, layout, field) {
       if(layout.visible===false)return "";
       const rowHeight = 100 / positions.length;
-      const displayLines = String(layout.textOverride ?? lines.join("\n")).split(/\n+/).slice(0, positions.length);
+      const sourceLines = String(layout.textOverride ?? lines.join("\n")).split(/\n+/);
+      // Remarks: wrap the text so each line sits on one ruled line.
+      const ruled = field === "remarks";
+      const displayLines = (ruled
+        ? sourceLines.flatMap(line => wrapTextToWidth(line, Number(layout.width) || 79.5, Number(layout.fontSize) || 1.55))
+        : sourceLines).slice(0, positions.length);
       lines = displayLines;
       return `<div class="template-bullet-group report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === field ? "is-selected" : ""} ${layout.locked === true ? "is-locked" : ""}" data-overlay-id="${field}" data-overlay-text="true" style="${overlayStyle(layout)}">
-        ${positions.map((_position, index) => `<div class="template-text template-bullet ${lines[index] ? "" : "empty"}" style="left:0;top:${index * rowHeight}%;width:100%;max-height:${rowHeight}%;"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
+        ${positions.map((_position, index) => `<div class="template-text template-bullet ${ruled ? "is-ruled" : ""} ${lines[index] ? "" : "empty"}" style="left:0;top:${index * rowHeight}%;width:100%;${ruled ? `height:${rowHeight}%;` : `max-height:${rowHeight}%;`}"><span>${lines[index] ? escapeHtml(lines[index].replace(/^\s*[•●-]\s*/, "")) : ""}</span></div>`).join("")}
         ${reportLayoutEditing ? renderCertificateResizeHandles() : ""}
       </div>`;
     }

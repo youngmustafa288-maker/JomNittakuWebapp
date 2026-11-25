@@ -133,8 +133,8 @@ export function initApp(config = {}) {
       ...ARTWORK_SLICES,
       "student-photo": { left: 63.62, top: 24.92, width: 11.2, height: 9.7 },
       "coach-photo": { left: 76.27, top: 24.92, width: 11.2, height: 9.7 },
-      // Inside the light area, right of the contact box (square on the 896x1200 sheet).
-      qr: { left: 70.5, top: 79.3, width: 10.5, height: 7.84, zIndex: 50 },
+      // Inside the dark corner pocket of the classic frame (square on the 896x1200 sheet).
+      qr: { left: 87, top: 88.3, width: 8.4, height: 6.27, zIndex: 50 },
       "footer-text-overlay": {
         left: 27,
         top: 91.55,
@@ -627,7 +627,7 @@ export function initApp(config = {}) {
       const fields = ["left", "top", "width", "height"];
       const invalid = fields.some(field => savedLayer[field] !== undefined && !Number.isFinite(Number(savedLayer[field])));
       const isClassic = !saved?.baseTemplateId || saved.baseTemplateId === "classic";
-      const oldQrSpot = defaultLayer.id === "qr" && ((Number(savedLayer.left) === 87.7 && Number(savedLayer.top) === 91.88) || (Number(savedLayer.left) === 76.5 && Number(savedLayer.top) === 78.2));
+      const oldQrSpot = defaultLayer.id === "qr" && isClassic && [[87.7, 91.88], [76.5, 78.2], [70.5, 79.3], [88.2, 87.9]].some(([left, top]) => Number(savedLayer.left) === left && Number(savedLayer.top) === top);
       const photoInTitle = defaultLayer.id !== "qr" && isClassic && Number.isFinite(Number(savedLayer.top)) && Number(savedLayer.top) < 18;
       if (!invalid && !oldQrSpot && !photoInTitle) return savedLayer;
       const repaired = { ...savedLayer };

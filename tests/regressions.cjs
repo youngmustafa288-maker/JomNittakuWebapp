@@ -550,8 +550,9 @@ test('old report design copies are upgraded: Arial fonts, QR moved off the frame
   assert.equal(layout.layers.find(l => l.id === 'brand-name').fontFamily, 'Arial');
   assert.equal(layout.layers.find(l => l.id === 'report-title-art').fontFamily, 'Arial');
   const qr = layout.layers.find(l => l.id === 'qr');
-  assert.notEqual(qr.left, 87.7);
-  assert.ok(qr.top < 88);
+  // The QR now sits fully inside the corner pocket instead of spilling below it.
+  assert.ok(qr.left >= 85 && qr.left + qr.width <= 97);
+  assert.ok(qr.top >= 86 && qr.top + qr.height <= 96);
   assert.ok(layout.layers.find(l => l.id === 'student-photo').top > 18);
   // A photo the coach placed somewhere sensible is kept.
   assert.equal(layout.layers.find(l => l.id === 'coach-photo').left, 70);

@@ -104,6 +104,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
       clientOptions = opts;
       return {
         from: query,
+        rpc: async (name, args) => ({ data: name === 'get_centre_by_slug' && args.target_slug === centre.slug ? [centre] : [], error: null }),
         auth: {
           getSession: async () => {
             sessionUrls.push(location.search);
@@ -129,6 +130,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
       normalizeReportLayout, renderCustomCertificateLayers, renderEditableQr,
       renderReportLayoutToolbar, beginCertificateTextEditing, fitCustomCertificateHeadingText,
       updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage, render,
+      fetchCentreBySlugWith: (client, slug) => fetchCentreBySlug(slug, client),
       finalizeWizard, closeWizard, ensureHybridWorkspace, resetHybridSession,
       get wizardId() { return wizardDraftId; },
       get reportError() { return reportStoreError; },
@@ -473,4 +475,21 @@ test('a brand-new Google account with no centre joins the opened centre as coach
   await settled(h);
   assert.equal(h.calls.filter(c => c.action === 'provision-google-member').length, 1);
   assert.equal(h.api.state.auth.role, 'coach');
+});
+
+test('a centre link that fails to load once is retried instead of showing "unavailable"', async () => {
+  const h = harness({ url: 'https://example.test/centre/test-centre', bootstrap: false });
+  let calls = 0;
+  const centre = { id: 'centre-1', slug: 'test-centre', name: 'Test Centre', status: 'active', activated_at: '2026-01-01' };
+  const api = h.context.__api;
+  const fake = {
+    rpc: async () => (++calls === 1 ? { data: null, error: { message: 'JWT expired', code: 'PGRST301' } } : { data: [centre], error: null }),
+    auth: { getSession: async () => ({ data: { session: null } }) }
+  };
+  const result = await api.fetchCentreBySlugWith(fake, 'test-centre');
+  assert.equal(calls, 2);
+  assert.equal(result.centre.id, 'centre-1');
+  const missing = await api.fetchCentreBySlugWith({ rpc: async () => ({ data: [], error: null }), auth: fake.auth }, 'nope');
+  assert.equal(missing.centre, null);
+  assert.equal(missing.error, undefined);
 });

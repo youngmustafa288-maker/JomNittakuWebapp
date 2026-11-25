@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createDashboardStatePayload, createReportDriveRepository, normalizeReportRecord } from "./report-drive.js";
 import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
 import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
-import { createCoachOnboarding, needsCoachOnboarding } from "./coach-onboarding.js";
+import { createCoachOnboarding, needsCoachOnboarding, pendingSetupItems, normalizeSkipped, SETUP_ITEM_LABELS, setupItemIcon } from "./coach-onboarding.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
 const CENTRE_PROFILE_KEY = "centre_profile";
@@ -235,6 +235,9 @@ export function initApp(config = {}) {
       saveProfile: values => saveOnboardingProfile(values),
       currentTemplateId: () => getReportLayout(getOnboardingCoach()).templateId,
       applyTemplate: templateId => applyOnboardingTemplate(templateId),
+      currentQr: () => getOnboardingQr(),
+      applyQr: values => applyOnboardingQr(values),
+      qrDataUrl: link => getQrCodeLib().then(QRCode => QRCode.toDataURL(link, { width: 320, margin: 2, errorCorrectionLevel: "M" })),
       renderCertificate: (templateId, mode, previewId) => renderOnboardingCertificate(templateId, mode, previewId),
       addStudent: values => addOnboardingStudent(values),
       saveProgress: progress => saveOnboardingProgress(progress),
@@ -1599,6 +1602,10 @@ export function initApp(config = {}) {
         const isEditableHeading = Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id);
         const slice = ARTWORK_SLICES[layer.id];
         if (slice && !isEditableHeading && layer.type !== "text") {
+          // The old TTAM badge is no longer printed. The slot stays available
+          // in the editor so a coach can drop in their own logo.
+          const isEmptyBadge = layer.id === "certification-badge" && !layer.source;
+          if (isEmptyBadge && !reportLayoutEditing) return "";
           const left = Number(layer.left ?? slice.left) || 0;
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;
@@ -1622,7 +1629,7 @@ export function initApp(config = {}) {
           const displaySize = Number(layer.fontSize) || textStyle.fontSize || 2;
           const displayWeight = Number(layer.fontWeight) || textStyle.fontWeight || 400;
           const displayStyle = layer.fontStyle || textStyle.fontStyle || "normal";
-          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${hasArtworkTextOverride ? 'data-overlay-text="true"' : ""} style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(displayFont)};font-size:${displaySize}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${displayWeight};font-style:${escapeHtml(displayStyle)};"><img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;"><span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+          return `<div class="template-art-slice report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === layer.id ? "is-selected" : ""} ${layer.locked === true ? "is-locked" : ""}" data-overlay-id="${escapeHtml(layer.id)}" ${imageTarget} ${hasArtworkTextOverride ? 'data-overlay-text="true"' : ""} style="left:${left}%;top:${top}%;width:${width}%;height:${height}%;z-index:${zIndex};opacity:${layer.opacity ?? 1};font-family:${escapeHtml(displayFont)};font-size:${displaySize}cqw;color:${escapeHtml(layer.color || textStyle.color || "#111111")};font-weight:${displayWeight};font-style:${escapeHtml(displayStyle)};">${isEmptyBadge ? `<span class="template-empty-logo" aria-hidden="true">Your logo</span>` : `<img src="${escapeHtml(source)}" alt="" ${hasArtworkTextOverride ? "hidden" : ""} style="width:100%;height:100%;object-fit:${objectFit};object-position:center;">`}<span class="template-art-text" ${hasArtworkTextOverride ? "" : "hidden"}>${escapeHtml(artworkText)}</span>${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
         }
         const isFooterText = layer.id === "footer-text-overlay";
         const isCustomText = layer.type === "text" && !isFooterText;
@@ -1841,6 +1848,9 @@ export function initApp(config = {}) {
     }
 
     async function logout() {
+      // The setup reminder comes back on the next login.
+      setupCardDismissed = false;
+      try { sessionStorage.removeItem("setupCardDismissed"); } catch { /* storage may be blocked */ }
       if (wizardDraftId && state.reportDrafts[wizardDraftId] && reportLocalStore) {
         updateWizardDraftFromInputs({ schedule: false });
         try { await flushDraftSave(state.reportDrafts[wizardDraftId]); }
@@ -2094,6 +2104,7 @@ export function initApp(config = {}) {
       const visibleReports = getVisibleReports().filter(report => withinOverviewDateFilter(report.date)).slice(0, 5);
       return `
         <section class="page ${state.ui.page === "overview" ? "active" : ""}">
+          ${renderSetupReminders()}
           ${renderStats()}
           ${reportStoreStatus === "loading" ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive. You can use the dashboard while they load.</p>' : reportStoreError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)} <button class="plain-link" data-nav="reports">Open reports</button></p>` : ""}
           <div class="table-card">
@@ -2512,10 +2523,7 @@ export function initApp(config = {}) {
                   <div class="remarks-lines">${remarksLines.length ? remarksLines.map(line => `<div class="remarks-line">${escapeHtml(line)}</div>`).join("") : `<div class="remarks-line">-</div>`}</div>
                 </div>
                 <div class="report-footer">
-                  <div class="footer-badge">
-                    <div class="footer-seal">TTAM</div>
-                    <div>Certified Coach</div>
-                  </div>
+                  <div class="footer-badge"></div>
                   <div class="footer-center">
                     <strong>${coach.centreContact}</strong><br>
                     Dao Sports Method
@@ -3231,6 +3239,7 @@ export function initApp(config = {}) {
       const drive = state.driveConnection || {};
       return `
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
+          ${isCoach ? renderSetupGuideSettingsCard() : ""}
           ${isCoach ? `<div class="profile-card centre-settings-card drive-connection-card ${drive.status === "connected" ? "is-connected" : ""}" style="margin-bottom:16px;">
             <div class="section-title"><div class="drive-heading"><h2>My Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : ""}</div><p>Your report drafts and PDFs are saved to your own Google Drive.</p></div>
             ${driveConnectionError || drive.last_error ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(driveConnectionError || drive.last_error)}</p>` : ""}
@@ -3491,7 +3500,7 @@ export function initApp(config = {}) {
         return;
       }
       // New coaches finish the guided setup before using the dashboard.
-      if (state.auth.role === "coach" && !publicCoach && (isMatchingCentreSession || !requestedCentre) && !/^\/centre\/?$/i.test(window.location.pathname) && needsCoachOnboarding(getOnboardingCoach())) {
+      if (state.auth.role === "coach" && !publicCoach && (isMatchingCentreSession || !requestedCentre) && !/^\/centre\/?$/i.test(window.location.pathname) && (coachOnboardingInstance?.isOpen() || (needsCoachOnboarding(getOnboardingCoach()) && !autoCompleteOnboardingIfActive(getOnboardingCoach())))) {
         renderCoachOnboarding(app);
         return;
       }
@@ -4162,6 +4171,12 @@ export function initApp(config = {}) {
       if(action==="simple-copy-layer")return copyCertificateEditorLayer();
       if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
       if (action?.startsWith("studio-")) return handleStudioAction(action);
+      if (action === "setup-open") return getCoachOnboarding().openAt(event.currentTarget.dataset.step || "profile");
+      if (action === "setup-dismiss") {
+        setupCardDismissed = true;
+        try { sessionStorage.setItem("setupCardDismissed", "1"); } catch { /* storage may be blocked */ }
+        return render();
+      }
       if (action === "open-centre-onboarding") return openCentreOnboarding();
       if (action === "close-centre-onboarding") return closeCentreOnboarding();
       if (action === "centre-onboarding-continue") return continueCentreOnboarding();
@@ -5385,12 +5400,32 @@ export function initApp(config = {}) {
 
     // Base: the plain template with no photos or report details.
     // Example: the same template filled in with sample details.
+    function onboardingIllustration(kind) {
+      const svg = kind === "student"
+        ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#fde7c8"/><circle cx="60" cy="50" r="24" fill="#e9b48a"/><path d="M34 44c3-22 49-22 52 0-9-9-43-9-52 0z" fill="#2b2b2b"/><circle cx="51" cy="52" r="2.6" fill="#2b2b2b"/><circle cx="69" cy="52" r="2.6" fill="#2b2b2b"/><path d="M52 62q8 6 16 0" stroke="#a5523a" stroke-width="2.6" fill="none" stroke-linecap="round"/><path d="M16 120c5-28 24-40 44-40s39 12 44 40z" fill="#c81e45"/><circle cx="98" cy="84" r="14" fill="#162a4a"/><rect x="94" y="96" width="8" height="18" rx="3" fill="#8b5a2b"/><circle cx="22" cy="78" r="5" fill="#ffffff" stroke="#e2e2e2"/></svg>`
+        : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#dbe6f7"/><circle cx="60" cy="48" r="24" fill="#d79b72"/><path d="M36 42c4-20 44-20 48 0-11-7-37-7-48 0z" fill="#1d1d1d"/><circle cx="51" cy="50" r="2.6" fill="#1d1d1d"/><circle cx="69" cy="50" r="2.6" fill="#1d1d1d"/><path d="M52 60q8 6 16 0" stroke="#8a4a32" stroke-width="2.6" fill="none" stroke-linecap="round"/><path d="M12 120c5-30 26-42 48-42s43 12 48 42z" fill="#162a4a"/><path d="M60 78l-8 16h16z" fill="#c81e45"/></svg>`;
+      return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
+    // base: the empty design, with no photos or QR.
+    // example: filled in with sample photos, notes and a QR code.
+    // final: the coach's own design, name, photo and QR, with a sample student.
     function renderOnboardingCertificate(templateId, mode, previewId) {
       const coach = getOnboardingCoach();
-      const layout = defaultStudioLayout(templateId);
       const base = mode === "base";
-      if (base) layout.layers.forEach(layer => { if (layer.id === "student-photo" || layer.id === "coach-photo") layer.visible = false; });
+      const final = mode === "final";
+      const layout = final && coach && getReportLayout(coach).templateId === templateId
+        ? normalizeReportLayout(layoutSnapshot(getReportLayout(coach)))
+        : defaultStudioLayout(templateId);
+      if (base) layout.layers.forEach(layer => { if (["student-photo", "coach-photo", "qr"].includes(layer.id)) layer.visible = false; });
+      if (mode === "example") {
+        const qr = layout.layers.find(layer => layer.id === "qr");
+        if (qr) qr.visible = true;
+        const coachQr = getReportLayout(coach || {}).qrUrl;
+        layout.qrUrl = coachQr && !/vercel\.app\/centre$/.test(coachQr) ? coachQr : "https://instagram.com/yourcentre";
+      }
       const today = new Date();
+      const coachName = coach?.name && coach.name !== "Coach" ? coach.name : "Coach Ahmad";
       const report = base ? {
         id: "onboarding-base",
         coachId: coach?.id || "",
@@ -5399,16 +5434,16 @@ export function initApp(config = {}) {
         date: "", time: "", lessonNumber: 1,
         summary: { whatTaught: "", beforeCoaching: "", afterTraining: "", nextLesson: "", remarks: "" }
       } : {
-        id: "onboarding-example",
+        id: `onboarding-${mode}`,
         coachId: coach?.id || "",
         previewCoach: {
-          name: coach?.name && coach.name !== "Coach" ? coach.name : "Coach Ahmad",
+          name: coachName,
           branch: requestedCentre?.name || (coach?.branch && coach.branch !== "Unassigned" ? coach.branch : "JomNittaku Academy"),
           centreContact: coach?.phone || "+60 12-345 6789",
           branchAddress: requestedCentre?.name || "JomNittaku Academy",
-          photo: coach?.photo || onboardingAvatar("C", "#162a4a")
+          photo: final && coach?.photo ? coach.photo : onboardingIllustration("coach")
         },
-        previewStudent: { name: "Mei Sim", photo: onboardingAvatar("S", "#c81e45") },
+        previewStudent: { name: "Mei Sim", photo: onboardingIllustration("student") },
         date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
         time: "10:00",
         lessonNumber: 4,
@@ -5430,6 +5465,26 @@ export function initApp(config = {}) {
         reportLayoutEditing = editing;
         selectedReportOverlay = selection;
       }
+    }
+
+    const DEFAULT_QR_URL_PATTERN = /^https:\/\/jom-nittaku-webapp\.vercel\.app\/centre\/?$/;
+    function getOnboardingQr() {
+      const layout = getReportLayout(getOnboardingCoach() || {});
+      const layer = layout.layers.find(item => item.id === "qr");
+      const url = layout.qrUrl && !DEFAULT_QR_URL_PATTERN.test(layout.qrUrl) ? layout.qrUrl : "";
+      return { enabled: layer?.visible !== false, url };
+    }
+
+    async function applyOnboardingQr({ enabled, url }) {
+      const coach = getOnboardingCoach();
+      if (!coach) throw new Error("Your coach profile could not be found.");
+      const current = getReportLayout(coach);
+      const layers = current.layers.map(layer => layer.id === "qr" ? { ...layer, visible: !!enabled } : layer);
+      coach.reportLayout = { ...current, layers, qrUrl: enabled && validStudioQrUrl(url) ? url : current.qrUrl };
+      if (isCertificatePreview) return;
+      const saved = await saveCoachRecord(coach);
+      state.coaches = state.coaches.map(item => item.id === saved.id ? saved : item);
+      persist();
     }
 
     async function saveOnboardingProfile(values) {
@@ -5480,16 +5535,80 @@ export function initApp(config = {}) {
       return saved;
     }
 
-    async function saveOnboardingProgress({ step, completed = false }) {
+    async function saveOnboardingProgress({ step, skipped, completed = false }) {
       const coach = getOnboardingCoach();
       if (!coach) return;
       const changes = { onboarding_step: step };
+      if (Array.isArray(skipped)) changes.onboarding_skipped = normalizeSkipped(skipped);
       if (completed) changes.onboarding_completed_at = new Date().toISOString();
       if (!isCertificatePreview && supabase) {
-        const { error } = await supabase.from("coaches").update(changes).eq("id", coach.id);
+        let { error } = await supabase.from("coaches").update(changes).eq("id", coach.id);
+        // If the newer skipped-steps column is not deployed yet, save the rest.
+        // If the newer migration (skip list, 7 steps) is not deployed yet,
+        // save what the older columns allow.
+        if (error && /onboarding_skipped|onboarding_step_range/.test(error.message || "")) {
+          const { onboarding_skipped: _skipped, ...rest } = changes;
+          rest.onboarding_step = Math.min(rest.onboarding_step, 5);
+          ({ error } = await supabase.from("coaches").update(rest).eq("id", coach.id));
+        }
         if (error) throw new Error(completed ? "Your setup could not be saved. Try again." : error.message);
       }
       Object.assign(coach, changes);
+    }
+
+    // Coaches who already use the app (students or reports) skip the guide.
+    // They only get a reminder to connect Drive if it is missing.
+    let onboardingAutoCompleting = false;
+    function autoCompleteOnboardingIfActive(coach) {
+      if (onboardingAutoCompleting || isCertificatePreview) return false;
+      const hasActivity = state.students.some(student => student.coachId === coach.id) || state.reports.some(report => report.coachId === coach.id);
+      if (!hasActivity || coachOnboardingInstance?.isOpen()) return false;
+      onboardingAutoCompleting = true;
+      const skipped = state.driveConnection?.status === "connected" ? [] : ["drive"];
+      Object.assign(coach, { onboarding_completed_at: new Date().toISOString(), onboarding_skipped: skipped });
+      void saveOnboardingProgress({ step: 0, skipped, completed: true }).catch(error => console.warn("Unable to save setup state", error)).finally(() => { onboardingAutoCompleting = false; });
+      return true;
+    }
+
+    function getSetupItems() {
+      const coach = state.auth.role === "coach" ? getOnboardingCoach() : null;
+      if (!coach) return [];
+      const driveStatus = isCertificatePreview ? (previewDriveConnected ? "connected" : "disconnected") : state.driveConnection?.status === "connected" ? "connected" : state.driveConnection ? "disconnected" : "unknown";
+      return pendingSetupItems(coach, { driveStatus, studentCount: state.students.filter(student => student.coachId === coach.id).length });
+    }
+
+    function renderSetupGuideSettingsCard() {
+      if (!getOnboardingCoach()) return "";
+      const items = getSetupItems();
+      return `<div class="profile-card centre-settings-card setup-guide-card" style="margin-bottom:16px;">
+        <div class="section-title"><h2>Setup guide</h2><p>${items.length ? `${items.length} step${items.length === 1 ? "" : "s"} left. Pick up where you stopped.` : "Your setup is complete. You can go through the guide again anytime."}</p></div>
+        <button type="button" class="${items.length ? "primary-btn" : "secondary-btn"}" data-action="setup-open" data-step="${items[0] || "profile"}">${items.length ? "Finish setup" : "Open setup guide"}</button>
+      </div>`;
+    }
+
+    let setupCardDismissed = (() => { try { return sessionStorage.getItem("setupCardDismissed") === "1"; } catch { return false; } })();
+    function renderSetupReminders() {
+      const items = getSetupItems();
+      if (!items.length) return "";
+      const driveMissing = items.includes("drive") && state.driveConnection;
+      const others = items.filter(id => id !== "drive" || !driveMissing);
+      const total = 5;
+      const done = total - items.length;
+      return `
+        ${driveMissing ? `<div class="setup-drive-alert" role="status">
+          <div><strong>Connect Google Drive</strong><span>Reports can't be saved until Drive is connected.</span></div>
+          <button type="button" class="primary-btn" data-action="setup-open" data-step="drive">Connect now</button>
+        </div>` : ""}
+        ${others.length && !setupCardDismissed ? `<section class="table-card setup-reminder" aria-label="Finish your setup">
+          <div class="setup-reminder-head">
+            <div><h3>Finish your setup</h3><span>${done} of ${total} done</span></div>
+            <button type="button" class="icon-btn setup-reminder-close" data-action="setup-dismiss" aria-label="Close setup reminder">&times;</button>
+          </div>
+          <div class="setup-reminder-bar"><span style="width:${(done / total) * 100}%"></span></div>
+          <div class="setup-reminder-items">
+            ${others.map(id => `<button type="button" data-action="setup-open" data-step="${id}">${setupItemIcon(id)}<span>${escapeHtml(SETUP_ITEM_LABELS[id])}</span><b aria-hidden="true">&rsaquo;</b></button>`).join("")}
+          </div>
+        </section>` : ""}`;
     }
 
     async function onboardingConnectDrive() {
@@ -5796,7 +5915,7 @@ export function initApp(config = {}) {
         state.reports=[{id:"sample-report",ref:"TRAINING PREVIEW",coachId:"preview-coach",studentId:"preview-student",date:"2026-10-29",time:"10:00",lessonNumber:8,summary:{whatTaught:"Forehand drive technique\nFootwork and recovery",beforeCoaching:"Inconsistent contact point\nDeveloping balance",afterTraining:"Improved shot consistency\nConfident weight transfer",nextLesson:"Backhand control\nServe and receive",remarks:"Great focus and effort throughout the session.\nKeep practising your footwork for 10 minutes daily.\nSmall improvements lead to lasting progress."}}];
         // Preview the coach setup guide with /preview.html?onboarding
         if (new URLSearchParams(window.location.search).has("onboarding")) {
-          Object.assign(state.coaches[0],{name:"",photo:"",photo_url:"",onboarding_step:0,onboarding_completed_at:null});
+          Object.assign(state.coaches[0],{name:"",photo:"",photo_url:"",onboarding_step:0,onboarding_completed_at:null,onboarding_skipped:[]});
           state.students=[];state.reports=[];
         }
         authReady=true;authInitializing=false;render();return;

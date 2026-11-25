@@ -244,7 +244,14 @@ Google Drive remains the sole durable store for reports, but now records are own
 
 ### New coach setup guide
 
-`src/coach-onboarding.js` (screens and step rules) and `src/coach-onboarding.css` (motion and phone layout) add a required six-step guide: Welcome, Profile, Google Drive, Certificate design, Students, Done. `render()` shows it instead of the dashboard when the signed-in coach has `coaches.onboarding_completed_at = null`. Progress is saved in `coaches.onboarding_step` (with a localStorage copy), so the Drive sign-in redirect returns to the same step. Migration `20261125_000019_coach_onboarding.sql` adds the columns and marks every existing coach as complete, so only new coaches see the guide. If the migration is not deployed, the column is missing and the guide stays off. Preview it with `npm run dev:studio` at `/preview.html?onboarding`.
+`src/coach-onboarding.js` (screens and step rules) and `src/coach-onboarding.css` (motion, phone layout and dashboard reminders) add a seven-step guide: Welcome, Profile, Google Drive, Certificate design, QR code, Students, Done. Every step except Welcome and Done can be skipped.
+
+- `render()` opens the guide automatically when the signed-in coach has `coaches.onboarding_completed_at = null`, unless the coach already has students or reports. Those coaches are marked complete, with a Drive reminder if Drive is missing.
+- Progress is saved in `coaches.onboarding_step` (with a localStorage copy), so the Drive sign-in redirect returns to the same step.
+- Skipped steps are saved in `coaches.onboarding_skipped`. The Overview page shows a "Finish your setup" card for them, which closes until the next login. It also shows a Drive warning that can't be closed while Drive is missing. The coach Settings page has a "Setup guide" card that reopens the guide at any step.
+- The default TTAM badge is no longer printed. Its slot remains in the editor as an empty "Your logo" placeholder.
+
+Migrations: `20261125_000019_coach_onboarding.sql` (columns, and marks existing coaches complete) and `20261125_000020_coach_onboarding_skip_and_qr.sql` (skip list, 7 steps). Preview the guide with `npm run dev:studio` at `/preview.html?onboarding`.
 
 ## Database and Security Rules
 

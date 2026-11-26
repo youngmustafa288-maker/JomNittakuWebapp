@@ -3693,8 +3693,17 @@ export function initApp(config = {}) {
           <div class="profile-card centre-settings-card">
             <div class="links-card-head">
               <div class="section-title"><h2>${isCoach ? "Add links for your QR" : "Centre Links"}</h2>${isCoach ? `<p>When parents scan the QR on a report, they see a page with these links.</p>` : ""}</div>
-              ${isCoach ? `<button class="secondary-btn qr-preview-btn" type="button" data-action="preview-qr-page"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>See what parents see</button>` : ""}
+              ${isCoach ? `<button class="secondary-btn qr-preview-btn" type="button" data-action="preview-qr-page"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>How QR looks like</button>` : ""}
             </div>
+            ${isCoach ? (() => {
+              const coach = getCurrentCoach();
+              const coachPhoto = safeImageUrl(coach.photo || coach.photo_url);
+              return `<div class="qr-coach-photo">
+                <span class="qr-coach-photo-img" ${coachPhoto ? `style="background-image:url('${escapeHtml(coachPhoto)}');"` : ""}>${coachPhoto ? "" : escapeHtml(initials(coach.name || "Coach"))}</span>
+                <span class="qr-coach-photo-copy"><strong>Coach photo</strong><small>Shows at the top of the page parents see.</small></span>
+                <button class="secondary-btn" type="button" data-action="upload-coach-photo">${coachPhoto ? "Change photo" : "Add photo"}</button>
+              </div>`;
+            })() : ""}
             ${isCoach ? `<div class="links-field-labels" aria-hidden="true"><span>Button name</span><span>Link</span></div>` : ""}
             <div class="centre-links-editor">
               ${links.map(link => `
@@ -5810,7 +5819,7 @@ export function initApp(config = {}) {
       }));
       const page = {
         name: coach.name,
-        photo: safeImageUrl(coach.photo) || "",
+        photo: safeImageUrl(coach.photo || coach.photo_url) || "",
         role: "Coach",
         bio: coach.bio || "",
         centre_name: requestedCentre?.name || "",
@@ -5821,10 +5830,10 @@ export function initApp(config = {}) {
       overlay.className = "qr-preview-overlay";
       overlay.setAttribute("role", "dialog");
       overlay.setAttribute("aria-modal", "true");
-      overlay.setAttribute("aria-label", "What parents see after scanning the QR");
+      overlay.setAttribute("aria-label", "How QR looks like");
       overlay.innerHTML = `
         <div class="qr-preview-box">
-          <div class="qr-preview-top"><strong>What parents see</strong><button type="button" class="qr-preview-close" aria-label="Close preview">&times;</button></div>
+          <div class="qr-preview-top"><strong>How QR looks like</strong><button type="button" class="qr-preview-close" aria-label="Close preview">&times;</button></div>
           <p class="qr-preview-note">This is the page that opens when a parent scans the QR on a report.${links.length ? " Remember to press Save." : ""}</p>
           <div class="qr-preview-phone"><div class="qr-preview-screen">${renderCoachLinkPage({ status: "ready", page })}</div></div>
         </div>`;

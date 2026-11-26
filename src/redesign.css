@@ -1156,34 +1156,4 @@
   .dashboard .qr-preview-btn { width: 100%; justify-content: center; }
 }
 
-/* Coach photo row in the QR links card */
-.qr-coach-photo {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 16px;
-  margin-bottom: 18px;
-  border: 1px solid var(--rd-line, #eceef2);
-  border-radius: 14px;
-  background: #fafafb;
-}
-.qr-coach-photo-img {
-  width: 56px;
-  height: 56px;
-  flex: none;
-  border-radius: 50%;
-  border: 3px solid var(--rd-red, #e11d48);
-  background: #fde2e4 center / cover no-repeat;
-  color: #be123c;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 17px;
-}
-.qr-coach-photo-copy { flex: 1; display: grid; min-width: 0; line-height: 1.35; }
-.qr-coach-photo-copy strong { font-size: 15px; }
-.qr-coach-photo-copy small { color: var(--rd-mute, #6b7280); font-size: 13px; }
-@media (max-width: 520px) {
-  .qr-coach-photo { flex-wrap: wrap; }
-  .qr-coach-photo .secondary-btn { width: 100%; }
-}
+

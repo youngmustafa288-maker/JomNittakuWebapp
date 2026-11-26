@@ -991,3 +991,21 @@
   .dashboard .student-card-actions > * { min-height: 42px; font-size: 14px; }
   .dashboard .upload-chip { min-height: 40px; font-size: 14px; }
 }
+
+/* Certificates > My designs: delete button beside Edit */
+.studio-card-actions { display: inline-flex; align-items: center; gap: 10px; }
+.certificate-design-page .studio-delete-design {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid #eceef2;
+  background: #fff;
+  color: #6b7280;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.certificate-design-page .studio-delete-design svg { width: 16px; height: 16px; }
+.certificate-design-page .studio-delete-design:hover { color: #e11d48; border-color: #e11d48; background: #fff1f3; }
+.certificate-design-page .studio-delete-design:focus-visible { outline: 2px solid #e11d48; outline-offset: 2px; }

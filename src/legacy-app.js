@@ -370,13 +370,17 @@ export function initApp(config = {}) {
       return normalizeReportLayout(current.variants?.[id] || defaultStudioLayout(id));
     }
     function getDraftTemplateOptions(draft) {
-      return reportTemplateOptions(getReportLayout(getCoachById(draft.coachId)), defaultStudioLayout, draft.certificateDesign);
+      return reportTemplateOptions(getReportLayout(getCoachById(draft.coachId)), defaultStudioLayout, ensureDraftCertificateDesign(draft));
     }
+    // A draft shows the coach's latest saved design. Unless the coach picked
+    // a template for this report, it follows their current design. The design
+    // is only frozen when the report is finished.
     function ensureDraftCertificateDesign(draft) {
-      if (!draft.certificateDesign) {
-        const currentId = getReportLayout(getCoachById(draft.coachId)).templateId;
-        draft.certificateDesign = getDraftTemplateOptions(draft).find(option => option.templateId === currentId);
-      }
+      const current = getReportLayout(getCoachById(draft.coachId));
+      const latest = reportTemplateOptions(current, defaultStudioLayout);
+      const wantedId = draft.certificateDesignPicked && draft.certificateDesign?.templateId ? draft.certificateDesign.templateId : current.templateId;
+      const match = latest.find(option => option.templateId === wantedId) || latest.find(option => option.templateId === current.templateId);
+      if (match) draft.certificateDesign = match;
       return draft.certificateDesign;
     }
     function renderDraftTemplatePicker(draft) {
@@ -401,6 +405,7 @@ export function initApp(config = {}) {
       if (!selected) return;
       updateWizardDraftFromInputs({ schedule: false });
       draft.certificateDesign = selected;
+      draft.certificateDesignPicked = true;
       scheduleDraftSave(draft);
       // Keep the radio group in place for native arrow-key navigation.
       document.querySelectorAll('input[name="reportTemplate"]').forEach(input => {

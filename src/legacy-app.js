@@ -3678,24 +3678,35 @@ export function initApp(config = {}) {
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
           ${isCoach ? renderSetupGuideSettingsCard() : ""}
           ${isCoach ? `<div class="profile-card centre-settings-card drive-connection-card ${drive.status === "connected" ? "is-connected" : ""}" style="margin-bottom:16px;">
-            <div class="section-title"><div class="drive-heading"><h2>My Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : ""}</div><p>Your report drafts and PDFs are saved to your own Google Drive.</p></div>
+            <div class="drive-card-head">
+              <span class="drive-card-logo"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg></span>
+              <div class="drive-card-title"><div class="drive-heading"><h2>My Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : `<span class="status-pill drive-pill-off">Not connected</span>`}</div><p>Your report drafts and PDFs are saved to your own Google Drive.</p></div>
+            </div>
             ${driveConnectionError || drive.last_error ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(driveConnectionError || drive.last_error)}</p>` : ""}
-            ${drive.status === "connected" ? `<div class="review-card"><div class="review-row"><strong>Google account</strong><span>${escapeHtml(drive.google_account_email || "Connected")}</span></div><div class="review-row"><strong>Report folder</strong><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(drive.root_folder_name || "Open my Drive folder")}</a></div><div class="review-row"><strong>Last saved</strong><span>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString()) : "Not yet"}</span></div></div>
-              <div class="profile-actions"><button class="secondary-btn" data-action="connect-drive">Reconnect Drive</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your own Google Drive to create and save reports without a centre admin connecting first.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect My Google Drive</span></button>`}
+            ${drive.status === "connected" ? `<div class="drive-info-grid">
+                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg></span><span class="drive-info-copy"><small>Google account</small><strong>${escapeHtml(drive.google_account_email || "Connected")}</strong></span></div>
+                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="drive-info-copy"><small>Report folder</small><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(drive.root_folder_name || "Open my Drive folder")}">${escapeHtml(drive.root_folder_name || "Open my Drive folder")} ↗</a></span></div>
+                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="drive-info-copy"><small>Last saved</small><strong>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })) : "Not yet"}</strong></span></div>
+              </div>
+              <div class="profile-actions"><button class="secondary-btn" data-action="connect-drive">Reconnect Drive</button><button class="ghost-btn drive-disconnect-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your own Google Drive to create and save reports without a centre admin connecting first.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect My Google Drive</span></button>`}
           </div>` : state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card drive-connection-card" style="margin-bottom:16px;"><div class="section-title"><h2>Coach Google Drives</h2><p>Coaches authorize their own accounts. You do not need to connect a Drive for the centre.</p></div><p class="muted">${connectedCoachDriveIds.length} coach account(s) connected.</p></div>` : ""}
           <div class="profile-card centre-settings-card">
-            <div class="section-title"><h2>${isCoach ? "Coach Links" : "Centre Links"}</h2></div>
+            <div class="links-card-head">
+              <div class="section-title"><h2>${isCoach ? "Add links for your QR" : "Centre Links"}</h2>${isCoach ? `<p>When parents scan the QR on a report, they see a page with these links.</p>` : ""}</div>
+              ${isCoach ? `<button class="secondary-btn qr-preview-btn" type="button" data-action="preview-qr-page"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>See what parents see</button>` : ""}
+            </div>
+            ${isCoach ? `<div class="links-field-labels" aria-hidden="true"><span>Button name</span><span>Link</span></div>` : ""}
             <div class="centre-links-editor">
               ${links.map(link => `
                 <div class="centre-link-row" data-link-id="${escapeHtml(link.id)}">
-                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label || link.title || "")}" placeholder="Label">
-                  <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://...">
-                  <button class="ghost-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}">Delete</button>
+                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label || link.title || "")}" placeholder="e.g. Facebook" aria-label="Button name">
+                  <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://..." aria-label="Link">
+                  <button class="ghost-btn link-delete-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}" aria-label="Delete link" title="Delete link"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v7m6-7v7"/></svg></button>
                 </div>
               `).join("")}
             </div>
             <div class="profile-actions">
-              <button class="secondary-btn" data-action="add-centre-link">+ Add Link</button>
+              <button class="secondary-btn" data-action="add-centre-link">+ Add link</button>
               <button class="primary-btn" type="button" data-action="save-centre-profile">Save</button>
             </div>
           </div>
@@ -4920,6 +4931,7 @@ export function initApp(config = {}) {
         return render();
       }
       if (action === "save-centre-profile") return saveCentreProfileFromInputs();
+      if (action === "preview-qr-page") return openQrPagePreview();
       if (action === "add-coach-link") return addCoachLink();
       if (action === "student-upload") return triggerStudentUpload(event.currentTarget.dataset.studentId);
       if (action === "student-edit") return openStudentEditModal(event.currentTarget.dataset.studentId);
@@ -5782,6 +5794,47 @@ export function initApp(config = {}) {
         console.warn("Unable to save report PDF to Google Drive", error);
         if (state.ui.page === "report-view") scheduleRender();
       }
+    }
+
+    // Shows the page parents see after scanning the QR, using the links typed
+    // on screen right now (saved or not). Built straight into the DOM so the
+    // settings form keeps any unsaved edits.
+    function openQrPagePreview() {
+      document.querySelector(".qr-preview-overlay")?.remove();
+      const coach = getCurrentCoach();
+      const links = [...document.querySelectorAll(".centre-link-row")].map((row, index) => ({
+        title: row.querySelector('[data-link-field="label"]')?.value.trim() || "",
+        url: row.querySelector('[data-link-field="url"]')?.value.trim() || "",
+        visible: true,
+        order: index + 1
+      }));
+      const page = {
+        name: coach.name,
+        photo: safeImageUrl(coach.photo) || "",
+        role: "Coach",
+        bio: coach.bio || "",
+        centre_name: requestedCentre?.name || "",
+        centre_logo: requestedCentre?.logo_url || "",
+        links
+      };
+      const overlay = document.createElement("div");
+      overlay.className = "qr-preview-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-label", "What parents see after scanning the QR");
+      overlay.innerHTML = `
+        <div class="qr-preview-box">
+          <div class="qr-preview-top"><strong>What parents see</strong><button type="button" class="qr-preview-close" aria-label="Close preview">&times;</button></div>
+          <p class="qr-preview-note">This is the page that opens when a parent scans the QR on a report.${links.length ? " Remember to press Save." : ""}</p>
+          <div class="qr-preview-phone"><div class="qr-preview-screen">${renderCoachLinkPage({ status: "ready", page })}</div></div>
+        </div>`;
+      const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+      const onKey = event => { if (event.key === "Escape") close(); };
+      overlay.addEventListener("click", event => { if (event.target === overlay || event.target.closest(".qr-preview-close")) close(); });
+      overlay.querySelectorAll(".qr-preview-screen a").forEach(link => link.addEventListener("click", event => event.preventDefault()));
+      document.addEventListener("keydown", onKey);
+      document.body.appendChild(overlay);
+      overlay.querySelector(".qr-preview-close")?.focus();
     }
 
     async function saveCentreProfileFromInputs() {

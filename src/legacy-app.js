@@ -339,6 +339,28 @@ export function initApp(config = {}) {
     function defaultStudioLayout(id = "classic") {
       return makeTemplateLayout(normalizeReportLayout(), id);
     }
+    // Puts every built-in item back where the template places it. The coach's
+    // own words, uploaded logo/images, QR on/off and added text boxes are kept.
+    function resetLayoutPositions(current) {
+      const fresh = defaultStudioLayout(current.baseTemplateId);
+      const savedById = new Map((current.layers || []).map(layer => [layer.id, layer]));
+      const layers = fresh.layers.map(layer => {
+        const saved = savedById.get(layer.id);
+        if (!saved) return layer;
+        const kept = {};
+        if (typeof saved.source === "string" && saved.source) kept.source = saved.source;
+        if (Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id) && typeof saved.text === "string") kept.text = saved.text;
+        if (layer.id === "footer-text-overlay" && typeof saved.text === "string") kept.text = saved.text;
+        if (layer.id === "qr") kept.visible = saved.visible !== false;
+        return { ...layer, ...kept };
+      });
+      const added = (current.layers || []).filter(layer => !fresh.layers.some(item => item.id === layer.id));
+      return {
+        ...fresh, layers: layers.concat(added),
+        templateId: current.templateId, designName: current.designName, backgroundSource: current.backgroundSource,
+        qrUrl: current.qrUrl, designs: current.designs, variants: current.variants, uploads: current.uploads
+      };
+    }
     function studioLayoutForId(id) {
       const current = getReportLayout(getCurrentCoach());
       if (id === current.templateId) return current;
@@ -469,6 +491,12 @@ export function initApp(config = {}) {
           layout.qrUrl=value;layout.layers.find(l=>l.id==='qr').visible=true;selectedReportOverlay='qr';
         }
         if(action==='studio-toggle-qr'){const layer=layout.layers.find(l=>l.id==='qr');layer.visible=layer.visible===false;selectedReportOverlay='qr';}
+        if(action==='studio-reset-layout'){
+          if(!window.confirm('Put every item back in its original place? Your text, logo and QR choice are kept.'))return;
+          coach.reportLayout=resetLayoutPositions(layout);selectedReportOverlay='';
+          if(await saveReportLayout(coach)) studioToast('Layout reset');
+          return;
+        }
         if(action==='studio-save'||action==='studio-save-copy'){
           if(REPORT_TEMPLATES.some(t=>t.id===layout.templateId)||action==='studio-save-copy'){
             const name=layout.designName+(action==='studio-save-copy'?' copy':' — my design');layout.templateId=`design-${crypto.randomUUID()}`;layout.designName=name.slice(0,80);layout.designs=[...layout.designs,{id:layout.templateId,name:layout.designName}];
@@ -4587,8 +4615,7 @@ export function initApp(config = {}) {
       if (action === "toggle-report-layout") { reportLayoutEditing = !reportLayoutEditing; return render(); }
       if (action === "reset-report-layout") {
         const coach = getCurrentCoach();
-        const current=getReportLayout(coach);
-        coach.reportLayout={...defaultStudioLayout(current.baseTemplateId),templateId:current.templateId,designName:current.designName,backgroundSource:current.backgroundSource,qrUrl:current.qrUrl,designs:current.designs,variants:current.variants,uploads:current.uploads};
+        coach.reportLayout = resetLayoutPositions(getReportLayout(coach));
         return saveReportLayout(coach);
       }
       if (["toggle-certificate-layer", "lower-certificate-layer", "raise-certificate-layer"].includes(action)) {

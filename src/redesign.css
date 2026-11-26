@@ -848,3 +848,57 @@
 @media (max-width: 720px) {
   .dashboard .table-card:has(#reportsTable) .table-topline .profile-actions > * { flex: none; }
 }
+
+/* ==================================================================
+   Reports: search with icon + All / Drafts / Sent chips
+   ================================================================== */
+.dashboard .search-field {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 0;
+  display: block;
+}
+.dashboard .search-field svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translateY(-50%);
+  color: var(--rd-mute);
+  pointer-events: none;
+  z-index: 3;
+}
+.dashboard .search-field .search-input { width: 100%; padding-left: 42px; }
+
+.status-chips { display: flex; gap: 8px; flex: none; }
+.dashboard .status-chip {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--rd-line);
+  background: var(--rd-card);
+  color: var(--rd-ink);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background .15s, color .15s, border-color .15s, transform .12s;
+}
+.dashboard .status-chip:hover { background: var(--rd-soft); }
+.dashboard .status-chip:active { transform: scale(.96); }
+.dashboard .status-chip.is-active { background: var(--rd-ink); border-color: var(--rd-ink); color: #fff; }
+.dashboard .status-chip:focus-visible { outline: 2px solid var(--rd-red); outline-offset: 2px; }
+
+/* The chips replace the status dropdown on screen; it stays for the filter logic */
+.dashboard .status-filter-select { display: none !important; }
+
+.dashboard .table-card:has(#reportsTable) .reports-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dashboard .table-card:has(#reportsTable) .reports-filter-bar .filter-select { flex: 0 1 180px; width: auto; }
+
+@media (max-width: 720px) {
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar { display: flex; flex-direction: row; align-items: stretch; justify-content: flex-start; }
+  .dashboard .search-field { flex: 1 1 100%; }
+  .status-chips { flex: 1 1 100%; }
+  .dashboard .status-chip { flex: 1; }
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar .filter-select { flex: 1 1 40%; width: auto; max-width: none; }
+  .dashboard .table-card:has(#reportsTable) .table-topline { justify-content: flex-start; }
+}

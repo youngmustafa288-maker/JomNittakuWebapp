@@ -2398,6 +2398,15 @@ export function initApp(config = {}) {
       `;
     }
 
+    function syncReportStatusChips() {
+      const value = document.getElementById("reportsStatusFilter")?.value || "";
+      document.querySelectorAll("[data-report-status]").forEach(chip => {
+        const active = chip.dataset.reportStatus === value;
+        chip.classList.toggle("is-active", active);
+        chip.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
     function plural(count, word) {
       return `${count} ${word}${count === 1 ? "" : "s"}`;
     }
@@ -2581,7 +2590,12 @@ export function initApp(config = {}) {
               <div class="profile-actions"><button class="secondary-btn" data-action="refresh-reports" ${reportLoadPromise ? "disabled" : ""}>${reportLoadPromise ? "Refreshing…" : "Refresh"}</button>${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}</div>
             </div>
             <div class="reports-filter-bar">
-              <input id="reportsSearch" class="search-input" type="search" placeholder="Search name or ref number">
+              <label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input id="reportsSearch" class="search-input" type="search" placeholder="Search name or ref number" aria-label="Search reports"></label>
+              <div class="status-chips" role="group" aria-label="Filter by status">
+                <button type="button" class="status-chip is-active" data-report-status="" aria-pressed="true">All</button>
+                <button type="button" class="status-chip" data-report-status="Draft" aria-pressed="false">Drafts</button>
+                <button type="button" class="status-chip" data-report-status="Generated" aria-pressed="false">Sent</button>
+              </div>
               <select id="reportsStudentFilter" class="filter-select">
                 <option value="">All students</option>
                 ${studentOptions}
@@ -2604,7 +2618,7 @@ export function initApp(config = {}) {
                 <input id="reportsDateFrom" class="text-input" type="date" aria-label="From date">
                 <input id="reportsDateTo" class="text-input" type="date" aria-label="To date">
               </div>
-              <select id="reportsStatusFilter" class="filter-select">
+              <select id="reportsStatusFilter" class="filter-select status-filter-select" aria-label="Report status" tabindex="-1">
                 <option value="">All statuses</option>
                 <option value="Generated">Sent</option>
                 <option value="Draft">Drafts</option>
@@ -4309,6 +4323,14 @@ export function initApp(config = {}) {
         scheduleRender();
       }));
 
+      document.querySelectorAll("[data-report-status]").forEach(chip => {
+        chip.addEventListener("click", () => {
+          if (!reportsStatus) return;
+          reportsStatus.value = chip.dataset.reportStatus;
+          reportsStatus.dispatchEvent(new Event("change"));
+        });
+      });
+
       [reportsSearch, reportsDate, reportsStatus, reportsStudent, reportsMonth, reportsDay, reportsDateFrom, reportsDateTo].filter(Boolean).forEach(input => {
         input.addEventListener("input", scheduleReportsHydration);
         input.addEventListener("change", () => {
@@ -4894,6 +4916,7 @@ export function initApp(config = {}) {
       if (!tbody) return;
       const search = (document.getElementById("reportsSearch")?.value || "").trim().toLowerCase();
       const dateFilter = document.getElementById("reportsDateFilter")?.value || "";
+      syncReportStatusChips();
       const statusFilter = document.getElementById("reportsStatusFilter")?.value || "";
       const studentFilter = document.getElementById("reportsStudentFilter")?.value || "";
       const monthFilter = document.getElementById("reportsMonthFilter")?.value || "";

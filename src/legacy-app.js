@@ -311,7 +311,7 @@ export function initApp(config = {}) {
           page: state.ui.page,
           hasStudents: !!coach && state.students.some(student => student.coachId === coach.id),
           studentModalStep: onboardingModal?.type === "student" ? Number(onboardingModal.step) || 1 : 0,
-          hasReport: !!coach && state.reports.some(report => report.coachId === coach.id)
+          reportCount: coach ? state.reports.filter(report => report.coachId === coach.id).length : 0
         };
       },
       onEnd: () => {
@@ -4894,6 +4894,7 @@ export function initApp(config = {}) {
       if(action==="simple-copy-layer")return copyCertificateEditorLayer();
       if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
       if (action?.startsWith("studio-")) return handleStudioAction(action, event.currentTarget);
+      if (action === "first-report-tour") return startFirstReportTour();
       if (action === "reload-page") return window.location.reload();
       if (action === "setup-open") return getCoachOnboarding().openAt(event.currentTarget.dataset.step || "profile");
       if (action === "setup-dismiss") {
@@ -6478,7 +6479,7 @@ export function initApp(config = {}) {
       const items = getSetupItems();
       return `<div class="profile-card centre-settings-card setup-guide-card" style="margin-bottom:16px;">
         <div class="section-title"><h2>Setup guide</h2><p>${items.length ? `${items.length} step${items.length === 1 ? "" : "s"} left. Pick up where you stopped.` : "Your setup is complete. You can go through the guide again anytime."}</p></div>
-        <button type="button" class="${items.length ? "primary-btn" : "secondary-btn"}" data-action="setup-open" data-step="${items[0] || "profile"}">${items.length ? "Finish setup" : "Open setup guide"}</button>
+        <div class="profile-actions"><button type="button" class="${items.length ? "primary-btn" : "secondary-btn"}" data-action="setup-open" data-step="${items[0] || "profile"}">${items.length ? "Finish setup" : "Open setup guide"}</button><button type="button" class="secondary-btn" data-action="first-report-tour">Show me how to make a report</button></div>
       </div>`;
     }
 

@@ -34,6 +34,9 @@ export function createFirstReportTour({ getContext, onEnd }) {
   let lastTarget = null;
   let frame = 0;
   let order = REPORT_ORDER;
+  let baseReports = 0;
+  // Reports made since the tour started, so it can be replayed by a coach who already has some.
+  const context = () => { const ctx = getContext(); return { ...ctx, hasReport: (ctx.reportCount || 0) > baseReports }; };
 
   function build() {
     root = document.createElement("div");
@@ -85,7 +88,7 @@ export function createFirstReportTour({ getContext, onEnd }) {
 
   function update() {
     if (!root) return;
-    const step = firstReportTourStep(getContext());
+    const step = firstReportTourStep(context());
     const spot = root.querySelector(".frt-spot");
     const cursor = root.querySelector(".frt-cursor");
     const bubble = root.querySelector(".frt-bubble");
@@ -138,7 +141,9 @@ export function createFirstReportTour({ getContext, onEnd }) {
     if (root) return schedule();
     build();
     lastStepId = "";
-    order = getContext().hasStudents ? REPORT_ORDER : [...STUDENT_ORDER, ...REPORT_ORDER];
+    const ctx = getContext();
+    baseReports = ctx.reportCount || 0;
+    order = ctx.hasStudents ? REPORT_ORDER : [...STUDENT_ORDER, ...REPORT_ORDER];
     observer = new MutationObserver(schedule);
     observer.observe(document.getElementById("app") || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
     window.addEventListener("resize", schedule);

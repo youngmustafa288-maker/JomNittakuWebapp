@@ -2926,3 +2926,13 @@
 .first-report-tip-badge { display: inline-block; margin-bottom: 4px; color: #c81e45; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .first-report-tip strong { display: block; color: #111827; font-size: 1rem; }
 .first-report-tip p { margin: 2px 0 0; color: #4b5563; font-size: .9rem; line-height: 1.45; }
+
+/* Only the Google account is shown now, so keep its tile compact. */
+.drive-info-grid { max-width: 520px; }
+/* Dashboard prompt for a coach's first report. */
+.first-report-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; border: 1px solid #f6cbd5; background: linear-gradient(135deg, #fff5f7, #fff); }
+.first-report-card h3 { margin: 2px 0 4px; font-size: 1.2rem; color: #111827; }
+.first-report-card p { margin: 0; color: #4b5563; }
+.first-report-card ol { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; padding-left: 18px; color: #1b2a4a; font-size: .9rem; font-weight: 600; }
+.first-report-card .primary-btn { flex: none; }
+@media (max-width: 700px) { .first-report-card { flex-direction: column; align-items: stretch; } }

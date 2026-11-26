@@ -59,3 +59,7 @@
 .studio-frame-colours button.is-active{box-shadow:0 0 0 2px #c81e45}
 .studio-frame-intro,.studio-frame-tip{font-size:10px;line-height:1.6;color:#929ba9;margin:4px 0 12px}
 .studio-frame-tip{margin-top:18px;padding-top:12px;border-top:1px solid #eef0f3}
+
+/* The design the coach is using now: red border and an "In use" tag. */
+.certificate-design-page.studio-page .studio-template-card.is-current{border:2px solid #c81e45;box-shadow:0 10px 24px rgba(200,30,69,.14)}
+.studio-in-use{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;background:#c81e45;color:#fff;font-size:.7rem;font-weight:700;vertical-align:middle}

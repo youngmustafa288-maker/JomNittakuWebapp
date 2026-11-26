@@ -2606,6 +2606,7 @@ export function initApp(config = {}) {
       return `
         <section class="page ${state.ui.page === "overview" ? "active" : ""}">
           ${renderSetupReminders()}
+          ${renderFirstReportPrompt()}
           ${renderStats()}
           ${reportStoreStatus === "loading" ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive. You can use the dashboard while they load.</p>' : reportStoreError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)} <button class="plain-link" data-nav="reports">Open reports</button></p>` : ""}
           <div class="overview-columns">
@@ -3822,8 +3823,6 @@ export function initApp(config = {}) {
             ${driveConnectionError || drive.last_error ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(driveConnectionError || drive.last_error)}</p>` : ""}
             ${drive.status === "connected" ? `<div class="drive-info-grid">
                 <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg></span><span class="drive-info-copy"><small>Google account</small><strong>${escapeHtml(drive.google_account_email || "Connected")}</strong></span></div>
-                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="drive-info-copy"><small>Report folder</small><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(drive.root_folder_name || "Open my Drive folder")}">${escapeHtml(drive.root_folder_name || "Open my Drive folder")} ↗</a></span></div>
-                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="drive-info-copy"><small>Last saved</small><strong>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })) : "Not yet"}</strong></span></div>
               </div>
               <div class="profile-actions"><button class="secondary-btn" data-action="connect-drive">Reconnect Drive</button><button class="ghost-btn drive-disconnect-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your own Google Drive to create and save reports without a centre admin connecting first.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect My Google Drive</span></button>`}
           </div>` : state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card drive-connection-card" style="margin-bottom:16px;"><div class="section-title"><h2>Coach Google Drives</h2><p>Coaches authorize their own accounts. You do not need to connect a Drive for the centre.</p></div><p class="muted">${connectedCoachDriveIds.length} coach account(s) connected.</p></div>` : ""}
@@ -4873,6 +4872,7 @@ export function initApp(config = {}) {
       if(action==="simple-copy-layer")return copyCertificateEditorLayer();
       if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
       if (action?.startsWith("studio-")) return handleStudioAction(action, event.currentTarget);
+      if (action === "first-report-start") { firstReportGuide = true; return startReportFlow().catch(error => alert(error.message || "Unable to start a report.")); }
       if (action === "reload-page") return window.location.reload();
       if (action === "setup-open") return getCoachOnboarding().openAt(event.currentTarget.dataset.step || "profile");
       if (action === "setup-dismiss") {
@@ -6485,6 +6485,28 @@ export function initApp(config = {}) {
             ${others.map(id => `<button type="button" data-action="setup-open" data-step="${id}">${setupItemIcon(id)}<span>${escapeHtml(SETUP_ITEM_LABELS[id])}</span><b aria-hidden="true">&rsaquo;</b></button>`).join("")}
           </div>
         </section>` : ""}`;
+    }
+
+    // After setup, until the coach makes a report: a short guided start.
+    function renderFirstReportPrompt() {
+      if (state.auth.role !== "coach" || reportStoreStatus !== "ready") return "";
+      const coach = getOnboardingCoach();
+      if (!coach?.onboarding_completed_at || coachOnboardingInstance?.isOpen()) return "";
+      if (state.reports.some(report => report.coachId === coach.id)) return "";
+      if (state.driveConnection?.status !== "connected") return "";
+      const hasStudents = state.students.some(student => student.coachId === coach.id);
+      const steps = ["Pick your student", "Check the lesson date", "Write what you taught", "Add a note for parents"];
+      return `<section class="table-card first-report-card" aria-label="Make your first report">
+        <div class="first-report-card-copy">
+          <span class="first-report-tip-badge">Next step</span>
+          <h3>Make your first report</h3>
+          <p>We'll guide you through it. It takes about 2 minutes, and the certificate is made for you.</p>
+          <ol>${steps.map(step => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
+        </div>
+        ${hasStudents
+          ? `<button type="button" class="primary-btn" data-action="first-report-start">Start my first report</button>`
+          : `<button type="button" class="primary-btn" data-action="setup-open" data-step="students">Add a student first</button>`}
+      </section>`;
     }
 
     async function onboardingConnectDrive() {

@@ -541,6 +541,24 @@ export function initApp(config = {}) {
       render();
     }
 
+    // Returns false when the certificate is not on screen (caller re-renders).
+    function applyPhotoFramesInPlace(layout) {
+      const ids = ["student-photo", "coach-photo"];
+      const items = ids.map(id => document.querySelector(`[data-overlay-id="${id}"]`));
+      if (items.some(item => !item)) return false;
+      const frames = normalizePhotoFrames(layout.photoFrames);
+      items.forEach((item, index) => {
+        const layer = layout.layers.find(entry => entry.id === ids[index]);
+        item.style.display = layer?.visible === false ? "none" : "";
+        const card = item.querySelector(".template-photo-card");
+        if (card) card.outerHTML = renderTemplatePhoto(escapeHtml(card.querySelector("img.template-photo")?.getAttribute("src") || ""), index === 0 ? "STUDENT" : "COACH", frames);
+      });
+      document.querySelectorAll('[data-action="studio-frame-shape"]').forEach(button => { const on = button.dataset.shape === frames.shape; button.classList.toggle("is-active", on); button.setAttribute("aria-checked", on); });
+      document.querySelectorAll('[data-action="studio-frame-colour"]').forEach(button => { const on = button.dataset.colour === frames.colour; button.classList.toggle("is-active", on); button.setAttribute("aria-checked", on); });
+      refreshCertificateSelection();
+      return true;
+    }
+
     async function handleStudioAction(action, trigger = null) {
       try {
         if(action==='studio-delete-design')return deleteSavedDesign(trigger?.dataset.designId || '');
@@ -569,6 +587,13 @@ export function initApp(config = {}) {
         if(action==='studio-frame-labels'){const frames=normalizePhotoFrames(layout.photoFrames);layout.photoFrames={...frames,labels:!frames.labels};frameToast=layout.photoFrames.labels?'Labels shown':'Labels hidden';}
         if(action==='studio-frame-shape'){const shape=trigger?.dataset.shape;layout.photoFrames={...normalizePhotoFrames(layout.photoFrames),shape};frameToast='Frame shape updated';}
         if(action==='studio-frame-colour'){const colour=trigger?.dataset.colour;layout.photoFrames={...normalizePhotoFrames(layout.photoFrames),colour};frameToast='Frame colour updated';}
+        // Photo frame changes update the certificate in place and save in the
+        // background, so the page does not flash or jump.
+        if(action.startsWith('studio-frame-')&&applyPhotoFramesInPlace(layout)){
+          coach.reportLayout=layout;
+          if(await saveReportLayout(coach,{render:false})) studioToast(frameToast);
+          return;
+        }
         if(action==='studio-reset-layout'){
           if(!window.confirm('Put every item back in its original place and show the QR code? Your text and logo are kept.'))return;
           coach.reportLayout=resetLayoutPositions(layout);selectedReportOverlay='';
@@ -2453,9 +2478,11 @@ export function initApp(config = {}) {
     }
 
     function renderEditablePhoto(id, photo, label, layer, frames = null) {
-      if (layer?.visible === false) return "";
+      // In the editor a hidden photo stays in the page (just not shown), so
+      // the Photo frames checkboxes can show it again without a re-render.
+      if (layer?.visible === false && !reportLayoutEditing) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY[id];
-      const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;`;
+      const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;${layer?.visible === false ? "display:none;" : ""}`;
       return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label, frames)}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
     }
 

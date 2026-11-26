@@ -1052,7 +1052,7 @@
     .certificate-upload-empty { margin:0; color:#64748b; font-size:.76rem; }
     .certificate-editor-main { display:grid; grid-template-rows:auto minmax(0,1fr); min-width:0; background:#eef1f5; }
     .certificate-editor-stage { display:grid; place-items:start center; padding:34px; min-width:0; overflow:auto; background:radial-gradient(circle at 50% 20%, #fff 0, #eef2f7 68%); }
-    .certificate-design-page .template-report-shell { width:min(100%, 620px); justify-self:center; border-radius:8px; box-shadow:0 18px 36px rgba(15,26,51,.2); }
+    .certificate-design-page .template-report-shell { width:min(100%, 900px); justify-self:center; border-radius:8px; box-shadow:0 18px 36px rgba(15,26,51,.2); }
     .certificate-design-note { color:var(--slate-500); text-align:center; font-size:.9rem; }
     .certificate-design-page .report-layout-toolbar { display:flex; flex-wrap:nowrap; align-items:center; gap:7px; position:static; min-height:58px; margin:0; padding:10px 12px; border:0; border-bottom:1px solid #d9e0ea; border-radius:0; background:#fff; box-shadow:none; overflow-x:auto; }
     .certificate-design-page .report-layout-toolbar.is-empty { visibility:hidden; }
@@ -2907,3 +2907,16 @@
     .template-photo-card.is-square .template-photo-frame { border-radius: 0; }
     .template-photo-card.is-circle .template-photo-frame { border-radius: 50%; aspect-ratio: 1 / 1; }
     .template-photo-card.is-circle .template-photo { border-radius: 50%; }
+
+/* Bigger app on laptop and desktop screens. Text sizes use rem, so raising
+   the root size scales the whole interface; the fixed-width columns grow with it. */
+@media (min-width: 1024px) {
+  html { font-size: 112.5%; }
+  .dashboard { grid-template-columns: 290px minmax(0, 1fr); }
+  .certificate-editor-workspace { grid-template-columns: 86px 280px minmax(0, 1fr); }
+}
+@media (min-width: 1600px) {
+  html { font-size: 125%; }
+  .dashboard { grid-template-columns: 320px minmax(0, 1fr); }
+  .certificate-editor-workspace { grid-template-columns: 96px 310px minmax(0, 1fr); }
+}

@@ -256,3 +256,33 @@
   .cob-confetti { display: none; }
   .setup-drive-alert, .setup-reminder, .setup-reminder-bar span { animation: none; }
 }
+
+/* Centre details in "Make it yours": address spans the row. */
+.cob-mine-grid .cob-field.is-wide { grid-column: 1 / -1; }
+/* QR note on the design step. */
+.cob-qr-tip { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: var(--cob-soft); color: var(--cob-muted); font-size: 13px; line-height: 1.5; }
+.cob-qr-tip .cob-icon { flex: none; width: 22px; height: 22px; color: var(--cob-navy); margin-top: 1px; }
+.cob-qr-tip p { margin: 0; }
+.cob-qr-tip strong { color: var(--cob-ink); }
+/* QR step: certificate, then the page parents see after scanning. */
+.cob-qr.has-phone { grid-template-columns: minmax(0, 1fr) 400px; }
+.cob-qr-previews { display: flex; align-items: center; justify-content: center; gap: 10px; position: sticky; top: 0; }
+.cob-qr-previews .cob-qr-cert { position: static; width: 170px; flex: none; }
+.cob-qr:not(.has-phone) .cob-qr-previews .cob-qr-cert { width: 230px; }
+.cob-qr-arrow { display: grid; justify-items: center; gap: 2px; color: var(--cob-muted); font-size: 11px; flex: none; }
+.cob-qr-arrow .cob-icon { width: 20px; height: 20px; color: var(--cob-navy); }
+.cob-phone-figure { margin: 0; width: 186px; flex: none; }
+.cob-phone-figure figcaption { margin-top: 8px; text-align: center; font-size: 12px; color: var(--cob-muted); }
+.cob-phone { width: 186px; height: 360px; padding: 8px; border-radius: 28px; background: #111827; box-shadow: 0 14px 30px rgba(9, 18, 37, .18); box-sizing: border-box; }
+.cob-phone-screen { width: 100%; height: 100%; border-radius: 21px; overflow: hidden; background: #f6f8fc; position: relative; pointer-events: none; }
+/* The real link page is laid out at phone width, then scaled down to fit. */
+.cob-phone-screen .link-page { position: absolute; top: 0; left: 0; width: 375px; min-height: 0; height: 760px; padding: 28px 16px; transform: scale(.453); transform-origin: top left; }
+.cob-phone-screen .link-page * { animation: none !important; }
+@media (max-width: 720px) {
+  .cob-qr.has-phone { grid-template-columns: 1fr; }
+  .cob-qr-previews { order: -1; position: static; }
+  .cob-qr-previews .cob-qr-cert { width: 130px; }
+  .cob-phone-figure { width: 150px; }
+  .cob-phone { width: 150px; height: 290px; }
+  .cob-phone-screen .link-page { transform: scale(.357); height: 768px; }
+}

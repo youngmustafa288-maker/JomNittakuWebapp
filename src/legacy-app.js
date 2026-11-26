@@ -287,6 +287,7 @@ export function initApp(config = {}) {
       qrDataUrl: link => getQrCodeLib().then(QRCode => QRCode.toDataURL(link, { width: 320, margin: 2, errorCorrectionLevel: "M" })),
       renderCertificate: (templateId, mode, previewId, brand) => renderOnboardingCertificate(templateId, mode, previewId, brand ? { brand } : null),
       currentBrand: () => getOnboardingBrand(),
+      renderLinkPage: ({ name, photo, centreName, links }) => renderCoachLinkPage({ status: "ready", page: { name: name || "Coach", role: "Coach", photo, links, centre_name: centreName || requestedCentre?.name || "", centre_logo: requestedCentre?.logo_url || "" } }),
       afterCertificateRender: () => { fitCustomCertificateHeadingText(); hydrateQrImages(); },
       addStudent: values => addOnboardingStudent(values),
       saveProgress: progress => saveOnboardingProgress(progress),
@@ -6302,7 +6303,9 @@ export function initApp(config = {}) {
     async function saveOnboardingProfile(values) {
       const coach = getOnboardingCoach();
       if (!coach) throw new Error("Your coach profile could not be found.");
-      const updated = { ...coach, name: values.name, phone: values.phone, photo: values.photo || "", photo_url: values.photo || "" };
+      const updated = { ...coach, name: values.name, photo: values.photo || "", photo_url: values.photo || "" };
+      if (values.centreName) updated.branch = values.centreName;
+      if (values.centrePhone) updated.centreContact = values.centrePhone;
       if (isCertificatePreview) {
         Object.assign(coach, updated);
         return;

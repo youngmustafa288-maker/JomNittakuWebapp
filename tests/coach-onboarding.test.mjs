@@ -78,6 +78,7 @@ function fakeDeps(coach, extra = {}) {
     coachPageUrl: () => "https://example.test/coach/ahmad",
     linkPlatform: url => /wa\.me/.test(url) ? { id: "whatsapp", label: "WhatsApp", badge: "WA", color: "#25d366" } : { id: "website", label: "Website", badge: "W", color: "#c81e45" },
     renderQrCertificate: ({ visible, url }) => `<div data-qr-cert="${visible}" data-url="${url}"></div>`,
+    renderLinkPage: ({ name, links }) => `<div data-link-page="${name}" data-links="${links.length}"></div>`,
     applyQr: async () => {},
     qrDataUrl: async () => "",
     renderCertificate: (id, mode) => `<div data-cert="${id}-${mode}"></div>`,
@@ -107,6 +108,8 @@ test("QR step shows link examples and the done step shows the finished certifica
   assert.match(qrHtml, /No QR/);
   assert.match(qrHtml, /data-qr-cert="true" data-url="https:\/\/example\.test\/coach\/ahmad"/);
   assert.match(qrHtml, /Add a link/);
+  assert.doesNotMatch(qrHtml, /Custom link/);
+  assert.match(qrHtml, /What parents see after scanning/);
   const doneCoach = { id: "c4", name: "Ahmad", onboarding_step: 6, onboarding_completed_at: null, onboarding_skipped: ["qr"] };
   const doneHtml = createCoachOnboarding(fakeDeps(doneCoach)).render();
   assert.match(doneHtml, /data-cert="classic-final"/);

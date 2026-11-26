@@ -188,9 +188,9 @@ export function initApp(config = {}) {
 
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
     const REPORT_STATUSES = ["Generated"];
+    // New coaches start with one empty link row to fill in (platform + link).
     const DEFAULT_COACH_LINKS = [
-      { id: "reports", title: "View Reports", url: "/reports", icon: "▦", visible: true, order: 1 },
-      { id: "contact", title: "Contact Coach", url: "mailto:", icon: "✉", visible: true, order: 2 }
+      { id: "link-1", title: "", url: "", icon: "↗", visible: true, order: 1 }
     ];
     const supabase = hasSupabaseConfig()
       ? createClient(SUPABASE_URL, SUPABASE_KEY, {

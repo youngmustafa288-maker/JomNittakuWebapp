@@ -2946,3 +2946,19 @@
 @keyframes frt-ripple { 0%, 60% { transform: scale(.2); opacity: 0; } 70% { opacity: 1; } 100% { transform: scale(2.6); opacity: 0; } }
 @keyframes frt-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
 @media (prefers-reduced-motion: reduce) { .frt *, .frt { animation: none !important; transition: none !important; } }
+
+/* Certificate editor side panels: larger, easier-to-read text and controls. */
+.certificate-editor-rail .certificate-tool-panel > strong { font-size: 1.15rem; }
+.certificate-editor-rail .certificate-panel-action { min-height: 46px; font-size: .95rem; }
+.certificate-editor-workspace .certificate-tool-button { min-height: 70px; }
+.certificate-editor-workspace .certificate-tool-button span { font-size: 1.25rem; }
+.certificate-editor-workspace .certificate-tool-button small { font-size: .8rem; }
+.certificate-editor-rail .studio-frame-intro, .certificate-editor-rail .studio-frame-tip { font-size: 13px; line-height: 1.5; color: #6b7587; }
+.certificate-editor-rail .studio-frame-toggle { gap: 11px; padding: 12px 2px; font-size: 15px; }
+.certificate-editor-rail .studio-frame-toggle input { width: 19px; height: 19px; }
+.certificate-editor-rail .studio-frame-subtitle { font-size: 13px; font-weight: 600; color: #6b7587; margin: 20px 0 10px; }
+.certificate-editor-rail .studio-frame-shapes { gap: 8px; }
+.certificate-editor-rail .studio-frame-shapes button { gap: 7px; padding: 12px 4px; border-radius: 9px; font-size: 13px; }
+.certificate-editor-rail .studio-shape-icon { width: 22px; height: 22px; }
+.certificate-editor-rail .studio-frame-colours { gap: 10px; }
+.certificate-editor-rail .studio-frame-colours button { width: 32px; height: 32px; }

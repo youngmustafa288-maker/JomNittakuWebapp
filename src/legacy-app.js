@@ -308,6 +308,9 @@ export function initApp(config = {}) {
           wizardOpen: !!draft,
           step: Number(draft?.step) || 1,
           picked: !!draft?.studentId,
+          page: state.ui.page,
+          hasStudents: !!coach && state.students.some(student => student.coachId === coach.id),
+          studentModalStep: onboardingModal?.type === "student" ? Number(onboardingModal.step) || 1 : 0,
           hasReport: !!coach && state.reports.some(report => report.coachId === coach.id)
         };
       },
@@ -327,7 +330,6 @@ export function initApp(config = {}) {
       const coach = getOnboardingCoach();
       if (!coach?.onboarding_completed_at || coachOnboardingInstance?.isOpen()) return;
       if (state.driveConnection?.status !== "connected") return;
-      if (!state.students.some(student => student.coachId === coach.id)) return;
       if (state.reports.some(report => report.coachId === coach.id)) return;
       try { if (localStorage.getItem(firstReportTourKey(coach.id))) return; } catch { /* storage may be blocked */ }
       getFirstReportTour().start();

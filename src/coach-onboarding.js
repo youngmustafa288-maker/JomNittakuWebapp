@@ -259,9 +259,10 @@ export function createCoachOnboarding(deps) {
     });
   }
 
-  // Ready for a first report once Drive is connected and a student exists.
+  // Ready for a first report once Drive is connected. With no students the
+  // guide shows how to add one first.
   function canStartFirstReport() {
-    return !ui.open && !!deps.startFirstReport && deps.getDriveStatus() === "connected" && deps.getStudents().length > 0;
+    return !ui.open && !!deps.startFirstReport && deps.getDriveStatus() === "connected";
   }
 
   function finishGuide(startReport) {

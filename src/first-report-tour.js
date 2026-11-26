@@ -7,6 +7,13 @@
 const CURSOR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10 19z" fill="#fff" stroke="#111827" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 
 export function firstReportTourStep(ctx) {
+  // No students yet: add one first.
+  if (!ctx.hasStudents && !ctx.hasReport) {
+    if (ctx.studentModalStep === 2) return { id: "student-save", target: '[data-action="onboarding-submit"]', title: "Save your student", text: "Check the details, then click here to save." };
+    if (ctx.studentModalStep === 1) return { id: "student-form", target: '[data-action="onboarding-continue"]', title: "Type the student's details", text: "Fill in the student's name above, then click Continue." };
+    if (ctx.page === "students") return { id: "student-add", target: '[data-action="add-student"]', title: "Add your first student", text: "Click Add Student." };
+    return { id: "students-page", target: '[data-nav="students"]', title: "First, add a student", text: "You need a student before you can make a report. Click Students." };
+  }
   if (ctx.hasReport) return { id: "done", title: "Your first report is done!", text: "The certificate was made for you. You can share it with the parents now.", final: true };
   if (!ctx.wizardOpen) return { id: "start", target: '[data-action="new-report"]', title: "Start here", text: "Click New report to make your first report." };
   if (ctx.step === 1 && !ctx.picked) return { id: "student", target: "#wizardModal .student-pick-list", title: "Pick your student", text: "Click the student you just coached." };
@@ -16,7 +23,8 @@ export function firstReportTourStep(ctx) {
   return { id: "remarks", target: '#wizardModal [data-action="wizard-generate"]', title: "Last step", text: "Write a short note for the parents above, then click Generate Final Report." };
 }
 
-const ORDER = ["start", "student", "student-next", "lesson", "summary", "remarks"];
+const STUDENT_ORDER = ["students-page", "student-add", "student-form", "student-save"];
+const REPORT_ORDER = ["start", "student", "student-next", "lesson", "summary", "remarks"];
 
 export function createFirstReportTour({ getContext, onEnd }) {
   let root = null;
@@ -25,6 +33,7 @@ export function createFirstReportTour({ getContext, onEnd }) {
   let lastStepId = "";
   let lastTarget = null;
   let frame = 0;
+  let order = REPORT_ORDER;
 
   function build() {
     root = document.createElement("div");
@@ -86,8 +95,8 @@ export function createFirstReportTour({ getContext, onEnd }) {
     if (changed) {
       root.querySelector(".frt-title").textContent = step.title;
       root.querySelector(".frt-text").textContent = step.text;
-      const index = ORDER.indexOf(step.id);
-      root.querySelector(".frt-count").textContent = step.final ? "All done" : `Your first report · ${Math.min(index + 1, ORDER.length)} of ${ORDER.length}`;
+      const index = order.indexOf(step.id);
+      root.querySelector(".frt-count").textContent = step.final ? "All done" : `Your first report · ${Math.max(1, index + 1)} of ${order.length}`;
       root.querySelector(".frt-done").hidden = !step.final;
       root.querySelector(".frt-skip").hidden = !!step.final;
       bubble.classList.remove("is-in");
@@ -129,6 +138,7 @@ export function createFirstReportTour({ getContext, onEnd }) {
     if (root) return schedule();
     build();
     lastStepId = "";
+    order = getContext().hasStudents ? REPORT_ORDER : [...STUDENT_ORDER, ...REPORT_ORDER];
     observer = new MutationObserver(schedule);
     observer.observe(document.getElementById("app") || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
     window.addEventListener("resize", schedule);

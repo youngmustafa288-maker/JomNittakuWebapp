@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createDashboardStatePayload, createReportDriveRepository, normalizeReportRecord } from "./report-drive.js";
 import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
 import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
+import { mountSportScene, LOGIN_SPORTS } from "./sport-scenes.js";
 import { createCoachOnboarding, needsCoachOnboarding, pendingSetupItems, normalizeSkipped, SETUP_ITEM_LABELS, setupItemIcon } from "./coach-onboarding.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
@@ -128,10 +129,29 @@ export function initApp(config = {}) {
     }
     // The old "Passion · Focus · Excellent" tagline is no longer printed.
     const FOOTER_TAGLINE = /^\s*Passion\s*·\s*Focus\s*·\s*Ex\w*\s*$/i;
+    const TEMPLATE_FOOTER_TEXT = "DAO SPORTS METHOD\nCHARACTER TRANSFORMATION THROUGH SPORTS";
     function footerTextForCentre(text) {
       const centre = certificateCentreName();
-      const value = String(text || "") === DEFAULT_FOOTER_TEXT && centre ? centre.toUpperCase() : String(text || "");
+      let value = String(text || "");
+      if (centre && value === DEFAULT_FOOTER_TEXT) value = centre.toUpperCase();
+      else if (centre && value === TEMPLATE_FOOTER_TEXT) value = `${centre.toUpperCase()}\nCHARACTER TRANSFORMATION THROUGH SPORTS`;
       return value.split(/\n+/).filter(line => !FOOTER_TAGLINE.test(line)).join("\n");
+    }
+    function certificateCentreLogo() {
+      return requestedCentre?.logo_url || "";
+    }
+    function certificateCentreSport() {
+      const sport = String(requestedCentre?.sport || "").trim();
+      return /^other$/i.test(sport) ? "" : sport;
+    }
+    // Default heading words become the centre's own: its name instead of
+    // "Dao Sports Method" and its sport in "<SPORT> TRAINING". Words a coach
+    // typed themselves are kept.
+    function headingTextForCentre(layer) {
+      const text = String(layer.text ?? "");
+      if (layer.id === "brand-name" && text === ARTWORK_EDITABLE_TEXT["brand-name"] && certificateCentreName()) return certificateCentreName();
+      if (layer.id === "brand-subtitle" && text === ARTWORK_EDITABLE_TEXT["brand-subtitle"] && certificateCentreSport()) return `${certificateCentreSport().toUpperCase()} TRAINING`;
+      return text;
     }
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -258,14 +278,16 @@ export function initApp(config = {}) {
       uploadPhoto: file => uploadProfileImage(file, "coach", getOnboardingCoach().id),
       saveProfile: values => saveOnboardingProfile(values),
       currentTemplateId: () => getReportLayout(getOnboardingCoach()).templateId,
-      applyTemplate: templateId => applyOnboardingTemplate(templateId),
+      applyTemplate: (templateId, brand) => applyOnboardingTemplate(templateId, brand),
       currentQr: () => getOnboardingQr(),
       coachPageUrl: () => { const coach = getOnboardingCoach(); return coach ? coachPublicUrl(coach) : ""; },
       linkPlatform: url => linkPlatform(url),
       renderQrCertificate: ({ visible, url }) => renderOnboardingCertificate(getReportLayout(getOnboardingCoach() || {}).templateId, "final", "cob-cert-qr", { qrVisible: visible, qrUrl: url }),
       applyQr: values => applyOnboardingQr(values),
       qrDataUrl: link => getQrCodeLib().then(QRCode => QRCode.toDataURL(link, { width: 320, margin: 2, errorCorrectionLevel: "M" })),
-      renderCertificate: (templateId, mode, previewId) => renderOnboardingCertificate(templateId, mode, previewId),
+      renderCertificate: (templateId, mode, previewId, brand) => renderOnboardingCertificate(templateId, mode, previewId, brand ? { brand } : null),
+      currentBrand: () => getOnboardingBrand(),
+      afterCertificateRender: () => { fitCustomCertificateHeadingText(); hydrateQrImages(); },
       addStudent: values => addOnboardingStudent(values),
       saveProgress: progress => saveOnboardingProgress(progress),
       finish: () => { state.ui.page = "overview"; persist(); },
@@ -430,10 +452,29 @@ export function initApp(config = {}) {
       reportLayoutEditing = prior; selectedReportOverlay = selection;
       return html;
     }
+    // "Photo frames" tool: show/hide each photo, labels, frame shape and colour.
+    function renderPhotoFramesPanel(layout, compact = false) {
+      const frames = normalizePhotoFrames(layout.photoFrames);
+      const shown = id => layout.layers.find(layer => layer.id === id)?.visible !== false;
+      const toggle = (id, label) => `<label class="studio-frame-toggle"><input type="checkbox" data-action="studio-frame-photo" data-photo="${id}" ${shown(id) ? "checked" : ""}><span>${label}</span></label>`;
+      return `${compact ? `<strong>Photo frames</strong><p class="studio-frame-intro">How the student and coach photos look on every report.</p>` : `<div class="studio-panel-title"><h3>Photo frames</h3><p>How the student and coach photos look on every report.</p></div>`}
+        <div class="studio-frame-group">
+          ${toggle("student-photo", "Student photo")}
+          ${toggle("coach-photo", "Coach photo")}
+          <label class="studio-frame-toggle"><input type="checkbox" data-action="studio-frame-labels" ${frames.labels ? "checked" : ""}><span>Show labels</span></label>
+        </div>
+        <p class="studio-frame-subtitle">Frame shape</p>
+        <div class="studio-frame-shapes" role="radiogroup" aria-label="Frame shape">${Object.entries(PHOTO_FRAME_SHAPES).map(([id, name]) => `<button type="button" role="radio" aria-checked="${frames.shape === id}" class="${frames.shape === id ? "is-active" : ""}" data-action="studio-frame-shape" data-shape="${id}"><i class="studio-shape-icon is-${id}" aria-hidden="true"></i>${name}</button>`).join("")}</div>
+        <p class="studio-frame-subtitle">Frame colour</p>
+        <div class="studio-frame-colours" role="radiogroup" aria-label="Frame colour">${Object.entries(PHOTO_FRAME_COLOURS).map(([id, [name, colour]]) => `<button type="button" role="radio" aria-checked="${frames.colour === id}" aria-label="${name}" title="${name}" class="${frames.colour === id ? "is-active" : ""} ${id === "none" ? "is-none" : ""}" style="--swatch:${colour}" data-action="studio-frame-colour" data-colour="${id}"></button>`).join("")}</div>
+        <p class="studio-frame-tip">Drag a photo on the certificate to move it, or pull its corner to resize.</p>`;
+    }
+
     function renderStudioPanel(coach) {
       const layout = getReportLayout(coach);
       if (certificateEditorTool === "templates") return `<div class="studio-panel-title"><h3>Templates</h3></div><div class="studio-mini-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="${layout.templateId===t.id?'active':''}" data-studio-template="${escapeHtml(t.id)}"><span class="studio-mini-thumb">${renderStudioMini(t.id)}</span><strong>${escapeHtml(t.name)}</strong>${layout.templateId===t.id?studioIcon('check'):''}</button>`).join('')}</div><button class="studio-panel-upload" data-action="studio-upload-background">${studioIcon('upload')}Upload design</button>`;
       if (certificateEditorTool === "qr") { const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false; return `<div class="studio-panel-title"><h3>Add QR</h3></div><button class="${qrHidden?'primary-btn studio-btn studio-full':'studio-panel-upload'}" data-action="studio-toggle-qr">${qrHidden?'Add QR':'Hide QR'}</button>`; }
+      if (certificateEditorTool === "frames") return renderPhotoFramesPanel(layout);
       if (certificateEditorTool === "uploads") return `<div class="studio-panel-title"><h3>Photos</h3></div><button class="studio-dropzone" data-action="studio-upload-picture">${studioIcon('upload')}<strong>Upload photo</strong><small>PNG, JPG, WebP · 5 MB</small></button><div class="studio-photo-targets"><button data-action="studio-upload-student" aria-label="Upload student photo">Student</button><button data-action="studio-upload-coach" aria-label="Upload coach photo">Coach</button></div>${layout.uploads.length?`<div class="studio-asset-grid">${layout.uploads.map(a=>`<button data-studio-asset="${escapeHtml(a.id)}" aria-label="Add ${escapeHtml(a.name)}"><img src="${escapeHtml(a.source)}" alt="${escapeHtml(a.name)}"><span>${escapeHtml(a.name)}</span></button>`).join('')}</div>`:'<div class="studio-empty-assets"><p>No photos</p></div>'}`;
       if (certificateEditorTool === "text") return `<div class="studio-panel-title"><h3>Text</h3></div><button class="studio-text-add" data-action="add-certificate-text">${studioIcon('plus')}Add text</button>`;
       return renderCertificateToolPanel(coach);
@@ -523,6 +564,11 @@ export function initApp(config = {}) {
           layout.qrUrl=value;layout.layers.find(l=>l.id==='qr').visible=true;selectedReportOverlay='qr';
         }
         if(action==='studio-toggle-qr'){const layer=layout.layers.find(l=>l.id==='qr');layer.visible=layer.visible===false;selectedReportOverlay='qr';}
+        let frameToast='';
+        if(action==='studio-frame-photo'){const id=trigger?.dataset.photo;const layer=layout.layers.find(l=>l.id===id);if(layer){layer.visible=layer.visible===false;selectedReportOverlay=layer.visible===false?'':id;frameToast=`${id==='student-photo'?'Student':'Coach'} photo ${layer.visible===false?'hidden':'shown'}`;}}
+        if(action==='studio-frame-labels'){const frames=normalizePhotoFrames(layout.photoFrames);layout.photoFrames={...frames,labels:!frames.labels};frameToast=layout.photoFrames.labels?'Labels shown':'Labels hidden';}
+        if(action==='studio-frame-shape'){const shape=trigger?.dataset.shape;layout.photoFrames={...normalizePhotoFrames(layout.photoFrames),shape};frameToast='Frame shape updated';}
+        if(action==='studio-frame-colour'){const colour=trigger?.dataset.colour;layout.photoFrames={...normalizePhotoFrames(layout.photoFrames),colour};frameToast='Frame colour updated';}
         if(action==='studio-reset-layout'){
           if(!window.confirm('Put every item back in its original place and show the QR code? Your text and logo are kept.'))return;
           coach.reportLayout=resetLayoutPositions(layout);selectedReportOverlay='';
@@ -538,7 +584,7 @@ export function initApp(config = {}) {
           layout.variants={...layout.variants,[layout.templateId]:layoutSnapshot(layout)};
         }
         coach.reportLayout=layout;
-        if(await saveReportLayout(coach)) studioToast(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?(layout.layers.find(l=>l.id==='qr')?.visible===false?'QR hidden':'QR added'):'Saved');
+        if(await saveReportLayout(coach)) studioToast(frameToast||(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?(layout.layers.find(l=>l.id==='qr')?.visible===false?'QR hidden':'QR added'):'Saved'));
       } catch(error){studioToast(error.message || 'Unable to save. Please try again.');}
     }
 
@@ -736,6 +782,18 @@ export function initApp(config = {}) {
       };
     }
 
+    // Photo frames: how the student and coach photos look on the certificate.
+    const PHOTO_FRAME_SHAPES = { rounded: "Rounded", square: "Square", circle: "Circle" };
+    const PHOTO_FRAME_COLOURS = { light: ["Light", "#d5d9e0"], white: ["White", "#ffffff"], red: ["Red", "#c81e45"], navy: ["Navy", "#162a4a"], gold: ["Gold", "#c9a96b"], none: ["None", "transparent"] };
+    function normalizePhotoFrames(value) {
+      const frames = value && typeof value === "object" ? value : {};
+      return {
+        shape: PHOTO_FRAME_SHAPES[frames.shape] ? frames.shape : "rounded",
+        colour: PHOTO_FRAME_COLOURS[frames.colour] ? frames.colour : "light",
+        labels: frames.labels !== false
+      };
+    }
+
     function normalizeReportLayout(saved = {}) {
       saved = moveSummarySections(upgradeCertificateFonts(foldAccidentalDesignCopy(saved)));
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
@@ -775,6 +833,7 @@ export function initApp(config = {}) {
           }))
         : [];
       return { ...keyed, layers, uploads, editorVersion: 2, fontVersion: 4,
+        photoFrames: normalizePhotoFrames(saved?.photoFrames),
         templateId: String(saved?.templateId || "classic"),
         baseTemplateId: ["classic","performance","heritage"].includes(saved?.baseTemplateId) ? saved.baseTemplateId : (["performance","heritage"].includes(saved?.templateId) ? saved.templateId : "classic"),
         designName: String(saved?.designName || "Classic").slice(0,80),
@@ -1477,7 +1536,7 @@ export function initApp(config = {}) {
         dataVersion: 3,
         auth: { role: null, coachId: null, userId: null, centreId: null, email: "" },
         ui: { page: "overview", avatarMenuOpen: false, reportViewId: null, adminToast: "" },
-        adminProfile: { fullName: "JomNittaku Admin", photo: "" },
+        adminProfile: { fullName: "Centre Admin", photo: "" },
         centreProfile: { links: [] },
         driveConnection: null,
         devCentres: [],
@@ -1612,13 +1671,16 @@ export function initApp(config = {}) {
       };
     }
 
-    function renderTemplatePhoto(photo, label) {
+    function renderTemplatePhoto(photo, label, frames = null) {
+      const frame = normalizePhotoFrames(frames);
+      const colour = PHOTO_FRAME_COLOURS[frame.colour][1];
+      const frameStyle = frame.colour === "light" ? "" : frame.colour === "none" ? "border-color:transparent;" : `border:0.45cqw solid ${colour};`;
       return `
-        <div class="template-photo-card">
-          <div class="template-photo-frame">
+        <div class="template-photo-card is-${frame.shape}${frame.labels ? "" : " no-label"}">
+          <div class="template-photo-frame" style="${frameStyle}">
             <img class="template-photo" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
           </div>
-          <div class="template-photo-label">${label}</div>
+          ${frame.labels ? `<div class="template-photo-label">${label}</div>` : ""}
         </div>
       `;
     }
@@ -1700,8 +1762,8 @@ export function initApp(config = {}) {
             ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
             ${renderEditableOverlay("coach", escapeHtml(data.session.coachName), layout.coach, "white-space:nowrap;")}
 
-            ${renderEditablePhoto("student-photo", layout.layers.find(l=>l.id==="student-photo")?.source || data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"))}
-            ${renderEditablePhoto("coach-photo", layout.layers.find(l=>l.id==="coach-photo")?.source || data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"))}
+            ${renderEditablePhoto("student-photo", layout.layers.find(l=>l.id==="student-photo")?.source || data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"), layout.photoFrames)}
+            ${renderEditablePhoto("coach-photo", layout.layers.find(l=>l.id==="coach-photo")?.source || data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"), layout.photoFrames)}
 
             ${layout.baseTemplateId === "classic" ? REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
@@ -1903,11 +1965,13 @@ export function initApp(config = {}) {
           // a new cache key only for this layer so updated deployments do not
           // display the previous certification seal from browser cache.
           const assetVersion = layer.id === "certification-badge" ? 2 : 1;
-          const source = layer.source || `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=${assetVersion}`;
+          // The default logo slot shows the centre's own logo when it has one.
+          const centreLogo = layer.id === "brand-logo-art" && !layer.source ? certificateCentreLogo() : "";
+          const source = layer.source || centreLogo || `${REPORT_TEMPLATE_LAYER_ROOT}/${encodeURIComponent(layer.id)}.png?v=${assetVersion}`;
           const zIndex = Number(layer.zIndex) || 2;
           // Preserve the supplied TTAM logo proportions. The remaining
           // artwork slices continue to fill their pre-cut template geometry.
-          const objectFit = layer.objectFit || (layer.id === "certification-badge" || layer.source ? "contain" : "fill");
+          const objectFit = layer.objectFit || (layer.id === "certification-badge" || layer.source || centreLogo ? "contain" : "fill");
           const imageTarget = reportLayoutEditing && layer.type === "image" && layer.id !== "qr" && layer.locked !== true
             ? `data-certificate-image-target tabindex="0" role="button" aria-label="Replace image in ${escapeHtml(layer.name || layer.id)}"`
             : "";
@@ -1933,7 +1997,7 @@ export function initApp(config = {}) {
               const scale = Math.max(0.4, Math.min(1, 8.5 / Math.max(1, title.trim().length)));
               return `<span class="template-footer-title" style="font-size:${(3.5 * scale).toFixed(2)}cqw">${escapeHtml(title)}</span>${subtitleParts.length ? `<span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>` : ""}`;
             })()
-          : escapeHtml(layer.text || "");
+          : escapeHtml(isEditableHeading ? headingTextForCentre(layer) : (layer.text || ""));
         const isSelected = reportLayoutEditing && selectedReportOverlay === layer.id;
         const objectTools = reportLayoutEditing && isSelected && isCustomText ? renderCertificateObjectTools(layer) : "";
         const innerContent = isCustomText ? `<span class="template-custom-layer-content">${content}</span>` : content;
@@ -2292,22 +2356,50 @@ export function initApp(config = {}) {
       return sortReportsDesc(reports);
     }
 
+    // Light login screen: the centre's sport plays softly in the background
+    // and the sign-in card floats in front with the centre's logo on top.
+    function loginScreen(inner, extraClass = "") {
+      const sport = requestedCentre?.sport || "";
+      return `<section class="login-screen has-scene ${extraClass}"><div class="sport-scene" data-sport-scene="${escapeHtml(sport)}" aria-hidden="true"></div>${inner}</section>`;
+    }
+
+    function loginLogoBadge() {
+      const logo = requestedCentre?.logo_url || "/Logo_with_Changes_made.png";
+      const alt = requestedCentre ? `${requestedCentre.name} logo` : "JomNittaku logo";
+      return `<div class="login-logo-badge"><img src="${escapeHtml(logo)}" alt="${escapeHtml(alt)}"></div>`;
+    }
+
+    let stopLoginScene = null;
+    function mountLoginScene() {
+      const host = document.querySelector("[data-sport-scene]");
+      if (stopLoginScene) { stopLoginScene(); stopLoginScene = null; }
+      if (host) stopLoginScene = mountSportScene(host, host.dataset.sportScene);
+    }
+
+    // The centre's logo (set by the dev account), or its initials.
+    function sidebarBrandMark() {
+      const logo = requestedCentre?.logo_url || "";
+      if (logo) return `<span class="sidebar-brand-mark has-logo" aria-hidden="true"><img src="${escapeHtml(logo)}" alt=""></span>`;
+      const name = requestedCentre?.name || "JomNittaku";
+      return `<span class="sidebar-brand-mark" aria-hidden="true">${escapeHtml(initials(name))}</span>`;
+    }
+
     function renderLogin() {
-      const loginLogo = requestedCentre?.logo_url || "/Logo_with_Changes_made.png";
-      const loginLogoAlt = requestedCentre ? `${requestedCentre.name} logo` : "Dao Sports Method table tennis logo";
-      return `
-        <section class="login-screen">
-          <div class="login-panel">
-            <div class="brand-lockup">
-              <div class="brand-logo-crop">
-                <img class="brand-logo ${requestedCentre?.logo_url ? "centre-logo-overlay" : ""}" src="${escapeHtml(loginLogo)}" alt="${escapeHtml(loginLogoAlt)}">
-              </div>
-              <p class="brand-system-title">Coach Training Reporting System</p>
-              <div class="brand-copy">
-                <h1>${escapeHtml(requestedCentre?.name || "JomNittaku")}</h1>
-              </div>
+      const name = requestedCentre?.name || "JomNittaku";
+      const sport = requestedCentre?.sport && !/^other$/i.test(requestedCentre.sport) ? requestedCentre.sport : "";
+      return loginScreen(`
+          <div class="login-panel login-card">
+            ${loginLogoBadge()}
+            <div class="login-card-head">
+              <h1>${escapeHtml(name)}</h1>
+              <p>${escapeHtml([sport, "Coach Training Reporting System"].filter(Boolean).join(" · "))}</p>
             </div>
             <form class="login-form">
+              <button class="google-btn" type="button" data-action="sign-in-google" ${isSigningIn ? "disabled" : ""}>
+                <span class="google-mark" aria-hidden="true">G</span>
+                Continue with Google
+              </button>
+              <div class="login-divider"><span>or sign in with email</span></div>
               <div class="field">
                 <label for="loginEmail">Email</label>
                 <input id="loginEmail" class="text-input" type="email" autocomplete="email" required>
@@ -2318,15 +2410,8 @@ export function initApp(config = {}) {
               </div>
               ${loginError ? `<p class="form-error" role="alert">${escapeHtml(loginError)}</p>` : ""}
               <button class="primary-btn" type="submit" ${isSigningIn ? "disabled" : ""}>${isSigningIn ? "Signing in..." : "Sign in"}</button>
-              <div class="login-divider"><span>or</span></div>
-              <button class="google-btn" type="button" data-action="sign-in-google" ${isSigningIn ? "disabled" : ""}>
-                <span class="google-mark" aria-hidden="true">G</span>
-                Continue with Google
-              </button>
             </form>
-          </div>
-        </section>
-      `;
+          </div>`);
     }
 
     // Shown when someone is signed in, but opened another centre's link.
@@ -2342,9 +2427,9 @@ export function initApp(config = {}) {
       const primary = isStaff
         ? `<a class="primary-btn" href="/">Go to dashboard</a>`
         : home ? `<a class="primary-btn" href="/centre/${encodeURIComponent(home.slug)}">Go to ${escapeHtml(home.name || "my centre")}</a>` : "";
-      return `
-        <section class="login-screen">
-          <div class="login-panel wrong-centre-panel">
+      return loginScreen(`
+          <div class="login-panel login-card wrong-centre-panel">
+            ${loginLogoBadge()}
             <div class="brand-copy">
               <h1>${escapeHtml(requestedCentre?.name || "Centre")}</h1>
               <p class="muted">${escapeHtml(message)}</p>
@@ -2354,8 +2439,7 @@ export function initApp(config = {}) {
               ${primary}
               <button type="button" class="secondary-btn" data-action="logout">Sign out</button>
             </div>
-          </div>
-        </section>`;
+          </div>`);
     }
 
     function renderCentreActivationGate() {
@@ -2368,11 +2452,11 @@ export function initApp(config = {}) {
       return `<div class="centre-lock-overlay"><div class="centre-lock-modal" role="dialog" aria-modal="true" aria-labelledby="centre-lock-title"><div class="brand-logo-crop centre-lock-logo"><img class="brand-logo" src="${escapeHtml(logo)}" alt="${escapeHtml(requestedCentre?.name || "Centre")} logo"></div><p class="brand-system-title">Centre activation required</p><h2 id="centre-lock-title">Unlock ${escapeHtml(requestedCentre?.name || "your centre")}</h2><p class="muted">You are signed in. Enter the activation key provided by your administrator to unlock the dashboard.</p><form class="login-form" data-centre-activation-form><div class="field"><label for="centreActivationCode">Activation key</label><input id="centreActivationCode" class="text-input" autocomplete="one-time-code" autocapitalize="characters" required></div>${activationError ? `<p class="form-error" role="alert">${escapeHtml(activationError)}</p>` : ""}<button class="primary-btn" type="submit" ${isActivatingCentre ? "disabled" : ""}>${isActivatingCentre ? "Activating..." : "Unlock dashboard"}</button><button class="ghost-btn" type="button" data-action="centre-activation-logout">Sign out</button></form></div></div>`;
     }
 
-    function renderEditablePhoto(id, photo, label, layer) {
+    function renderEditablePhoto(id, photo, label, layer, frames = null) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY[id];
       const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;`;
-      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label, frames)}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
     }
 
     function renderEditableQr(layer, qrUrl) {
@@ -2883,8 +2967,8 @@ export function initApp(config = {}) {
                   <div class="report-brand">
                     <div class="brand-mark" style="width:64px;height:64px;border-radius:22px;"></div>
                     <div class="report-brand-copy">
-                      <small>Dao Sports Method</small>
-                      <h2>TABLE TENNIS TRAINING</h2>
+                      <small>${escapeHtml(certificateCentreName() || "Coach Training Reports")}</small>
+                      <h2>${escapeHtml(certificateCentreSport() ? `${certificateCentreSport().toUpperCase()} TRAINING` : "TRAINING REPORT")}</h2>
                       <p>Character Transformation thru Sports</p>
                     </div>
                   </div>
@@ -2931,7 +3015,7 @@ export function initApp(config = {}) {
                   <div class="footer-badge"></div>
                   <div class="footer-center">
                     <strong>${coach.centreContact}</strong><br>
-                    Dao Sports Method
+                    ${escapeHtml(certificateCentreName() || "Training Report")}
                   </div>
                     <div>
                     </div>
@@ -2983,6 +3067,7 @@ export function initApp(config = {}) {
         const layout=getReportLayout(coach);
         return `<div class="certificate-tool-panel"><strong>Templates</strong><div class="certificate-template-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="certificate-template-choice ${layout.templateId===t.id?'is-selected':''}" data-studio-template="${escapeHtml(t.id)}"><span class="certificate-template-thumbnail">${renderStudioMini(t.id)}</span><span>${escapeHtml(t.name)}</span></button>`).join('')}</div><button class="certificate-panel-action certificate-template-upload" data-action="studio-upload-background">Upload design</button></div>`;
       }
+      if (certificateEditorTool === "frames") return `<div class="certificate-tool-panel studio-frames-panel">${renderPhotoFramesPanel(getReportLayout(coach), true)}</div>`;
       if (certificateEditorTool === "qr") {
         const layout=getReportLayout(coach);
         const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false;
@@ -3520,7 +3605,7 @@ export function initApp(config = {}) {
             </div>
             <div class="step-dots" aria-label="Centre setup progress"><span class="step-dot ${step === 1 ? "active" : ""}"></span><span class="step-dot ${step === 2 ? "active" : ""}"></span><span class="step-dot ${step === 3 ? "active" : ""}"></span></div>
             ${step === 1 ? `
-              <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-sport">Sport</label><select id="centre-onboarding-sport" class="text-input"><option value="">Select sport</option>${["Badminton", "Football", "Table tennis", "Tennis", "Basketball", "Other"].map(sport => `<option ${values.sport === sport ? "selected" : ""}>${sport}</option>`).join("")}</select></div></div>
+              <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-sport">Sport</label><select id="centre-onboarding-sport" class="text-input"><option value="">Select sport</option>${LOGIN_SPORTS.map(sport => `<option ${values.sport === sport ? "selected" : ""}>${sport}</option>`).join("")}</select></div></div>
               <div class="onboarding-actions end"><button class="primary-btn" data-action="centre-onboarding-continue">Continue →</button></div>
             ` : step === 2 ? `
               <div class="onboarding-grid"><div class="field"><label for="centre-onboarding-name">Centre name</label><input id="centre-onboarding-name" class="text-input" autocomplete="organization" value="${escapeHtml(values.name)}" required></div><div class="field"><label for="centre-onboarding-logo">Centre logo <span class="muted">(optional)</span></label><input id="centre-onboarding-logo" class="text-input" type="file" accept="image/*"><small class="muted">PNG or JPG, up to 5 MB.</small>${values.logoPreview ? `<img class="dev-centre-logo-preview onboarding-logo-preview" src="${escapeHtml(values.logoPreview)}" alt="Selected centre logo preview">` : ""}</div></div>
@@ -3600,8 +3685,8 @@ export function initApp(config = {}) {
         <div class="dashboard">
           <aside class="sidebar">
             <div class="sidebar-brand">
-              <span class="sidebar-brand-mark" aria-hidden="true">JN</span>
-              <span class="sidebar-brand-copy"><strong>JomNittaku</strong><small>${escapeHtml(sidebarProfile.name || centreName)}</small></span>
+              ${sidebarBrandMark()}
+              <span class="sidebar-brand-copy"><strong>${escapeHtml(centreName)}</strong><small>${escapeHtml(sidebarProfile.name || "Coach Training Reports")}</small></span>
             </div>
             <nav class="sidebar-nav" aria-label="Dashboard sections">
               ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${sidebarNavIcon(page)}<span class="sidebar-nav-label">${label}</span><span class="sidebar-nav-short" aria-hidden="true">${{ "certificate-design": "Certificates", "centre-settings": "Settings", "centre-coaches": "Coaches" }[page] || label}</span></button>`).join("")}
@@ -3620,7 +3705,7 @@ export function initApp(config = {}) {
           <main class="main">
             <header class="page-header">
               <div class="header-copy">
-                <span class="mobile-brand" aria-hidden="true"><span class="sidebar-brand-mark">JN</span>JomNittaku</span>
+                <span class="mobile-brand" aria-hidden="true">${sidebarBrandMark()}${escapeHtml(centreName)}</span>
                 <h1>${escapeHtml(pageTitle)} ${state.ui.page === "overview" ? centreSportEmojiMarkup(requestedCentre?.sport) : ""}</h1>
                 <p>${escapeHtml(pageSubtitle)}</p>
               </div>
@@ -3750,10 +3835,14 @@ export function initApp(config = {}) {
       const label = String(sport || "Not set");
       const key = label.toLowerCase().replace(/\s+/g, " ").trim();
       const emoji = key.includes("badminton") ? "🏸"
-        : key.includes("football") ? "⚽"
+        : key.includes("football") || key.includes("futsal") ? "⚽"
         : key.includes("table tennis") ? "🏓"
-        : key.includes("tennis") ? "🎾"
-        : key.includes("basketball") ? "🏀"
+        : key.includes("pickleball") ? "🏓"
+        : key.includes("tennis") || key.includes("squash") ? "🎾"
+        : key.includes("basketball") || key.includes("netball") ? "🏀"
+        : key.includes("volleyball") || key.includes("takraw") ? "🏐"
+        : key.includes("hockey") ? "🏑"
+        : key.includes("swim") ? "🏊"
         : "🏅";
       const emojiMarkup = options.emoji === false ? "" : `<span class="centre-sport-emoji" aria-hidden="true">${emoji}</span>`;
       return `<span class="centre-sport">${emojiMarkup}<span>${escapeHtml(label)}</span></span>`;
@@ -3815,7 +3904,7 @@ export function initApp(config = {}) {
       return `<div class="onboarding-backdrop open"><div class="onboarding-modal dev-centre-detail-modal" role="dialog" aria-modal="true" aria-labelledby="dev-centre-detail-title">
         <div class="onboarding-head"><div class="section-title"><h2 id="dev-centre-detail-title">${escapeHtml(centre.name)} details</h2><p>Review centre access, licensing, and activation state.</p></div><button class="close-btn" data-action="close-centre-details" aria-label="Close details">X</button></div>
         <div class="review-card dev-centre-detail-grid">
-          <div class="review-row"><strong>Sport</strong><span>${escapeHtml(centre.sport || "Not set")}</span></div>
+          <div class="review-row"><strong>Sport</strong><span class="dev-sport-edit"><select id="dev-centre-sport" class="text-input" aria-label="Centre sport">${LOGIN_SPORTS.map(option => `<option ${String(centre.sport || "").toLowerCase() === option.toLowerCase() ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}${centre.sport && !LOGIN_SPORTS.some(option => option.toLowerCase() === String(centre.sport).toLowerCase()) ? `<option selected>${escapeHtml(centre.sport)}</option>` : ""}</select><button class="secondary-btn" data-action="update-centre-sport" data-centre-id="${centre.id}">Save sport</button></span></div>
           <div class="review-row"><strong>Centre logo</strong><span>${centre.logo_url ? "Configured" : "Not configured"}</span></div>
           ${centre.logo_url ? `<div class="review-row"><strong>Logo preview</strong><img class="dev-centre-logo-preview" src="${escapeHtml(centre.logo_url)}" alt="${escapeHtml(centre.name)} logo preview"></div>` : ""}
           <div class="review-row"><strong>Centre link</strong><a href="${escapeHtml(loginUrl)}" target="_blank" rel="noreferrer">${escapeHtml(loginUrl)}</a></div>
@@ -3963,9 +4052,12 @@ export function initApp(config = {}) {
     }
 
     function render() {
+      // Browser tab shows the centre's name on its own pages.
+      const pageTitle = requestedCentre?.name ? `${requestedCentre.name} · Coach Reports` : "JomNittaku · Coach Reports";
+      if (document.title !== pageTitle) document.title = pageTitle;
       const app = document.getElementById("app");
       if (!authReady) {
-        app.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading JomNittaku...</div>';
+        app.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading…</div>';
         return;
       }
       // A re-render replaces the whole subtree, so anything the user has
@@ -4000,12 +4092,13 @@ export function initApp(config = {}) {
       }
       const publicCoach = publicMatch ? getCoachBySlug(decodeURIComponent(publicMatch[1])) : null;
       if (centreRouteLoadFailed) {
-        app.innerHTML = '<main class="login-screen"><div class="login-panel"><div class="brand-copy"><h1>Couldn\'t load this centre</h1><p class="muted">Check your internet connection and try again.</p></div><div class="wrong-centre-actions"><button type="button" class="primary-btn" data-action="reload-page">Try again</button></div></div></main>';
+        app.innerHTML = loginScreen('<div class="login-panel login-card"><div class="brand-copy"><h1>Couldn\'t load this centre</h1><p class="muted">Check your internet connection and try again.</p></div><div class="wrong-centre-actions"><button type="button" class="primary-btn" data-action="reload-page">Try again</button></div></div>');
         attachEvents();
         return;
       }
       if (centreRouteUnavailable) {
-        app.innerHTML = '<main class="login-screen"><div class="login-panel"><div class="brand-copy"><h1>Centre login unavailable</h1><p class="muted">This centre link is invalid, inactive, or temporarily unavailable.</p></div></div></main>';
+        app.innerHTML = loginScreen('<div class="login-panel login-card"><div class="brand-copy"><h1>Centre not found</h1><p class="muted">This centre link is invalid or no longer active. Check the link with your centre.</p></div></div>');
+        mountLoginScene();
         return;
       }
       const isMatchingCentreSession = requestedCentre
@@ -4163,6 +4256,7 @@ export function initApp(config = {}) {
     }
 
     function attachEvents() {
+      mountLoginScene();
       if (!appEventsBound) {
         const app = document.getElementById("app");
         app.addEventListener("click", event => {
@@ -4186,6 +4280,10 @@ export function initApp(config = {}) {
           }
         });
         app.addEventListener("change", event => {
+          if (event.target.matches('input[data-action^="studio-frame-"]')) {
+            handleStudioAction(event.target.dataset.action, event.target);
+            return;
+          }
           if (event.target.matches('input[name="reportTemplate"]')) {
             selectDraftTemplate(event.target.value);
             return;
@@ -4736,6 +4834,19 @@ export function initApp(config = {}) {
         }
       })();
       if (action === "centre-activation-logout") return logout();
+      if (action === "update-centre-sport") {
+        const centreId = event.currentTarget.dataset.centreId;
+        const sport = document.getElementById("dev-centre-sport")?.value || "";
+        if (!centreId || !sport) return;
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Saving…";
+        invokePrivileged("dev-console", { action: "update-centre-sport", centre_id: centreId, sport })
+          .then(() => refreshPrivilegedState())
+          .catch(error => alert(error.message || "Unable to update the sport."))
+          .finally(() => render());
+        return;
+      }
       if (action === "upload-centre-logo") {
         const input = document.getElementById("hiddenCentreLogoUpload");
         if (input) { input.dataset.centreId = event.currentTarget.dataset.centreId; input.click(); }
@@ -5726,10 +5837,12 @@ export function initApp(config = {}) {
           });
 
           clonedReportTemplate.querySelectorAll(".template-photo-frame").forEach(frame => {
+            // Circle frames stay round in the download (square box).
+            const frameHeight = frame.closest(".template-photo-card.is-circle") ? photoCardWidthPx : photoCardHeightPx;
             frame.style.width = "100%";
-            frame.style.height = `${photoCardHeightPx}px`;
-            frame.style.minHeight = `${photoCardHeightPx}px`;
-            frame.style.maxHeight = `${photoCardHeightPx}px`;
+            frame.style.height = `${frameHeight}px`;
+            frame.style.minHeight = `${frameHeight}px`;
+            frame.style.maxHeight = `${frameHeight}px`;
           });
 
           clonedReportTemplate.querySelectorAll(".template-photo").forEach((photo, index) => {
@@ -6046,6 +6159,17 @@ export function initApp(config = {}) {
         if (qr) qr.visible = options.qrVisible !== false;
         if (options.qrUrl && validStudioQrUrl(options.qrUrl)) layout.qrUrl = options.qrUrl;
       }
+      // "Make it yours": the coach's own heading and slogan replace the defaults
+      // on the example. Empty boxes keep the default words.
+      const brand = options?.brand || null;
+      if (brand && !base) {
+        const heading = String(brand.heading || "").trim();
+        const slogan = String(brand.slogan || "").trim();
+        layout.layers.forEach(layer => {
+          if (layer.id === "brand-name" && heading) layer.text = heading;
+          if (layer.id === "brand-tagline" && slogan) layer.text = slogan;
+        });
+      }
       if (mode === "example") {
         const qr = layout.layers.find(layer => layer.id === "qr");
         if (qr) qr.visible = true;
@@ -6067,8 +6191,8 @@ export function initApp(config = {}) {
         previewCoach: {
           name: coachName,
           branch: certificateCentreName() || "Your Centre",
-          centreContact: coach?.phone || "+60 12-345 6789",
-          branchAddress: certificateCentreName() || "Your Centre",
+          centreContact: String(brand?.contact || "").trim() || coach?.centreContact || coach?.phone || "+60 12-345 6789",
+          branchAddress: String(brand?.address || "").trim() || (coach?.branchAddress && coach.branchAddress !== "Centre address" ? coach.branchAddress : "") || certificateCentreName() || "Your Centre",
           photo: final && coach?.photo ? coach.photo : onboardingIllustration("coach")
         },
         previewStudent: { name: "Mei Sim", photo: onboardingIllustration("student") },
@@ -6141,12 +6265,49 @@ export function initApp(config = {}) {
       persist();
     }
 
-    async function applyOnboardingTemplate(templateId) {
+    // What the coach already has, to prefill "Make it yours". Default words
+    // come back as empty so the box shows the default as its placeholder.
+    function getOnboardingBrand() {
+      const coach = getOnboardingCoach();
+      const layout = getReportLayout(coach || {});
+      const text = id => {
+        const layer = layout.layers.find(item => item.id === id);
+        const value = String(layer?.text ?? "").trim();
+        return value && value !== ARTWORK_EDITABLE_TEXT[id] ? value : "";
+      };
+      return {
+        heading: text("brand-name"),
+        slogan: text("brand-tagline"),
+        contact: coach?.centreContact && coach.centreContact !== "+60 12-345 6789" ? coach.centreContact : "",
+        address: coach?.branchAddress && coach.branchAddress !== "Centre address" ? coach.branchAddress : "",
+        defaults: {
+          heading: certificateCentreName() || ARTWORK_EDITABLE_TEXT["brand-name"],
+          slogan: ARTWORK_EDITABLE_TEXT["brand-tagline"],
+          contact: "+60 12-345 6789",
+          address: certificateCentreName() || "Your centre address"
+        }
+      };
+    }
+
+    async function applyOnboardingTemplate(templateId, brand = null) {
       const coach = getOnboardingCoach();
       if (!coach) throw new Error("Your coach profile could not be found.");
       const current = getReportLayout(coach);
       const variants = { ...(current.variants || {}), [current.templateId]: layoutSnapshot(current) };
-      const next = normalizeReportLayout(variants[templateId] || defaultStudioLayout(templateId));
+      const next = current.templateId === templateId ? normalizeReportLayout(layoutSnapshot(current)) : normalizeReportLayout(variants[templateId] || defaultStudioLayout(templateId));
+      // Save "Make it yours" words into the design. Empty boxes leave the
+      // default words, which still turn into the centre's name and sport.
+      if (brand) {
+        const heading = String(brand.heading || "").trim();
+        const slogan = String(brand.slogan || "").trim();
+        next.layers = next.layers.map(layer => {
+          if (layer.id === "brand-name") return { ...layer, text: heading || ARTWORK_EDITABLE_TEXT["brand-name"] };
+          if (layer.id === "brand-tagline") return { ...layer, text: slogan || ARTWORK_EDITABLE_TEXT["brand-tagline"] };
+          return layer;
+        });
+        if (String(brand.contact || "").trim()) coach.centreContact = String(brand.contact).trim();
+        if (String(brand.address || "").trim()) coach.branchAddress = String(brand.address).trim();
+      }
       coach.reportLayout = { ...next, variants, designs: current.designs || [], uploads: current.uploads || [] };
       if (isCertificatePreview) return;
       const saved = await saveCoachRecord(coach);

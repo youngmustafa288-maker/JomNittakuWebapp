@@ -41,3 +41,21 @@
 .certificate-design-page.studio-page.studio-simple .studio-template-card:hover{transform:none;box-shadow:none}
 .certificate-design-page.studio-page.studio-simple .studio-card-preview{background:#f2f4f7}
 .certificate-design-page.studio-page.studio-simple .report-layout-toolbar.is-empty:before{content:'Select an element'}
+
+/* Photo frames panel */
+.studio-frame-group{display:grid;gap:2px;margin-bottom:6px}
+.studio-frame-toggle{display:flex;align-items:center;gap:9px;padding:9px 2px;border-bottom:1px solid #eef0f3;font-size:11px;color:#41516a;cursor:pointer}
+.studio-frame-toggle input{width:15px;height:15px;accent-color:#c81e45;margin:0}
+.studio-frame-subtitle{font-size:10px;color:#929ba9;margin:16px 0 8px}
+.studio-frame-shapes{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.studio-frame-shapes button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 2px;background:#fff;border:1px solid #e5e8ed;border-radius:6px;font-size:9px;color:#41516a;cursor:pointer}
+.studio-frame-shapes button.is-active{border-color:#d59aa8;background:#fff9fa;color:#c81e45}
+.studio-shape-icon{width:18px;height:18px;border:2px solid currentColor;border-radius:4px;display:block}
+.studio-shape-icon.is-square{border-radius:0}
+.studio-shape-icon.is-circle{border-radius:50%}
+.studio-frame-colours{display:flex;flex-wrap:wrap;gap:8px}
+.studio-frame-colours button{width:24px;height:24px;border-radius:50%;padding:0;border:2px solid #fff;background:var(--swatch);box-shadow:0 0 0 1px #d9dfe7;cursor:pointer}
+.studio-frame-colours button.is-none{background:repeating-linear-gradient(45deg,#fff 0 3px,#e5e8ed 3px 6px)}
+.studio-frame-colours button.is-active{box-shadow:0 0 0 2px #c81e45}
+.studio-frame-intro,.studio-frame-tip{font-size:10px;line-height:1.6;color:#929ba9;margin:4px 0 12px}
+.studio-frame-tip{margin-top:18px;padding-top:12px;border-top:1px solid #eef0f3}

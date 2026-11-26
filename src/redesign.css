@@ -1160,3 +1160,9 @@
 /* QR panel: one button, red when it adds the QR */
 .certificate-tool-panel .certificate-panel-action.is-primary { background: #e11d48; border-color: #e11d48; color: #fff; }
 .certificate-tool-panel .certificate-panel-action.is-primary:hover { background: #be123c; }
+
+/* Centre logo in the sidebar and phone header */
+.sidebar-brand-mark.has-logo,
+.dashboard .sidebar-brand-mark.has-logo,
+.mobile-brand .sidebar-brand-mark.has-logo { background: #fff; padding: 2px; overflow: hidden; border: 1px solid rgba(27, 42, 74, .12); }
+.sidebar-brand-mark.has-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }

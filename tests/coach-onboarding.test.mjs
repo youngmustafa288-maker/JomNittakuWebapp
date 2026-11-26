@@ -72,6 +72,8 @@ function fakeDeps(coach, extra = {}) {
     saveProfile: async () => {},
     currentTemplateId: () => "classic",
     applyTemplate: async () => {},
+    currentBrand: () => ({ heading: "", slogan: "", contact: "", address: "", defaults: { heading: "LiverPool", slogan: "Character Transformation thru Sports", contact: "+60 12-345 6789", address: "LiverPool" } }),
+    afterCertificateRender: () => {},
     currentQr: () => ({ mode: "page", url: "", links: [] }),
     coachPageUrl: () => "https://example.test/coach/ahmad",
     linkPlatform: url => /wa\.me/.test(url) ? { id: "whatsapp", label: "WhatsApp", badge: "WA", color: "#25d366" } : { id: "website", label: "Website", badge: "W", color: "#c81e45" },
@@ -137,4 +139,16 @@ test("migrations mark existing coaches done and allow the new step and skip list
   assert.match(second, /onboarding_skipped text\[\]/);
   assert.match(second, /between 0 and 6/);
   assert.match(second, /grant update \(onboarding_skipped\)/);
+});
+
+test("design step offers Make it yours with the centre defaults as hints", () => {
+  const coach = { id: "c9", name: "Ahmad", onboarding_step: 3, onboarding_completed_at: null };
+  const seen = [];
+  const html = createCoachOnboarding(fakeDeps(coach, { renderCertificate: (id, mode, _pid, brand) => { seen.push([mode, brand]); return `<div data-cert="${id}-${mode}"></div>`; } })).render();
+  assert.match(html, /Make it yours/);
+  assert.match(html, /placeholder="LiverPool"/);
+  assert.match(html, /data-cob-input="brand.slogan"/);
+  // The example gets the coach's words; the base template does not.
+  assert.ok(seen.some(([mode, brand]) => mode === "example" && brand && "heading" in brand));
+  assert.ok(seen.some(([mode, brand]) => mode === "base" && !brand));
 });

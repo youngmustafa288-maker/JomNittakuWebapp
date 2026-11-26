@@ -140,6 +140,10 @@ export function createCoachOnboarding(deps) {
     profile: { name: "", phone: "", photo: "" },
     templateId: "",
     certView: "base",
+    brand: { heading: "", slogan: "", contact: "", address: "" },
+    brandDefaults: {},
+    brandTimer: null,
+    mineOpen: false,
     qr: { mode: "page", url: "", links: [] },
     student: { name: "", age: "", parentHp: "" },
     newStudentId: "",
@@ -155,6 +159,10 @@ export function createCoachOnboarding(deps) {
     ui.skipped = normalizeSkipped(coach.onboarding_skipped);
     ui.profile = { name: coach.name && coach.name !== "Coach" ? coach.name : "", phone: coach.phone || "", photo: coach.photo || "" };
     ui.templateId = deps.currentTemplateId() || deps.templates[0]?.id || "classic";
+    const brand = deps.currentBrand ? deps.currentBrand() : {};
+    ui.brand = { heading: brand.heading || "", slogan: brand.slogan || "", contact: brand.contact || "", address: brand.address || "" };
+    ui.brandDefaults = brand.defaults || {};
+    ui.mineOpen = Object.values(ui.brand).some(Boolean);
     const qr = deps.currentQr();
     const links = (qr.links || []).map((link, index) => ({ id: link.id || `link-${index + 1}`, title: link.title || "", url: link.url || "" }));
     ui.qr = { mode: qr.mode || "page", url: qr.url || "", links: links.length ? links : [{ id: "link-1", title: "", url: "" }] };
@@ -228,7 +236,7 @@ export function createCoachOnboarding(deps) {
     }
     return run(async () => {
       if (current === "profile") await deps.saveProfile({ ...ui.profile, name: ui.profile.name.trim(), phone: ui.profile.phone.trim() });
-      if (current === "design" && ui.templateId !== deps.currentTemplateId()) await deps.applyTemplate(ui.templateId);
+      if (current === "design") await deps.applyTemplate(ui.templateId, { ...ui.brand });
       if (current === "qr") {
         await deps.applyQr({
           mode: ui.qr.mode,
@@ -364,8 +372,8 @@ export function createCoachOnboarding(deps) {
             </figure>
             <figure class="cob-cert is-example">
               <span class="cob-badge">Example</span>
-              <div class="cob-paper">${deps.renderCertificate(templateId, "example", "cob-cert-example")}</div>
-              <figcaption><strong>Example</strong><small>With photos, lesson notes and a QR code added.</small></figcaption>
+              <div class="cob-paper" data-cob-example>${deps.renderCertificate(templateId, "example", "cob-cert-example", ui.brand)}</div>
+              <figcaption><strong>Example</strong><small>With your words, photos, lesson notes and a QR code.</small></figcaption>
             </figure>
           </div>
         </div>
@@ -374,6 +382,7 @@ export function createCoachOnboarding(deps) {
   }
 
   function screenDesign() {
+    const mineOpen = ui.mineOpen;
     const chosen = deps.templates.find(template => template.id === ui.templateId) || deps.templates[0];
     return `
       <h2 id="cob-title" tabindex="-1">Choose your certificate design</h2>
@@ -381,6 +390,16 @@ export function createCoachOnboarding(deps) {
       <div class="cob-templates" role="radiogroup" aria-label="Certificate design">
         ${deps.templates.map(template => `<button type="button" role="radio" aria-checked="${template.id === chosen.id}" class="${template.id === chosen.id ? "is-on" : ""}" data-cob-template="${esc(template.id)}"><i style="background:${esc(template.color)}"></i>${esc(template.name)}</button>`).join("")}
       </div>
+      <section class="cob-mine ${mineOpen ? "is-open" : ""}">
+        <button type="button" class="cob-mine-toggle" data-cob="toggle-mine" aria-expanded="${mineOpen}" aria-controls="cobMinePanel">Make it yours <span>(optional)</span></button>
+        <div id="cobMinePanel" ${mineOpen ? "" : "hidden"}>
+        <div class="cob-mine-grid">
+          ${[["heading", "Heading", "cobBrandHeading"], ["slogan", "Slogan", "cobBrandSlogan"], ["contact", "Contact number", "cobBrandContact"], ["address", "Address", "cobBrandAddress"]].map(([key, label, id]) => `
+            <div class="cob-field"><label for="${id}">${label}</label><input id="${id}" class="text-input" data-cob-input="brand.${key}" ${key === "contact" ? 'type="tel"' : ""} placeholder="${esc(ui.brandDefaults[key] || "")}" value="${esc(ui.brand[key])}"></div>`).join("")}
+        </div>
+        <p class="cob-note">The example updates as you type. Empty boxes keep the default.</p>
+        </div>
+      </section>
       ${compare(chosen.id)}
       <p class="cob-note">You can edit your design anytime in Certificate Design.</p>`;
   }
@@ -560,6 +579,11 @@ export function createCoachOnboarding(deps) {
       if (action === "next") next();
       else if (action === "back") back();
       else if (action === "skip") skip();
+      else if (action === "toggle-mine") {
+        ui.mineOpen = !ui.mineOpen;
+        if (ui.mineOpen) ui.focusId = "cobBrandHeading";
+        deps.render();
+      }
       else if (action === "add-link") {
         ui.qr.links.push({ id: `link-${Date.now()}`, title: "", url: "" });
         ui.focusId = `cobLinkUrl${ui.qr.links.length - 1}`;
@@ -574,6 +598,26 @@ export function createCoachOnboarding(deps) {
         const [group, key] = input.dataset.cobInput.split(".");
         ui[group][key] = input.value;
         if (ui.error) { ui.error = ""; shell.querySelector(".cob-error").textContent = ""; }
+        if (group === "brand") {
+          clearTimeout(ui.brandTimer);
+          ui.brandTimer = setTimeout(() => {
+            const paper = shell.querySelector("[data-cob-example]");
+            if (!paper) return;
+            paper.innerHTML = deps.renderCertificate(ui.templateId, "example", "cob-cert-example", ui.brand);
+            // On phones only one certificate shows at a time: switch to the example.
+            const compareEl = shell.querySelector(".cob-compare");
+            if (compareEl && ui.certView !== "example") {
+              ui.certView = "example";
+              compareEl.classList.replace("is-base", "is-example");
+              compareEl.querySelectorAll("[data-cob-view]").forEach(tab => tab.setAttribute("aria-selected", String(tab.dataset.cobView === "example")));
+              compareEl.querySelectorAll(".cob-dots i").forEach((dot, index) => dot.classList.toggle("is-on", index === 1));
+            }
+            deps.afterCertificateRender?.();
+            paper.classList.remove("is-updated");
+            void paper.offsetWidth;
+            paper.classList.add("is-updated");
+          }, 200);
+        }
         if (group === "qr") {
           clearTimeout(ui.qrTimer);
           ui.qrTimer = setTimeout(() => updateQrPreview(shell), 250);

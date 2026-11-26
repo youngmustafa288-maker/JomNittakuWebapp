@@ -9,7 +9,7 @@ import { initApp } from "./legacy-app.js";
 
 const root = document.querySelector("#app");
 root.classList.add("app-shell");
-root.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading JomNittaku...</div>';
+root.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading…</div>';
 
 const runtimeConfig = window.__APP_CONFIG__ || {
   supabaseUrl: "https://vjhjvcvmtfpkoyjxfmxu.supabase.co",

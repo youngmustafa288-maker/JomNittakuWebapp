@@ -1013,10 +1013,10 @@ export function initApp(config = {}) {
 
     function reportSaveMessage() {
       if (isCertificatePreview) return "Preview";
-      if (dirtyReportDraftId === wizardDraftId || draftSaveTimer) return reportLocalStore ? "Saving on this device…" : "Saving to Google Drive…";
-      const pending = hybridPending.find(item => item.id === wizardDraftId);
-      if (pending) return `Saved on this device · ${pending.blocked ? "sync needs attention" : "Drive sync pending"}`;
-      return reportLocalStore && wizardDraftId && !hybridSyncedDraftIds.has(wizardDraftId) ? "Not saved yet" : "Saved to Google Drive";
+      // Drafts save on this device first and sync to Drive in the background.
+      // Coaches only need to know whether their work is saved.
+      if (dirtyReportDraftId === wizardDraftId || draftSaveTimer) return "Saving…";
+      return "Saved";
     }
 
     function applyHybridSnapshot(snapshot) {
@@ -1026,15 +1026,9 @@ export function initApp(config = {}) {
     }
 
     function hybridNoticeContent() {
-      if (!hybridWorkspace && !hybridLocalError) return "";
-      // Only speak up when something needs attention: unsynced drafts, an
-      // error, or a list shown from this device because Drive is unavailable.
-      if (!hybridPending.length && !hybridLocalError && !reportUsingLocalCache) return "";
-      const message = hybridPending.length
-        ? `${hybridPending.length} draft(s) saved on this device. ${navigator.onLine === false ? "Offline. " : ""}Google Drive sync pending.`
-        : reportUsingLocalCache ? "Showing recent reports saved on this device. The cached list may be out of date while Google Drive is unavailable or loading." : "Recent reports are cached on this device. Google Drive holds the permanent copies.";
-      const error = hybridLocalError || hybridPending.find(item => item.error)?.error;
-      return `<p>${escapeHtml(message)}</p>${error ? `<p class="is-error">${escapeHtml(error)}</p>` : ""}<div class="profile-actions">${hybridPending.length ? '<button class="secondary-btn" data-action="retry-local-sync">Sync now</button><button class="ghost-btn" data-action="export-local-drafts">Export local drafts</button>' : ''}${hybridPending.filter(item => item.blocked).slice(0, 5).map(item => `<button class="secondary-btn" data-action="copy-local-draft" data-draft-id="${escapeHtml(item.id)}">Save ${escapeHtml(state.reportDrafts[item.id]?.ref || "draft")} as a separate copy</button>`).join("")}</div>`;
+      // Background Drive sync is silent; only a broken device store is shown.
+      if (!hybridLocalError) return "";
+      return `<p class="is-error">${escapeHtml(hybridLocalError)}</p>`;
     }
 
     function renderHybridNotice() { return `<div class="report-hybrid-notice" data-hybrid-notice role="status">${hybridNoticeContent()}</div>`; }
@@ -1082,7 +1076,7 @@ export function initApp(config = {}) {
       reportWriteRevision += 1;
       const workspace = !isCertificatePreview && record.recordType === "draft" ? ensureHybridWorkspace() : null;
       if (workspace) {
-        updateReportSaveStatus("Saving on this device…");
+        updateReportSaveStatus("Saving…");
         try {
           const saved = await workspace.queue(record, { baseRecord: remoteReportDrafts.get(record.id) || null });
           if (workspace !== hybridWorkspace) return saved;
@@ -1485,6 +1479,24 @@ export function initApp(config = {}) {
         month: "short",
         year: "numeric"
       });
+    }
+
+    // Hour / minute / AM-PM picker so times read "3:25 PM", not "03:25 PM".
+    // The hidden #wizardTime keeps the 24-hour value the draft stores.
+    function renderTimePicker(time24) {
+      const [rawHour, rawMinute] = String(time24 || "").split(":").map(Number);
+      const hour24 = Number.isFinite(rawHour) ? rawHour : 9;
+      const minute = Number.isFinite(rawMinute) ? rawMinute : 0;
+      const hour12 = hour24 % 12 || 12;
+      const pm = hour24 >= 12;
+      const options = (values, selected, label) => values.map(value => `<option value="${value}" ${value === selected ? "selected" : ""}>${label(value)}</option>`).join("");
+      return `<div class="time-picker" data-time-picker>
+        <input id="wizardTime" type="hidden" value="${escapeHtml(time24 || "")}">
+        <select class="text-input" data-time-part="hour" aria-label="Hour">${options(Array.from({ length: 12 }, (_, i) => i + 1), hour12, value => value)}</select>
+        <span aria-hidden="true">:</span>
+        <select class="text-input" data-time-part="minute" aria-label="Minute">${options(Array.from({ length: 60 }, (_, i) => i), minute, value => String(value).padStart(2, "0"))}</select>
+        <select class="text-input" data-time-part="ampm" aria-label="AM or PM">${options(["AM", "PM"], pm ? "PM" : "AM", value => value)}</select>
+      </div>`;
     }
 
     function formatTime(time24) {
@@ -3200,7 +3212,7 @@ export function initApp(config = {}) {
                 </div>
                 <div class="field">
                   <label for="wizardTime">Time</label>
-                  <input id="wizardTime" class="text-input" type="time" value="${draft.time}">
+                  ${renderTimePicker(draft.time)}
                 </div>
                 <div class="field">
                   <label for="wizardLessonNumber">Lesson Number</label>
@@ -3212,16 +3224,16 @@ export function initApp(config = {}) {
             <div class="wizard-panel ${step === 3 ? "active" : ""}">
               <div class="split-grid">
                 <div class="field">
+                  <label for="wizardBeforeCoaching">Before Coaching – Skill Level</label>
+                  <textarea id="wizardBeforeCoaching" class="text-area" placeholder="One bullet point per line">${draft.summary.beforeCoaching || ""}</textarea>
+                </div>
+                <div class="field">
                   <label for="wizardWhatTaught">What Was Taught Today</label>
                   <textarea id="wizardWhatTaught" class="text-area" placeholder="One bullet point per line">${draft.summary.whatTaught || ""}</textarea>
                 </div>
                 <div class="field">
                   <label for="wizardAfterTraining">After Training – Areas of Improvement</label>
                   <textarea id="wizardAfterTraining" class="text-area" placeholder="One bullet point per line">${draft.summary.afterTraining || ""}</textarea>
-                </div>
-                <div class="field">
-                  <label for="wizardBeforeCoaching">Before Coaching – Skill Level</label>
-                  <textarea id="wizardBeforeCoaching" class="text-area" placeholder="One bullet point per line">${draft.summary.beforeCoaching || ""}</textarea>
                 </div>
                 <div class="field">
                   <label for="wizardNextLesson">Next Recommended Lesson</label>
@@ -4275,6 +4287,14 @@ export function initApp(config = {}) {
         render();
       });
 
+      document.querySelectorAll("[data-time-picker]").forEach(picker => picker.addEventListener("change", () => {
+        const part = name => picker.querySelector(`[data-time-part="${name}"]`)?.value;
+        const hour12 = Number(part("hour")) || 12;
+        const hour24 = (hour12 % 12) + (part("ampm") === "PM" ? 12 : 0);
+        const hidden = picker.querySelector("#wizardTime");
+        hidden.value = `${String(hour24).padStart(2, "0")}:${String(Number(part("minute")) || 0).padStart(2, "0")}`;
+        hidden.dispatchEvent(new Event("input"));
+      }));
       ["wizardDate", "wizardTime", "wizardLessonNumber", "wizardWhatTaught", "wizardAfterTraining", "wizardBeforeCoaching", "wizardNextLesson", "wizardRemarks"].forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -4964,7 +4984,7 @@ export function initApp(config = {}) {
       dirtyReportDraftId = draft.id;
       const revision = (draftRevisions.get(draft.id) || 0) + 1;
       draftRevisions.set(draft.id, revision);
-      updateReportSaveStatus(isCertificatePreview ? "Preview" : reportLocalStore ? "Saving on this device…" : "Unsaved changes · saving to Google Drive…");
+      updateReportSaveStatus(isCertificatePreview ? "Preview" : "Saving…");
       clearTimeout(draftSaveTimer);
       draftSaveTimer = window.setTimeout(() => {
         draftSaveTimer = null;

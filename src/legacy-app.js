@@ -5809,6 +5809,15 @@ export function initApp(config = {}) {
         visible: true,
         order: index + 1
       }));
+      const typedLinks = links.filter(link => link.title || link.url);
+      const validLinks = publicCoachLinks(links);
+      const skipped = typedLinks.length - validLinks.length;
+      const useExamples = !validLinks.length;
+      const exampleLinks = [
+        { title: "Facebook", url: "https://facebook.com/", visible: true, order: 1 },
+        { title: "WhatsApp me", url: "https://wa.me/", visible: true, order: 2 },
+        { title: "Instagram", url: "https://instagram.com/", visible: true, order: 3 }
+      ];
       const page = {
         name: coach.name,
         photo: coachPhoto || onboardingIllustration("coach"),
@@ -5816,8 +5825,14 @@ export function initApp(config = {}) {
         bio: coach.bio || "",
         centre_name: requestedCentre?.name || "",
         centre_logo: requestedCentre?.logo_url || "",
-        links
+        links: useExamples ? exampleLinks : validLinks
       };
+      const notes = [
+        coachPhoto ? "" : "Sample photo shown: add your own photo in Profile.",
+        useExamples ? "Example links shown: add your own links and press Save." : "",
+        !useExamples && skipped > 0 ? `${skipped} link${skipped === 1 ? " is" : "s are"} hidden because ${skipped === 1 ? "it is" : "they are"} not a full web address (https://...).` : "",
+        !useExamples ? "Remember to press Save." : ""
+      ].filter(Boolean).join(" ");
       const overlay = document.createElement("div");
       overlay.className = "qr-preview-overlay";
       overlay.setAttribute("role", "dialog");
@@ -5826,7 +5841,7 @@ export function initApp(config = {}) {
       overlay.innerHTML = `
         <div class="qr-preview-box">
           <div class="qr-preview-top"><strong>How QR looks like</strong><button type="button" class="qr-preview-close" aria-label="Close preview">&times;</button></div>
-          <p class="qr-preview-note">This is the page that opens when a parent scans the QR on a report.${coachPhoto ? "" : " Sample photo shown: add your own photo in Profile."}${links.length ? " Remember to press Save." : ""}</p>
+          <p class="qr-preview-note">This is the page that opens when a parent scans the QR on a report. ${escapeHtml(notes)}</p>
           <div class="qr-preview-phone"><div class="qr-preview-screen">${renderCoachLinkPage({ status: "ready", page })}</div></div>
         </div>`;
       const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };

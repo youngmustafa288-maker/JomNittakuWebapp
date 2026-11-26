@@ -580,3 +580,22 @@ test('summary sections: Before/After on the left, Taught/Next on the right; old 
   assert.deepEqual([moved.afterTraining.left, moved.afterTraining.top], [11.8, 52.8]);
   assert.deepEqual(h.api.normalizeReportLayout(moved).layers.find(x => x.id === 'before-title').top, 42);
 });
+
+test('an old accidental "— my design" copy is folded back into its template; real copies stay', () => {
+  const h = harness();
+  const base = h.api.normalizeReportLayout();
+  const moved = { ...base, layers: base.layers.map(l => l.id === 'brand-name' ? { ...l, left: 40 } : l) };
+  const stale = { ...base, layers: base.layers.map(l => l.id === 'brand-name' ? { ...l, left: 5 } : l) };
+  const { designs: _d, variants: _v, uploads: _u, ...snap } = stale;
+  const saved = { ...moved, templateId: 'design-abc', designName: 'Classic — my design', baseTemplateId: 'classic',
+    designs: [{ id: 'design-abc', name: 'Classic — my design' }, { id: 'design-keep', name: 'Classic copy' }],
+    variants: { classic: { ...snap, templateId: 'classic' }, 'design-abc': { ...moved, templateId: 'design-abc' } } };
+  const out = h.api.normalizeReportLayout(saved);
+  assert.equal(out.templateId, 'classic');
+  assert.equal(out.designName, 'Classic');
+  assert.equal(out.layers.find(l => l.id === 'brand-name').left, 40);
+  assert.deepEqual(out.designs.map(d => d.id), ['design-keep']);
+  assert.equal(out.variants['design-abc'], undefined);
+  const copy = h.api.normalizeReportLayout({ ...saved, templateId: 'design-keep', designName: 'Classic copy' });
+  assert.equal(copy.templateId, 'design-keep');
+});

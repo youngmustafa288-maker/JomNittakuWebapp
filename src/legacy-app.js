@@ -1497,6 +1497,12 @@ export function initApp(config = {}) {
       return { name: coach.name, photo: coach.photo };
     }
 
+    function formatShortDate(date) {
+      const value = new Date(date + "T00:00:00");
+      const sameYear = value.getFullYear() === new Date().getFullYear();
+      return value.toLocaleDateString("en-GB", sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+    }
+
     function formatDate(date) {
       return new Date(date + "T00:00:00").toLocaleDateString("en-MY", {
         day: "numeric",
@@ -1765,7 +1771,8 @@ export function initApp(config = {}) {
     function statusBadge(status) {
       const normalizedStatus = REPORT_STATUSES.includes(status) || status === "Draft" ? status : "Pending";
       const key = normalizedStatus === "Generated" ? "green" : normalizedStatus === "Draft" ? "grey" : "amber";
-      return `<span class="badge ${key}"><span class="dot"></span>${normalizedStatus}</span>`;
+      const label = normalizedStatus === "Generated" ? "Sent" : normalizedStatus;
+      return `<span class="badge ${key}"><span class="dot"></span>${label}</span>`;
     }
 
     function avatarMarkup(name, photo, size = "avatar") {
@@ -2211,14 +2218,39 @@ export function initApp(config = {}) {
       const reportsThisMonth = getVisibleReportsForMonth(CURRENT_MONTH_PREFIX).length;
       const reportsLastMonth = getVisibleReportsForMonth(getPreviousMonthPrefix()).length;
       const activeStudents = getVisibleStudents().filter(student => student.status !== "Inactive").length;
+      const reportsLoading = reportStoreStatus === "loading" || reportUsingLocalCache;
+      const draftCount = getVisibleDrafts().length;
+      const totalReports = getVisibleReports().length;
       const stats = [
-        { title: "Reports Created This Month", value: reportStoreStatus === "loading" || reportUsingLocalCache ? "…" : reportsThisMonth, footnote: reportStoreStatus === "loading" || reportUsingLocalCache ? "Checking Google Drive totals…" : formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
-        { title: "Total Students", value: activeStudents, footnote: "" }
+        { title: "Reports this month", value: reportsLoading ? "…" : reportsThisMonth, footnote: reportsLoading ? "Checking Google Drive totals…" : `Last month: ${reportsLastMonth}`, tone: reportsThisMonth >= reportsLastMonth ? "positive" : "" },
+        { title: "Drafts to finish", value: draftCount, footnote: draftCount ? "Finish and send to parents" : "All caught up", tone: draftCount ? "warn" : "" },
+        { title: "Active students", value: activeStudents, footnote: "" },
+        { title: "Total reports", value: reportsLoading ? "…" : totalReports, footnote: "All time" }
       ];
       if (state.auth.role === "admin") {
         stats.push({ title: "Total Coaches", value: coachAccountCount, footnote: "" });
       }
       return stats;
+    }
+
+    function getVisibleDrafts() {
+      return Object.values(state.reportDrafts || {})
+        .filter(draft => state.auth.role !== "coach" || draft.coachId === state.auth.coachId);
+    }
+
+    // Students with no report in the last 14 days (or none at all), oldest first.
+    function getStudentsNeedingReport(limit = 5) {
+      const lastByStudent = {};
+      getVisibleReports().forEach(report => {
+        if (!lastByStudent[report.studentId] || report.date > lastByStudent[report.studentId]) lastByStudent[report.studentId] = report.date;
+      });
+      const cutoff = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+      return getVisibleStudents()
+        .filter(student => student.status !== "Inactive")
+        .map(student => ({ student, last: lastByStudent[student.id] || "" }))
+        .filter(item => !item.last || item.last < cutoff)
+        .sort((a, b) => (a.last || "").localeCompare(b.last || ""))
+        .slice(0, limit);
     }
 
     function sortReportsDesc(reports) {
@@ -2366,6 +2398,19 @@ export function initApp(config = {}) {
       `;
     }
 
+    function syncReportStatusChips() {
+      const value = document.getElementById("reportsStatusFilter")?.value || "";
+      document.querySelectorAll("[data-report-status]").forEach(chip => {
+        const active = chip.dataset.reportStatus === value;
+        chip.classList.toggle("is-active", active);
+        chip.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
+    function plural(count, word) {
+      return `${count} ${word}${count === 1 ? "" : "s"}`;
+    }
+
     function sidebarNavIcon(page) {
       const paths = {
         overview: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -2373,7 +2418,7 @@ export function initApp(config = {}) {
         students: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.3 0 4 1.5 4.5 4"/>',
         coaches: '<circle cx="12" cy="7" r="3.5"/><path d="M5 21c.8-4 3.5-6.5 7-6.5s6.2 2.5 7 6.5"/><path d="M9 14.8l3 3 3-3"/>',
         "certificate-design": '<circle cx="12" cy="9" r="6"/><path d="M8.5 14L7 22l5-3 5 3-1.5-8"/>',
-        "centre-settings": '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+        "centre-settings": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
         "centre-coaches": '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4h5M16 8h5M17 12h4"/>'
       };
       return `<svg class="sidebar-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[page] || paths.overview}</svg>`;
@@ -2384,7 +2429,7 @@ export function initApp(config = {}) {
       return `
         <div class="topbar">
           <div class="topbar-actions">
-            ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report">Generate Report</button>` : ""}
+            ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn topbar-new-report" data-action="new-report" aria-label="New report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>New report</span></button>` : ""}
             <button class="avatar-btn" data-action="toggle-avatar-menu" ${profile.photo ? `style="background-image:url('${profile.photo}');"` : ""}>
               ${profile.photo ? "" : initials(profile.name)}
             </button>
@@ -2404,7 +2449,7 @@ export function initApp(config = {}) {
             <article class="stat-card">
               <h3>${stat.title}</h3>
               <div class="value">${stat.value}</div>
-              <div class="stat-footnote ${stat.tone || ""}">${stat.footnote || ""}</div>
+              <div class="stat-footnote ${stat.tone || ""}">${escapeHtml(String(stat.footnote || ""))}</div>
             </article>
           `).join("")}
         </section>
@@ -2419,13 +2464,13 @@ export function initApp(config = {}) {
           ${renderSetupReminders()}
           ${renderStats()}
           ${reportStoreStatus === "loading" ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive. You can use the dashboard while they load.</p>' : reportStoreError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)} <button class="plain-link" data-nav="reports">Open reports</button></p>` : ""}
+          <div class="overview-columns">
           <div class="table-card">
             <div class="table-topline">
               <div class="section-title">
-                <h2>Recent Reports</h2>
+                <h2>Recent reports</h2>
               </div>
-              <button class="plain-link table-title-link" data-nav="reports">View all <span aria-hidden="true">→</span></button>
-            </div>
+              <div class="overview-card-tools">
             <div class="overview-filter-bar" aria-label="Filter overview reports">
               <select id="overviewDateFilter" class="filter-select" aria-label="Overview date filter">
                 <option value="" ${overviewDateFilter === "" ? "selected" : ""}>All dates</option>
@@ -2448,37 +2493,56 @@ export function initApp(config = {}) {
                 <input id="overviewDateTo" class="text-input" type="date" value="${escapeHtml(overviewDateTo)}" aria-label="Overview end date">
               </div>
             </div>
+              <button class="plain-link table-title-link" data-nav="reports">View all <span aria-hidden="true">→</span></button>
+              </div>
+            </div>
             <div class="table-wrap">
-              <table>
+              <table class="compact-rows">
                 <thead>
                   <tr>
-                    <th>REF #</th>
-                    <th>STUDENT</th>
-                    <th>LESSON</th>
-                    <th>DATE & TIME</th>
-                    <th>REPORT STATUS</th>
+                    <th>Student</th>
+                    <th>Lesson</th>
+                    <th>Date</th>
+                    <th>Status</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${visibleReports.map(report => {
+                  ${visibleReports.length ? visibleReports.map(report => {
                     const student = getStudentById(report.studentId);
                     return `
                       <tr>
-                        <td>${report.ref}</td>
-                        <td>${student.name}</td>
-                        <td>Lesson ${report.lessonNumber}</td>
-                        <td>${formatDate(report.date)}, ${formatTime(report.time)}</td>
-                        <td>${statusBadge(report.status)}</td>
-                        <td><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report">→</button></td>
+                        <td class="cell-student"><div class="person-cell">${avatarMarkup(student?.name || "Student", student?.photo)}<span class="person-cell-copy"><strong>${escapeHtml(student?.name || "Student")}</strong><small class="row-sub">Lesson ${escapeHtml(report.lessonNumber)} · ${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}</small></span></div></td>
+                        <td class="cell-lesson">Lesson ${escapeHtml(report.lessonNumber)}</td>
+                        <td class="cell-date">${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}</td>
+                        <td class="cell-status">${statusBadge(report.status)}</td>
+                        <td class="cell-action"><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button></td>
                       </tr>
                     `;
-                  }).join("")}
+                  }).join("") : `<tr><td colspan="5" class="muted overview-empty">No reports yet. Tap Generate Report to make your first one.</td></tr>`}
                 </tbody>
               </table>
             </div>
           </div>
+          ${renderNeedsAttention()}
+          </div>
         </section>
+      `;
+    }
+
+    function renderNeedsAttention() {
+      if (state.auth.role === "dev") return "";
+      const items = getStudentsNeedingReport();
+      return `
+        <aside class="table-card needs-attention">
+          <div class="section-title"><h2>Needs attention</h2><p>Students due for a report.</p></div>
+          ${items.length ? items.map(({ student, last }) => `
+            <div class="needs-attention-row">
+              ${avatarMarkup(student.name, student.photo)}
+              <span class="needs-attention-copy"><strong>${escapeHtml(student.name)}</strong><small>${last ? `Last report ${escapeHtml(formatShortDate(last))}` : "No report yet"}</small></span>
+              <button class="secondary-btn" data-action="new-report">Report</button>
+            </div>`).join("") : `<p class="needs-attention-empty">All caught up. Every student has a recent report.</p>`}
+        </aside>
       `;
     }
 
@@ -2526,7 +2590,12 @@ export function initApp(config = {}) {
               <div class="profile-actions"><button class="secondary-btn" data-action="refresh-reports" ${reportLoadPromise ? "disabled" : ""}>${reportLoadPromise ? "Refreshing…" : "Refresh"}</button>${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}</div>
             </div>
             <div class="reports-filter-bar">
-              <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">
+              <label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input id="reportsSearch" class="search-input" type="search" placeholder="Search name or ref number" aria-label="Search reports"></label>
+              <div class="status-chips" role="group" aria-label="Filter by status">
+                <button type="button" class="status-chip is-active" data-report-status="" aria-pressed="true">All</button>
+                <button type="button" class="status-chip" data-report-status="Draft" aria-pressed="false">Drafts</button>
+                <button type="button" class="status-chip" data-report-status="Generated" aria-pressed="false">Sent</button>
+              </div>
               <select id="reportsStudentFilter" class="filter-select">
                 <option value="">All students</option>
                 ${studentOptions}
@@ -2549,22 +2618,22 @@ export function initApp(config = {}) {
                 <input id="reportsDateFrom" class="text-input" type="date" aria-label="From date">
                 <input id="reportsDateTo" class="text-input" type="date" aria-label="To date">
               </div>
-              <select id="reportsStatusFilter" class="filter-select">
+              <select id="reportsStatusFilter" class="filter-select status-filter-select" aria-label="Report status" tabindex="-1">
                 <option value="">All statuses</option>
-                <option value="Generated">Generated</option>
-                <option value="Draft">Draft</option>
+                <option value="Generated">Sent</option>
+                <option value="Draft">Drafts</option>
               </select>
             </div>
             <div class="table-wrap" style="margin-top:18px;">
-              <table id="reportsTable">
+              <table id="reportsTable" class="compact-rows">
                 <thead>
                   <tr>
-                    <th>REF #</th>
-                    <th>STUDENT</th>
-                    <th>COACH</th>
-                    <th>LESSON</th>
-                    <th>DATE & TIME</th>
-                    <th>REPORT STATUS</th>
+                    <th>Ref #</th>
+                    <th>Student</th>
+                    ${state.auth.role === "coach" ? "" : "<th>Coach</th>"}
+                    <th>Lesson</th>
+                    <th>Date</th>
+                    <th>Status</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -2630,11 +2699,11 @@ export function initApp(config = {}) {
               <button class="primary-btn" data-action="add-student">+ Add Student</button>
             </div>
             <div class="students-filter-bar">
-              <input id="studentSearch" class="search-input" type="search" placeholder="Search student">
+              <input id="studentSearch" class="search-input" type="search" placeholder="Search student" aria-label="Search students">
               ${filter}
             </div>
             <div class="table-wrap" style="margin-top:18px;">
-              <table id="studentsTable">
+              <table id="studentsTable" class="students-card-table">
                 <thead>
                   <tr>
                     <th>STUDENT</th>
@@ -3459,9 +3528,9 @@ export function initApp(config = {}) {
             ["overview", "Overview"],
             ["reports", "Reports"],
             ["students", "Students"],
-            ["certificate-design", "Certificate Design"]
+            ["certificate-design", "Certificates"]
           ];
-      navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Centre Links"]);
+      navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Settings"]);
       // Resolve the active page explicitly. The dev coach view is a separate
       // console surface and must never fall through to the dashboard overview.
       let pageContent;
@@ -3488,10 +3557,18 @@ export function initApp(config = {}) {
       }
       const centreName = requestedCentre?.name || "JomNittaku";
       const activeNav = navItems.find(([page]) => page === state.ui.page);
-      const pageTitle = state.ui.page === "overview" ? "Overview"
+      const firstName = String((state.auth.role === "dev" ? "" : getUserProfile().name) || "").trim().split(/\s+/)[0] || "Coach";
+      const hour = new Date().getHours();
+      const pageTitle = state.ui.page === "overview" ? `${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}, ${firstName}`
         : state.ui.page === "report-view" ? "Report"
         : state.ui.page === "profile" || state.ui.page === "settings" ? "Profile"
         : activeNav ? activeNav[1] : "Overview";
+      const pageSubtitle = state.ui.page === "overview" ? new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
+        : state.ui.page === "reports" ? `${plural(getVisibleReports().length, "report")} · ${plural(getVisibleDrafts().length, "draft")}`
+        : state.ui.page === "students" ? `${plural(getVisibleStudents().filter(student => student.status !== "Inactive").length, "active student")}`
+        : state.ui.page === "certificate-design" ? "Pick how your reports look to parents."
+        : state.ui.page === "centre-settings" && state.auth.role === "coach" ? "Storage, links and your setup guide."
+        : `${centreName} Coach Reporting System`;
       const sidebarProfile = state.auth.role === "dev" ? { name: "Developer", photo: "" } : getUserProfile();
       const sidebarPhoto = safeImageUrl(sidebarProfile.photo);
       return `
@@ -3504,9 +3581,15 @@ export function initApp(config = {}) {
             <nav class="sidebar-nav" aria-label="Dashboard sections">
               ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${sidebarNavIcon(page)}<span class="sidebar-nav-label">${label}</span><span class="sidebar-nav-short" aria-hidden="true">${{ "certificate-design": "Certificates", "centre-settings": "Settings", "centre-coaches": "Coaches" }[page] || label}</span></button>`).join("")}
             </nav>
-            <div class="sidebar-profile" aria-hidden="true">
-              <span class="sidebar-profile-avatar" ${sidebarPhoto ? `style="background-image:url('${escapeHtml(sidebarPhoto)}');"` : ""}>${sidebarPhoto ? "" : escapeHtml(initials(sidebarProfile.name || "Coach"))}</span>
-              <span class="sidebar-profile-copy"><strong>${escapeHtml(sidebarProfile.name || "Coach")}</strong><small>${escapeHtml(centreName)}</small></span>
+            <div class="sidebar-account">
+              <div class="avatar-dropdown sidebar-account-menu ${state.ui.avatarMenuOpen ? "" : "hidden"}">
+                ${state.auth.role === "dev" ? "" : `<button class="dropdown-item" data-action="open-profile">Profile</button>`}
+                <button class="dropdown-item" data-action="logout">Logout</button>
+              </div>
+              <button class="sidebar-profile" type="button" data-action="toggle-avatar-menu" aria-label="Account menu">
+                <span class="sidebar-profile-avatar" ${sidebarPhoto ? `style="background-image:url('${escapeHtml(sidebarPhoto)}');"` : ""}>${sidebarPhoto ? "" : escapeHtml(initials(sidebarProfile.name || "Coach"))}</span>
+                <span class="sidebar-profile-copy"><strong>${escapeHtml(sidebarProfile.name || "Coach")}</strong><small>${escapeHtml(centreName)}</small></span>
+              </button>
             </div>
           </aside>
           <main class="main">
@@ -3514,7 +3597,7 @@ export function initApp(config = {}) {
               <div class="header-copy">
                 <span class="mobile-brand" aria-hidden="true"><span class="sidebar-brand-mark">JN</span>JomNittaku</span>
                 <h1>${escapeHtml(pageTitle)} ${state.ui.page === "overview" ? centreSportEmojiMarkup(requestedCentre?.sport) : ""}</h1>
-                <p>${escapeHtml(centreName)} Coach Reporting System</p>
+                <p>${escapeHtml(pageSubtitle)}</p>
               </div>
               ${renderTopbar()}
             </header>
@@ -4240,6 +4323,14 @@ export function initApp(config = {}) {
         scheduleRender();
       }));
 
+      document.querySelectorAll("[data-report-status]").forEach(chip => {
+        chip.addEventListener("click", () => {
+          if (!reportsStatus) return;
+          reportsStatus.value = chip.dataset.reportStatus;
+          reportsStatus.dispatchEvent(new Event("change"));
+        });
+      });
+
       [reportsSearch, reportsDate, reportsStatus, reportsStudent, reportsMonth, reportsDay, reportsDateFrom, reportsDateTo].filter(Boolean).forEach(input => {
         input.addEventListener("input", scheduleReportsHydration);
         input.addEventListener("change", () => {
@@ -4825,6 +4916,7 @@ export function initApp(config = {}) {
       if (!tbody) return;
       const search = (document.getElementById("reportsSearch")?.value || "").trim().toLowerCase();
       const dateFilter = document.getElementById("reportsDateFilter")?.value || "";
+      syncReportStatusChips();
       const statusFilter = document.getElementById("reportsStatusFilter")?.value || "";
       const studentFilter = document.getElementById("reportsStudentFilter")?.value || "";
       const monthFilter = document.getElementById("reportsMonthFilter")?.value || "";
@@ -4861,13 +4953,15 @@ export function initApp(config = {}) {
         const coach = getCoachById(report.coachId);
         return `
           <tr>
-            <td>${escapeHtml(report.ref)}</td>
-            <td>${escapeHtml(student?.name || "Not selected")}</td>
-            <td>${escapeHtml(coach?.name || "Unknown")}</td>
-            <td>${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "—"}</td>
-            <td>${report.date ? `${formatDate(report.date)}, ${formatTime(report.time)}` : "—"}</td>
-            <td>${statusBadge(report.status)}</td>
-            <td><button class="icon-btn" data-action="${report.isDraft ? "continue-report-draft" : "view-report"}" data-${report.isDraft ? "draft" : "report"}-id="${escapeHtml(report.id)}" aria-label="${report.isDraft ? "Continue draft" : "View report"}">→</button></td>
+            <td class="cell-ref">${escapeHtml(report.ref)}</td>
+            <td class="cell-student"><div class="person-cell">${avatarMarkup(student?.name || "?", student?.photo)}<span class="person-cell-copy"><strong>${escapeHtml(student?.name || "Not selected")}</strong><small class="row-sub">${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "No lesson"}${report.date ? ` · ${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}` : ""}</small></span></div></td>
+            ${state.auth.role === "coach" ? "" : `<td class="cell-coach">${escapeHtml(coach?.name || "Unknown")}</td>`}
+            <td class="cell-lesson">${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "—"}</td>
+            <td class="cell-date">${report.date ? `${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}` : "—"}</td>
+            <td class="cell-status">${statusBadge(report.status)}</td>
+            <td class="cell-action">${report.isDraft
+              ? `<button class="primary-btn table-finish-btn" data-action="continue-report-draft" data-draft-id="${escapeHtml(report.id)}" aria-label="Continue draft">Finish</button>`
+              : `<button class="icon-btn" data-action="view-report" data-report-id="${escapeHtml(report.id)}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>`}</td>
           </tr>
         `;
       }).join("");
@@ -4950,31 +5044,38 @@ export function initApp(config = {}) {
         return coachScoped && coachMatch && searchMatch;
       });
 
+      const lastReportDateByStudent = {};
+      getVisibleReports().forEach(report => {
+        if (!lastReportDateByStudent[report.studentId] || report.date > lastReportDateByStudent[report.studentId]) lastReportDateByStudent[report.studentId] = report.date;
+      });
       tbody.innerHTML = visibleStudents.map(student => {
         const coach = getCoachById(student.coachId);
+        const last = lastReportDateByStudent[student.id];
         return `
-          <tr>
-            <td>
-              <div class="person-cell">
+          <tr class="student-card-row">
+            <td class="student-card" colspan="7">
+              <div class="student-card-top">
                 ${avatarMarkup(student.name, student.photo)}
-                <strong>${student.name}</strong>
+                <div class="student-card-name"><strong>${escapeHtml(student.name)}</strong><small>${student.parentHp ? escapeHtml(student.parentHp) : "No parent phone"}</small></div>
               </div>
-            </td>
-            ${state.auth.role === "admin" ? `<td>${coach.name}</td>` : ""}
-            <td>${student.lessons}</td>
-            <td>${student.parentHp}</td>
-            <td>
+              <dl class="student-card-facts">
+                <div><dt>Lessons</dt><dd>${escapeHtml(student.lessons)}</dd></div>
+                <div><dt>Last report</dt><dd>${last ? escapeHtml(formatShortDate(last)) : "—"}</dd></div>
+                ${state.auth.role === "admin" ? `<div><dt>Coach</dt><dd>${escapeHtml(coach?.name || "—")}</dd></div>` : ""}
+              </dl>
               <div class="photo-cell">
                 ${student.photo
-                  ? `<span class="badge green"><span class="dot"></span>Uploaded</span>`
-                  : `<button class="upload-chip" data-action="student-upload" data-student-id="${student.id}">+ Upload Photo</button>`}
+                  ? `<span class="badge green"><span class="dot"></span>Photo added</span>`
+                  : `<button class="upload-chip" data-action="student-upload" data-student-id="${student.id}">+ Upload photo</button>`}
+              </div>
+              <div class="student-card-actions">
+                <button class="secondary-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button>
+                ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report">New report</button>` : ""}
               </div>
             </td>
-            <td><span class="badge green"><span class="dot"></span>Active</span></td>
-            <td><button class="icon-btn table-edit-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button></td>
           </tr>
         `;
-      }).join("");
+      }).join("") || `<tr class="student-card-row"><td class="student-card student-card-empty" colspan="7">No students found.</td></tr>`;
       stampTableLabels(tbody.closest("table") || document);
     }
 
@@ -6041,7 +6142,8 @@ export function initApp(config = {}) {
         </div>` : ""}
         ${others.length && !setupCardDismissed ? `<section class="table-card setup-reminder" aria-label="Finish your setup">
           <div class="setup-reminder-head">
-            <div><h3>Finish your setup</h3><span>${done} of ${total} done</span></div>
+            <div class="setup-reminder-ring" style="--setup-done:${Math.round((done / total) * 100)}%" aria-hidden="true"><span>${done}/${total}</span></div>
+            <div class="setup-reminder-copy"><h3>Finish your setup</h3><span>${items.length} step${items.length === 1 ? "" : "s"} left. It takes about 2 minutes.</span></div>
             <button type="button" class="icon-btn setup-reminder-close" data-action="setup-dismiss" aria-label="Close setup reminder">&times;</button>
           </div>
           <div class="setup-reminder-bar"><span style="width:${(done / total) * 100}%"></span></div>

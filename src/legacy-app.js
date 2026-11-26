@@ -501,7 +501,9 @@ export function initApp(config = {}) {
           return;
         }
         if(action==='studio-save'||action==='studio-save-copy'){
-          if(REPORT_TEMPLATES.some(t=>t.id===layout.templateId)||action==='studio-save-copy'){
+          // Save keeps the coach on the design they are editing (built-in
+          // templates included). Only "Save a copy" makes a new design.
+          if(action==='studio-save-copy'){
             const name=layout.designName+(action==='studio-save-copy'?' copy':' — my design');layout.templateId=`design-${crypto.randomUUID()}`;layout.designName=name.slice(0,80);layout.designs=[...layout.designs,{id:layout.templateId,name:layout.designName}];
           }else layout.designs=layout.designs.map(d=>d.id===layout.templateId?{...d,name:layout.designName}:d);
           layout.variants={...layout.variants,[layout.templateId]:layoutSnapshot(layout)};

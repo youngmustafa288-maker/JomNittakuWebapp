@@ -2587,7 +2587,7 @@ export function initApp(config = {}) {
               <div class="section-title">
                 <h2>Reports</h2>
               </div>
-              <div class="profile-actions"><button class="secondary-btn" data-action="refresh-reports" ${reportLoadPromise ? "disabled" : ""}>${reportLoadPromise ? "Refreshing…" : "Refresh"}</button>${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}</div>
+              <div class="profile-actions">${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}</div>
             </div>
             <div class="reports-filter-bar">
               <label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input id="reportsSearch" class="search-input" type="search" placeholder="Search name or ref number" aria-label="Search reports"></label>

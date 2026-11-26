@@ -3695,11 +3695,15 @@ export function initApp(config = {}) {
               <div class="section-title"><h2>${isCoach ? "Add links for your QR" : "Centre Links"}</h2>${isCoach ? `<p>When parents scan the QR on a report, they see a page with these links.</p>` : ""}</div>
               ${isCoach ? `<button class="secondary-btn qr-preview-btn" type="button" data-action="preview-qr-page"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>How QR looks like</button>` : ""}
             </div>
-            ${isCoach ? `<div class="links-field-labels" aria-hidden="true"><span>Button name</span><span>Link</span></div>` : ""}
+            ${isCoach ? `<div class="links-field-labels" aria-hidden="true"><span>Platform</span><span>Link</span></div>` : ""}
             <div class="centre-links-editor">
               ${links.map(link => `
                 <div class="centre-link-row" data-link-id="${escapeHtml(link.id)}">
-                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label || link.title || "")}" placeholder="e.g. Facebook" aria-label="Button name">
+                  ${isCoach ? (() => {
+                    const current = String(link.label || link.title || "").trim();
+                    const options = LINK_PLATFORM_CHOICES.includes(current) || !current ? LINK_PLATFORM_CHOICES : [current, ...LINK_PLATFORM_CHOICES];
+                    return `<select class="filter-select centre-link-label" data-link-field="label" aria-label="Platform"><option value="" ${current ? "" : "selected"} disabled>Choose platform</option>${options.map(name => `<option value="${escapeHtml(name)}" ${name === current ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>`;
+                  })() : `<input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label || link.title || "")}" placeholder="Label">`}
                   <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://..." aria-label="Link">
                   <button class="ghost-btn link-delete-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}" aria-label="Delete link" title="Delete link"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v7m6-7v7"/></svg></button>
                 </div>
@@ -3888,6 +3892,8 @@ export function initApp(config = {}) {
       { id: "threads", label: "Threads", badge: "@", color: "#111111", test: /(^|\.)threads\.net$/i }
     ];
     // Which platform a link points to, for its icon. Unknown links are "website".
+    const LINK_PLATFORM_CHOICES = ["Facebook", "Instagram", "WhatsApp", "TikTok", "YouTube", "X", "Threads", "Website", "Email", "Phone"];
+
     function linkPlatform(url) {
       const text = String(url || "").trim();
       if (/^mailto:/i.test(text)) return { id: "email", label: "Email", badge: "@", color: "#c81e45" };

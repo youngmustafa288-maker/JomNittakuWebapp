@@ -477,8 +477,32 @@ export function initApp(config = {}) {
       else addStudioPicture(layout,source,file.name);
       coach.reportLayout=layout;if(await saveReportLayout(coach)) studioToast('Photo added');
     }
-    async function handleStudioAction(action) {
+    // Delete one of the coach's own saved designs (never a built-in template).
+    // If it is the design in use, the coach goes back to the template it was
+    // based on. Reports already made keep their own copy of the design.
+    async function deleteSavedDesign(id) {
+      if (!/^design-/i.test(id)) return;
+      const coach = getCurrentCoach();
+      const layout = getReportLayout(coach);
+      const design = (layout.designs || []).find(item => item.id === id);
+      if (!design) return;
+      if (!window.confirm(`Delete "${design.name}"? This can't be undone. Reports you already made are not affected.`)) return;
+      const designs = layout.designs.filter(item => item.id !== id);
+      const { [id]: removed, ...variants } = layout.variants || {};
+      if (layout.templateId === id) {
+        const baseId = REPORT_TEMPLATES.some(template => template.id === layout.baseTemplateId) ? layout.baseTemplateId : "classic";
+        const next = normalizeReportLayout(variants[baseId] || defaultStudioLayout(baseId));
+        coach.reportLayout = { ...next, variants, designs, uploads: layout.uploads || [] };
+      } else {
+        coach.reportLayout = { ...layout, designs, variants };
+      }
+      if (await saveReportLayout(coach)) studioToast("Design deleted");
+      render();
+    }
+
+    async function handleStudioAction(action, trigger = null) {
       try {
+        if(action==='studio-delete-design')return deleteSavedDesign(trigger?.dataset.designId || '');
         if(action==='studio-gallery'){studioView='templates';studioPreview=false;return render();}
         if(action==='studio-editor'){studioView='editor';return render();}
         if(action==='studio-help'){studioHelpOpen=!studioHelpOpen;return render();}
@@ -3576,7 +3600,7 @@ export function initApp(config = {}) {
           <aside class="sidebar">
             <div class="sidebar-brand">
               <span class="sidebar-brand-mark" aria-hidden="true">JN</span>
-              <span class="sidebar-brand-copy"><strong>JomNittaku</strong><small>${escapeHtml(centreName)}</small></span>
+              <span class="sidebar-brand-copy"><strong>JomNittaku</strong><small>${escapeHtml(sidebarProfile.name || centreName)}</small></span>
             </div>
             <nav class="sidebar-nav" aria-label="Dashboard sections">
               ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${sidebarNavIcon(page)}<span class="sidebar-nav-label">${label}</span><span class="sidebar-nav-short" aria-hidden="true">${{ "certificate-design": "Certificates", "centre-settings": "Settings", "centre-coaches": "Coaches" }[page] || label}</span></button>`).join("")}
@@ -4666,7 +4690,7 @@ export function initApp(config = {}) {
       const action = event.currentTarget.dataset.action;
       if(action==="simple-copy-layer")return copyCertificateEditorLayer();
       if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
-      if (action?.startsWith("studio-")) return handleStudioAction(action);
+      if (action?.startsWith("studio-")) return handleStudioAction(action, event.currentTarget);
       if (action === "reload-page") return window.location.reload();
       if (action === "setup-open") return getCoachOnboarding().openAt(event.currentTarget.dataset.step || "profile");
       if (action === "setup-dismiss") {

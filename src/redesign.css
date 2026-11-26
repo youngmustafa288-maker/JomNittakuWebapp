@@ -761,3 +761,90 @@
   .students-card-table tbody { grid-template-columns: minmax(0, 1fr); }
   .dashboard .students-card-table td.student-card { padding: 16px; }
 }
+
+/* Second line under the student name: only used on phones */
+.dashboard .row-sub { display: none; }
+
+/* ==================================================================
+   Phones: report lists as compact rows like the mock-up
+   (avatar, name, "Lesson · date", status, action)
+   ================================================================== */
+@media (max-width: 720px) {
+  .dashboard .table-wrap .compact-rows,
+  .dashboard .table-wrap .compact-rows tbody { display: block; border-spacing: 0; }
+  .dashboard .table-wrap .compact-rows tbody tr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    border: 0;
+    border-bottom: 1px solid var(--rd-line);
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+  }
+  .dashboard .table-wrap .compact-rows tbody tr:last-child { border-bottom: 0; }
+  .dashboard .table-wrap .compact-rows tbody td {
+    display: block;
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+  .dashboard .table-wrap .compact-rows tbody td::before { content: none !important; display: none !important; }
+  .dashboard .compact-rows .cell-ref,
+  .dashboard .compact-rows .cell-coach,
+  .dashboard .compact-rows .cell-lesson,
+  .dashboard .compact-rows .cell-date { display: none !important; }
+  .dashboard .compact-rows .cell-student { flex: 1; min-width: 0; }
+  .dashboard .compact-rows .person-cell { justify-content: flex-start !important; }
+  .dashboard .compact-rows .person-cell-copy strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .dashboard .compact-rows .row-sub { display: block; color: var(--rd-mute); font-size: 12px; font-weight: 500; }
+  .dashboard .compact-rows .cell-status,
+  .dashboard .compact-rows .cell-action { flex: none; }
+  .dashboard .compact-rows .cell-action > * { min-height: 36px; flex: none; }
+  .dashboard .compact-rows .table-finish-btn { padding: 6px 12px; }
+  .dashboard .compact-rows .overview-empty { flex: 1; }
+
+  /* Overview card header: title + View all on one line, like the mock-up */
+  .dashboard .overview-card-tools .overview-filter-bar { display: none; }
+  .dashboard .overview-columns .table-topline { flex-wrap: nowrap; margin-bottom: 4px; }
+
+  /* Setup card: ring and text on top, step buttons below */
+  .dashboard .setup-reminder-items button { min-height: 44px; font-size: 13px; }
+}
+
+@media (max-width: 720px) {
+  .dashboard .overview-columns .table-topline {
+    flex-direction: row !important;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .dashboard .overview-columns .table-topline .overview-card-tools { width: auto; }
+
+  /* Reports filters: search on top, three small filters in one row */
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    order: 1;
+  }
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar > .search-input,
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar > .report-custom-dates,
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar > #reportsMonthFilter,
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar > #reportsDayFilter { grid-column: 1 / -1; }
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar .filter-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    font-size: 13px;
+    padding-left: 10px;
+    padding-right: 24px;
+  }
+  .dashboard .table-card:has(#reportsTable) .table-topline { order: 2; justify-content: flex-end; }
+  .dashboard .table-card:has(#reportsTable) .table-topline .profile-actions { width: auto; }
+  .dashboard .table-card:has(#reportsTable) .table-topline .secondary-btn { min-height: 34px; padding: 4px 12px; font-size: 13px; }
+  .dashboard .table-card:has(#reportsTable) .table-wrap { order: 3; }
+}
+@media (max-width: 720px) {
+  .dashboard .table-card:has(#reportsTable) .table-topline .profile-actions > * { flex: none; }
+}

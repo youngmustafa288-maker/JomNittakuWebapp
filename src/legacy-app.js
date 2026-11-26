@@ -2488,7 +2488,7 @@ export function initApp(config = {}) {
               </div>
             </div>
             <div class="table-wrap">
-              <table>
+              <table class="compact-rows">
                 <thead>
                   <tr>
                     <th>Student</th>
@@ -2503,11 +2503,11 @@ export function initApp(config = {}) {
                     const student = getStudentById(report.studentId);
                     return `
                       <tr>
-                        <td><div class="person-cell">${avatarMarkup(student?.name || "Student", student?.photo)}<strong>${escapeHtml(student?.name || "Student")}</strong></div></td>
-                        <td>Lesson ${escapeHtml(report.lessonNumber)}</td>
-                        <td>${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}</td>
-                        <td>${statusBadge(report.status)}</td>
-                        <td><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button></td>
+                        <td class="cell-student"><div class="person-cell">${avatarMarkup(student?.name || "Student", student?.photo)}<span class="person-cell-copy"><strong>${escapeHtml(student?.name || "Student")}</strong><small class="row-sub">Lesson ${escapeHtml(report.lessonNumber)} · ${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}</small></span></div></td>
+                        <td class="cell-lesson">Lesson ${escapeHtml(report.lessonNumber)}</td>
+                        <td class="cell-date">${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}</td>
+                        <td class="cell-status">${statusBadge(report.status)}</td>
+                        <td class="cell-action"><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button></td>
                       </tr>
                     `;
                   }).join("") : `<tr><td colspan="5" class="muted overview-empty">No reports yet. Tap Generate Report to make your first one.</td></tr>`}
@@ -2530,7 +2530,7 @@ export function initApp(config = {}) {
           ${items.length ? items.map(({ student, last }) => `
             <div class="needs-attention-row">
               ${avatarMarkup(student.name, student.photo)}
-              <span class="needs-attention-copy"><strong>${escapeHtml(student.name)}</strong><small>${last ? `Last report ${escapeHtml(formatDate(last))}` : "No report yet"}</small></span>
+              <span class="needs-attention-copy"><strong>${escapeHtml(student.name)}</strong><small>${last ? `Last report ${escapeHtml(formatShortDate(last))}` : "No report yet"}</small></span>
               <button class="secondary-btn" data-action="new-report">Report</button>
             </div>`).join("") : `<p class="needs-attention-empty">All caught up. Every student has a recent report.</p>`}
         </aside>
@@ -2611,7 +2611,7 @@ export function initApp(config = {}) {
               </select>
             </div>
             <div class="table-wrap" style="margin-top:18px;">
-              <table id="reportsTable">
+              <table id="reportsTable" class="compact-rows">
                 <thead>
                   <tr>
                     <th>Ref #</th>
@@ -4930,13 +4930,13 @@ export function initApp(config = {}) {
         const coach = getCoachById(report.coachId);
         return `
           <tr>
-            <td>${escapeHtml(report.ref)}</td>
-            <td><div class="person-cell">${avatarMarkup(student?.name || "?", student?.photo)}<strong>${escapeHtml(student?.name || "Not selected")}</strong></div></td>
-            ${state.auth.role === "coach" ? "" : `<td>${escapeHtml(coach?.name || "Unknown")}</td>`}
-            <td>${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "—"}</td>
-            <td>${report.date ? `${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}` : "—"}</td>
-            <td>${statusBadge(report.status)}</td>
-            <td>${report.isDraft
+            <td class="cell-ref">${escapeHtml(report.ref)}</td>
+            <td class="cell-student"><div class="person-cell">${avatarMarkup(student?.name || "?", student?.photo)}<span class="person-cell-copy"><strong>${escapeHtml(student?.name || "Not selected")}</strong><small class="row-sub">${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "No lesson"}${report.date ? ` · ${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}` : ""}</small></span></div></td>
+            ${state.auth.role === "coach" ? "" : `<td class="cell-coach">${escapeHtml(coach?.name || "Unknown")}</td>`}
+            <td class="cell-lesson">${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "—"}</td>
+            <td class="cell-date">${report.date ? `${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}` : "—"}</td>
+            <td class="cell-status">${statusBadge(report.status)}</td>
+            <td class="cell-action">${report.isDraft
               ? `<button class="primary-btn table-finish-btn" data-action="continue-report-draft" data-draft-id="${escapeHtml(report.id)}" aria-label="Continue draft">Finish</button>`
               : `<button class="icon-btn" data-action="view-report" data-report-id="${escapeHtml(report.id)}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>`}</td>
           </tr>

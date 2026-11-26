@@ -231,6 +231,8 @@ export function initApp(config = {}) {
     let onboardingModal = null;
     let centreOnboardingModal = null;
     let studentEditModal = null;
+    // Deleted students leave every list, but past reports still show their name.
+    let deletedStudents = [];
     let loginError = "";
     // The centre this account belongs to, when it differs from the centre
     // link being opened. Used to point people to the right place.
@@ -1472,7 +1474,9 @@ export function initApp(config = {}) {
         ? await query
         : await query.eq("coach_id", state.auth.userId);
       if (error || !Array.isArray(data)) return;
-      state.students = data.map(normalizeStudent);
+      const students = data.map(normalizeStudent);
+      state.students = students.filter(student => student.status !== "Deleted");
+      deletedStudents = students.filter(student => student.status === "Deleted");
     }
 
     async function refreshCoachAccountCount() {
@@ -1864,7 +1868,8 @@ export function initApp(config = {}) {
 
     function getStudentById(studentId) {
       return state.students.find(student => student.id === studentId)
-        || adminReportContext?.students?.find(student => student.id === studentId);
+        || adminReportContext?.students?.find(student => student.id === studentId)
+        || deletedStudents.find(student => student.id === studentId);
     }
 
     function getCoachById(coachId) {
@@ -3822,7 +3827,7 @@ export function initApp(config = {}) {
               <div class="field"><label for="editStudentPhone">Phone Number</label><input id="editStudentPhone" class="text-input" value="${escapeHtml(student.parentHp)}"></div>
               <div class="field"><label for="editStudentLessons">Lesson</label><input id="editStudentLessons" class="text-input" type="number" min="0" value="${student.lessons}"></div>
             </div>
-            <div class="onboarding-actions"><button class="ghost-btn" data-action="close-student-edit">Cancel</button><button class="primary-btn" data-action="save-student-edit">Save Changes</button></div>
+            <div class="onboarding-actions student-edit-actions"><button class="ghost-btn student-delete-btn" data-action="delete-student">Delete student</button><span><button class="ghost-btn" data-action="close-student-edit">Cancel</button><button class="primary-btn" data-action="save-student-edit">Save Changes</button></span></div>
           </div>
         </div>
       `;
@@ -5144,6 +5149,7 @@ export function initApp(config = {}) {
       if (action === "student-edit-photo") return triggerStudentUpload(event.currentTarget.dataset.studentId);
       if (action === "close-student-edit") return closeStudentEditModal();
       if (action === "save-student-edit") return saveStudentEdit();
+      if (action === "delete-student") return deleteStudent();
       if (action === "add-student") return openAddStudentModal();
       if (action === "close-onboarding") return closeOnboardingModal();
       if (action === "onboarding-continue") return continueOnboarding();
@@ -5353,6 +5359,27 @@ export function initApp(config = {}) {
         render();
       } catch (error) {
         alert(error.message || "Unable to save student.");
+      }
+    }
+
+    async function deleteStudent() {
+      const student = studentEditModal && getStudentById(studentEditModal.studentId);
+      if (!student) return;
+      if (!window.confirm(`Delete ${student.name}? They will be removed from your student list. Reports you already made are kept.`)) return;
+      try {
+        const saved = await saveStudentRecord({ ...student, status: "Deleted" });
+        state.students = state.students.filter(item => item.id !== student.id);
+        deletedStudents = [...deletedStudents.filter(item => item.id !== student.id), saved];
+        // A draft for this student no longer has a student to report on.
+        Object.values(state.reportDrafts).forEach(draft => { if (draft.studentId === student.id) draft.studentId = ""; });
+        studentEditModal = null;
+        persist();
+        render();
+      } catch (error) {
+        const needsUpdate = error?.code === "23514" || /students_status_check/.test(error?.message || "");
+        alert(needsUpdate
+          ? "Deleting students needs a one-time database update. Run supabase/migrations/20261127_000025_student_delete_status.sql in Supabase, then try again."
+          : error.message || "Unable to delete student.");
       }
     }
 

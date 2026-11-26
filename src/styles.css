@@ -2962,3 +2962,9 @@
 .certificate-editor-rail .studio-shape-icon { width: 22px; height: 22px; }
 .certificate-editor-rail .studio-frame-colours { gap: 10px; }
 .certificate-editor-rail .studio-frame-colours button { width: 32px; height: 32px; }
+
+/* Edit Student: Delete on the left, Cancel/Save on the right. */
+.student-edit-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.student-edit-actions > span { display: flex; gap: 12px; margin-left: auto; }
+.student-delete-btn { color: #b42318; border-color: #f3c2c0; }
+.student-delete-btn:hover { background: #fef3f2; color: #912018; }

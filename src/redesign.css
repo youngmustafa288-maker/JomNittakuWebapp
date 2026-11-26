@@ -609,7 +609,155 @@
   .dashboard td:last-child { text-align: left; }
 }
 
-/* Reports page: the page header already shows the title and Generate Report */
+/* Reports page: the page header already shows the title and New report.
+   Refresh sits at the end of the filter row. */
 .dashboard .table-card:has(#reportsTable) .table-topline .section-title,
 .dashboard .table-card:has(#reportsTable) .table-topline .primary-btn { display: none; }
-.dashboard .table-card:has(#reportsTable) .table-topline { justify-content: flex-end; margin-bottom: 10px; }
+.dashboard .table-card:has(#reportsTable) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 10px;
+  align-items: center;
+}
+.dashboard .table-card:has(#reportsTable) .table-topline { grid-column: 2; grid-row: 1; margin: 0; }
+.dashboard .table-card:has(#reportsTable) .reports-filter-bar { grid-column: 1; grid-row: 1; margin: 0; }
+.dashboard .table-card:has(#reportsTable) .table-wrap { grid-column: 1 / -1; }
+
+/* ==================================================================
+   Match the mock-up: account menu, New report, students as cards
+   ================================================================== */
+
+/* New report button with a plus icon */
+.dashboard .topbar-new-report { display: inline-flex; align-items: center; gap: 8px; }
+.dashboard .topbar-new-report svg { width: 16px; height: 16px; flex: none; }
+
+/* Desktop: account menu lives in the sidebar, header shows only New report */
+.sidebar-account { position: relative; margin-top: auto; }
+.dashboard .sidebar-profile {
+  width: 100%;
+  margin-top: 0;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  transition: background .15s;
+  font: inherit;
+  color: inherit;
+}
+.dashboard .sidebar-profile:hover { background: #eceef2; }
+.dashboard .sidebar-profile:focus-visible { outline: 2px solid var(--rd-red); outline-offset: 1px; }
+.dashboard .sidebar-account-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  top: auto;
+  z-index: 5;
+  background: #fff;
+  padding: 6px;
+}
+.dashboard .sidebar-account-menu .dropdown-item { width: 100%; text-align: left; }
+
+@media (min-width: 1025px) {
+  .dashboard .topbar .avatar-btn,
+  .dashboard .topbar .avatar-dropdown { display: none !important; }
+}
+
+/* Overview card header: date filter + View all on the right */
+.overview-card-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.dashboard .overview-card-tools .overview-filter-bar { margin: 0; }
+.dashboard .overview-card-tools .filter-select { min-height: 38px; padding-top: 6px; padding-bottom: 6px; }
+.dashboard .table-title-link { font-size: 14px; }
+
+/* Students page: title and count are in the page header */
+.dashboard .table-card:has(#studentsTable) .table-topline .section-title { display: none; }
+.dashboard .table-card:has(#studentsTable) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 10px;
+  align-items: center;
+}
+.dashboard .table-card:has(#studentsTable) .table-topline { grid-column: 2; grid-row: 1; margin: 0; }
+.dashboard .table-card:has(#studentsTable) .students-filter-bar { grid-column: 1; grid-row: 1; margin: 0; }
+.dashboard .table-card:has(#studentsTable) .table-wrap { grid-column: 1 / -1; margin-top: 18px !important; overflow: visible; }
+
+.students-card-table,
+.students-card-table tbody { display: block; width: 100%; min-width: 0 !important; }
+.students-card-table thead { display: none; }
+.students-card-table tbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.dashboard .students-card-table tbody tr.student-card-row {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.dashboard .students-card-table td.student-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  height: 100%;
+  padding: 18px;
+  border: 1px solid var(--rd-line);
+  border-radius: 16px;
+  background: var(--rd-card);
+  box-shadow: var(--rd-shadow);
+  text-align: left;
+  color: var(--rd-ink);
+  transition: transform .2s, box-shadow .2s;
+}
+.dashboard .students-card-table td.student-card::before { display: none !important; content: none !important; }
+.dashboard .students-card-table td.student-card:hover { transform: translateY(-4px); box-shadow: 0 12px 28px rgba(17, 24, 39, .09); }
+.student-card-top { display: flex; align-items: center; gap: 12px; }
+.dashboard .student-card-top .avatar { width: 48px; height: 48px; min-width: 48px; font-size: 15px; border-radius: 50%; }
+.student-card-name { display: grid; min-width: 0; line-height: 1.3; }
+.student-card-name strong { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.student-card-name small { color: var(--rd-mute); font-size: 13px; }
+.student-card-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; margin: 0; }
+.student-card-facts dt { font-size: 12px; color: var(--rd-mute); }
+.student-card-facts dd { margin: 0; font-weight: 700; font-size: 14px; }
+.dashboard .student-card .photo-cell { justify-content: flex-start !important; }
+.student-card-actions { display: flex; gap: 8px; margin-top: auto; }
+.dashboard .student-card-actions > * { flex: 1; min-height: 38px; padding: 6px 12px; font-size: 13px; justify-content: center; }
+.student-card-empty { color: var(--rd-mute) !important; text-align: center !important; justify-content: center; }
+
+@media (max-width: 1024px) {
+  /* Phone: New report becomes a round + button above the tab bar */
+  .dashboard .topbar-new-report {
+    position: fixed;
+    right: 18px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    z-index: 31;
+    width: 56px;
+    height: 56px;
+    min-height: 56px !important;
+    padding: 0 !important;
+    border-radius: 18px;
+    justify-content: center;
+    box-shadow: 0 10px 24px rgba(225, 29, 72, .35);
+    animation: rd-pop .4s .4s both;
+  }
+  .dashboard .topbar-new-report svg { width: 24px; height: 24px; }
+  .dashboard .topbar-new-report span { display: none; }
+  .dashboard .page-header { animation: none; }
+  .dashboard .table-card:has(#reportsTable) { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .dashboard .table-card:has(#reportsTable) .table-topline,
+  .dashboard .table-card:has(#reportsTable) .reports-filter-bar { grid-column: 1; grid-row: auto; }
+  .dashboard .table-card:has(#studentsTable) { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .dashboard .table-card:has(#studentsTable) .table-topline,
+  .dashboard .table-card:has(#studentsTable) .students-filter-bar { grid-column: 1; grid-row: auto; }
+  .dashboard .table-card:has(#studentsTable) .table-topline .primary-btn { width: 100%; }
+}
+
+@media (max-width: 720px) {
+  .students-card-table tbody { grid-template-columns: minmax(0, 1fr); }
+  .dashboard .students-card-table td.student-card { padding: 16px; }
+}

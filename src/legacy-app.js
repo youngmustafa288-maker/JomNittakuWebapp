@@ -1497,6 +1497,12 @@ export function initApp(config = {}) {
       return { name: coach.name, photo: coach.photo };
     }
 
+    function formatShortDate(date) {
+      const value = new Date(date + "T00:00:00");
+      const sameYear = value.getFullYear() === new Date().getFullYear();
+      return value.toLocaleDateString("en-GB", sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+    }
+
     function formatDate(date) {
       return new Date(date + "T00:00:00").toLocaleDateString("en-MY", {
         day: "numeric",
@@ -1765,7 +1771,8 @@ export function initApp(config = {}) {
     function statusBadge(status) {
       const normalizedStatus = REPORT_STATUSES.includes(status) || status === "Draft" ? status : "Pending";
       const key = normalizedStatus === "Generated" ? "green" : normalizedStatus === "Draft" ? "grey" : "amber";
-      return `<span class="badge ${key}"><span class="dot"></span>${normalizedStatus}</span>`;
+      const label = normalizedStatus === "Generated" ? "Sent" : normalizedStatus;
+      return `<span class="badge ${key}"><span class="dot"></span>${label}</span>`;
     }
 
     function avatarMarkup(name, photo, size = "avatar") {
@@ -2391,6 +2398,10 @@ export function initApp(config = {}) {
       `;
     }
 
+    function plural(count, word) {
+      return `${count} ${word}${count === 1 ? "" : "s"}`;
+    }
+
     function sidebarNavIcon(page) {
       const paths = {
         overview: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -2409,7 +2420,7 @@ export function initApp(config = {}) {
       return `
         <div class="topbar">
           <div class="topbar-actions">
-            ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report">Generate Report</button>` : ""}
+            ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn topbar-new-report" data-action="new-report" aria-label="New report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>New report</span></button>` : ""}
             <button class="avatar-btn" data-action="toggle-avatar-menu" ${profile.photo ? `style="background-image:url('${profile.photo}');"` : ""}>
               ${profile.photo ? "" : initials(profile.name)}
             </button>
@@ -2450,8 +2461,7 @@ export function initApp(config = {}) {
               <div class="section-title">
                 <h2>Recent reports</h2>
               </div>
-              <button class="plain-link table-title-link" data-nav="reports">View all <span aria-hidden="true">→</span></button>
-            </div>
+              <div class="overview-card-tools">
             <div class="overview-filter-bar" aria-label="Filter overview reports">
               <select id="overviewDateFilter" class="filter-select" aria-label="Overview date filter">
                 <option value="" ${overviewDateFilter === "" ? "selected" : ""}>All dates</option>
@@ -2474,14 +2484,17 @@ export function initApp(config = {}) {
                 <input id="overviewDateTo" class="text-input" type="date" value="${escapeHtml(overviewDateTo)}" aria-label="Overview end date">
               </div>
             </div>
+              <button class="plain-link table-title-link" data-nav="reports">View all <span aria-hidden="true">→</span></button>
+              </div>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>STUDENT</th>
-                    <th>LESSON</th>
-                    <th>DATE & TIME</th>
-                    <th>STATUS</th>
+                    <th>Student</th>
+                    <th>Lesson</th>
+                    <th>Date</th>
+                    <th>Status</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -2490,9 +2503,9 @@ export function initApp(config = {}) {
                     const student = getStudentById(report.studentId);
                     return `
                       <tr>
-                        <td><div class="person-cell">${avatarMarkup(student?.name || "Student", student?.photo)}<span class="person-cell-copy"><strong>${escapeHtml(student?.name || "Student")}</strong><small>${escapeHtml(report.ref)}</small></span></div></td>
+                        <td><div class="person-cell">${avatarMarkup(student?.name || "Student", student?.photo)}<strong>${escapeHtml(student?.name || "Student")}</strong></div></td>
                         <td>Lesson ${escapeHtml(report.lessonNumber)}</td>
-                        <td>${formatDate(report.date)}, ${formatTime(report.time)}</td>
+                        <td>${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}</td>
                         <td>${statusBadge(report.status)}</td>
                         <td><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button></td>
                       </tr>
@@ -2568,7 +2581,7 @@ export function initApp(config = {}) {
               <div class="profile-actions"><button class="secondary-btn" data-action="refresh-reports" ${reportLoadPromise ? "disabled" : ""}>${reportLoadPromise ? "Refreshing…" : "Refresh"}</button>${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report" ${state.auth.role === "admin" && !activeReportCentreId ? "disabled" : ""}>Generate Report</button>` : ""}</div>
             </div>
             <div class="reports-filter-bar">
-              <input id="reportsSearch" class="search-input" type="search" placeholder="Search by name or ref number...">
+              <input id="reportsSearch" class="search-input" type="search" placeholder="Search name or ref number">
               <select id="reportsStudentFilter" class="filter-select">
                 <option value="">All students</option>
                 ${studentOptions}
@@ -2593,20 +2606,20 @@ export function initApp(config = {}) {
               </div>
               <select id="reportsStatusFilter" class="filter-select">
                 <option value="">All statuses</option>
-                <option value="Generated">Generated</option>
-                <option value="Draft">Draft</option>
+                <option value="Generated">Sent</option>
+                <option value="Draft">Drafts</option>
               </select>
             </div>
             <div class="table-wrap" style="margin-top:18px;">
               <table id="reportsTable">
                 <thead>
                   <tr>
-                    <th>REF #</th>
-                    <th>STUDENT</th>
-                    <th>COACH</th>
-                    <th>LESSON</th>
-                    <th>DATE & TIME</th>
-                    <th>REPORT STATUS</th>
+                    <th>Ref #</th>
+                    <th>Student</th>
+                    ${state.auth.role === "coach" ? "" : "<th>Coach</th>"}
+                    <th>Lesson</th>
+                    <th>Date</th>
+                    <th>Status</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -2672,11 +2685,11 @@ export function initApp(config = {}) {
               <button class="primary-btn" data-action="add-student">+ Add Student</button>
             </div>
             <div class="students-filter-bar">
-              <input id="studentSearch" class="search-input" type="search" placeholder="Search student">
+              <input id="studentSearch" class="search-input" type="search" placeholder="Search student" aria-label="Search students">
               ${filter}
             </div>
             <div class="table-wrap" style="margin-top:18px;">
-              <table id="studentsTable">
+              <table id="studentsTable" class="students-card-table">
                 <thead>
                   <tr>
                     <th>STUDENT</th>
@@ -3501,9 +3514,9 @@ export function initApp(config = {}) {
             ["overview", "Overview"],
             ["reports", "Reports"],
             ["students", "Students"],
-            ["certificate-design", "Certificate Design"]
+            ["certificate-design", "Certificates"]
           ];
-      navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Centre Links"]);
+      navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Settings"]);
       // Resolve the active page explicitly. The dev coach view is a separate
       // console surface and must never fall through to the dashboard overview.
       let pageContent;
@@ -3536,6 +3549,12 @@ export function initApp(config = {}) {
         : state.ui.page === "report-view" ? "Report"
         : state.ui.page === "profile" || state.ui.page === "settings" ? "Profile"
         : activeNav ? activeNav[1] : "Overview";
+      const pageSubtitle = state.ui.page === "overview" ? new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
+        : state.ui.page === "reports" ? `${plural(getVisibleReports().length, "report")} · ${plural(getVisibleDrafts().length, "draft")}`
+        : state.ui.page === "students" ? `${plural(getVisibleStudents().filter(student => student.status !== "Inactive").length, "active student")}`
+        : state.ui.page === "certificate-design" ? "Pick how your reports look to parents."
+        : state.ui.page === "centre-settings" && state.auth.role === "coach" ? "Storage, links and your setup guide."
+        : `${centreName} Coach Reporting System`;
       const sidebarProfile = state.auth.role === "dev" ? { name: "Developer", photo: "" } : getUserProfile();
       const sidebarPhoto = safeImageUrl(sidebarProfile.photo);
       return `
@@ -3548,9 +3567,15 @@ export function initApp(config = {}) {
             <nav class="sidebar-nav" aria-label="Dashboard sections">
               ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${sidebarNavIcon(page)}<span class="sidebar-nav-label">${label}</span><span class="sidebar-nav-short" aria-hidden="true">${{ "certificate-design": "Certificates", "centre-settings": "Settings", "centre-coaches": "Coaches" }[page] || label}</span></button>`).join("")}
             </nav>
-            <div class="sidebar-profile" aria-hidden="true">
-              <span class="sidebar-profile-avatar" ${sidebarPhoto ? `style="background-image:url('${escapeHtml(sidebarPhoto)}');"` : ""}>${sidebarPhoto ? "" : escapeHtml(initials(sidebarProfile.name || "Coach"))}</span>
-              <span class="sidebar-profile-copy"><strong>${escapeHtml(sidebarProfile.name || "Coach")}</strong><small>${escapeHtml(centreName)}</small></span>
+            <div class="sidebar-account">
+              <div class="avatar-dropdown sidebar-account-menu ${state.ui.avatarMenuOpen ? "" : "hidden"}">
+                ${state.auth.role === "dev" ? "" : `<button class="dropdown-item" data-action="open-profile">Profile</button>`}
+                <button class="dropdown-item" data-action="logout">Logout</button>
+              </div>
+              <button class="sidebar-profile" type="button" data-action="toggle-avatar-menu" aria-label="Account menu">
+                <span class="sidebar-profile-avatar" ${sidebarPhoto ? `style="background-image:url('${escapeHtml(sidebarPhoto)}');"` : ""}>${sidebarPhoto ? "" : escapeHtml(initials(sidebarProfile.name || "Coach"))}</span>
+                <span class="sidebar-profile-copy"><strong>${escapeHtml(sidebarProfile.name || "Coach")}</strong><small>${escapeHtml(centreName)}</small></span>
+              </button>
             </div>
           </aside>
           <main class="main">
@@ -3558,7 +3583,7 @@ export function initApp(config = {}) {
               <div class="header-copy">
                 <span class="mobile-brand" aria-hidden="true"><span class="sidebar-brand-mark">JN</span>JomNittaku</span>
                 <h1>${escapeHtml(pageTitle)} ${state.ui.page === "overview" ? centreSportEmojiMarkup(requestedCentre?.sport) : ""}</h1>
-                <p>${state.ui.page === "overview" ? escapeHtml(new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })) + " · " + escapeHtml(centreName) : `${escapeHtml(centreName)} Coach Reporting System`}</p>
+                <p>${escapeHtml(pageSubtitle)}</p>
               </div>
               ${renderTopbar()}
             </header>
@@ -4907,9 +4932,9 @@ export function initApp(config = {}) {
           <tr>
             <td>${escapeHtml(report.ref)}</td>
             <td><div class="person-cell">${avatarMarkup(student?.name || "?", student?.photo)}<strong>${escapeHtml(student?.name || "Not selected")}</strong></div></td>
-            <td>${escapeHtml(coach?.name || "Unknown")}</td>
+            ${state.auth.role === "coach" ? "" : `<td>${escapeHtml(coach?.name || "Unknown")}</td>`}
             <td>${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "—"}</td>
-            <td>${report.date ? `${formatDate(report.date)}, ${formatTime(report.time)}` : "—"}</td>
+            <td>${report.date ? `${escapeHtml(formatShortDate(report.date))}, ${formatTime(report.time)}` : "—"}</td>
             <td>${statusBadge(report.status)}</td>
             <td>${report.isDraft
               ? `<button class="primary-btn table-finish-btn" data-action="continue-report-draft" data-draft-id="${escapeHtml(report.id)}" aria-label="Continue draft">Finish</button>`
@@ -4996,31 +5021,38 @@ export function initApp(config = {}) {
         return coachScoped && coachMatch && searchMatch;
       });
 
+      const lastReportDateByStudent = {};
+      getVisibleReports().forEach(report => {
+        if (!lastReportDateByStudent[report.studentId] || report.date > lastReportDateByStudent[report.studentId]) lastReportDateByStudent[report.studentId] = report.date;
+      });
       tbody.innerHTML = visibleStudents.map(student => {
         const coach = getCoachById(student.coachId);
+        const last = lastReportDateByStudent[student.id];
         return `
-          <tr>
-            <td>
-              <div class="person-cell">
+          <tr class="student-card-row">
+            <td class="student-card" colspan="7">
+              <div class="student-card-top">
                 ${avatarMarkup(student.name, student.photo)}
-                <strong>${student.name}</strong>
+                <div class="student-card-name"><strong>${escapeHtml(student.name)}</strong><small>${student.parentHp ? escapeHtml(student.parentHp) : "No parent phone"}</small></div>
               </div>
-            </td>
-            ${state.auth.role === "admin" ? `<td>${coach.name}</td>` : ""}
-            <td>${student.lessons}</td>
-            <td>${student.parentHp}</td>
-            <td>
+              <dl class="student-card-facts">
+                <div><dt>Lessons</dt><dd>${escapeHtml(student.lessons)}</dd></div>
+                <div><dt>Last report</dt><dd>${last ? escapeHtml(formatShortDate(last)) : "—"}</dd></div>
+                ${state.auth.role === "admin" ? `<div><dt>Coach</dt><dd>${escapeHtml(coach?.name || "—")}</dd></div>` : ""}
+              </dl>
               <div class="photo-cell">
                 ${student.photo
-                  ? `<span class="badge green"><span class="dot"></span>Uploaded</span>`
-                  : `<button class="upload-chip" data-action="student-upload" data-student-id="${student.id}">+ Upload Photo</button>`}
+                  ? `<span class="badge green"><span class="dot"></span>Photo added</span>`
+                  : `<button class="upload-chip" data-action="student-upload" data-student-id="${student.id}">+ Upload photo</button>`}
+              </div>
+              <div class="student-card-actions">
+                <button class="secondary-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button>
+                ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report">New report</button>` : ""}
               </div>
             </td>
-            <td><span class="badge green"><span class="dot"></span>Active</span></td>
-            <td><button class="icon-btn table-edit-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button></td>
           </tr>
         `;
-      }).join("");
+      }).join("") || `<tr class="student-card-row"><td class="student-card student-card-empty" colspan="7">No students found.</td></tr>`;
       stampTableLabels(tbody.closest("table") || document);
     }
 
@@ -6088,7 +6120,7 @@ export function initApp(config = {}) {
         ${others.length && !setupCardDismissed ? `<section class="table-card setup-reminder" aria-label="Finish your setup">
           <div class="setup-reminder-head">
             <div class="setup-reminder-ring" style="--setup-done:${Math.round((done / total) * 100)}%" aria-hidden="true"><span>${done}/${total}</span></div>
-            <div class="setup-reminder-copy"><h3>Finish your setup</h3><span>${done} of ${total} done · ${items.length} step${items.length === 1 ? "" : "s"} left</span></div>
+            <div class="setup-reminder-copy"><h3>Finish your setup</h3><span>${items.length} step${items.length === 1 ? "" : "s"} left. It takes about 2 minutes.</span></div>
             <button type="button" class="icon-btn setup-reminder-close" data-action="setup-dismiss" aria-label="Close setup reminder">&times;</button>
           </div>
           <div class="setup-reminder-bar"><span style="width:${(done / total) * 100}%"></span></div>

@@ -1009,3 +1009,7 @@
 .certificate-design-page .studio-delete-design svg { width: 16px; height: 16px; }
 .certificate-design-page .studio-delete-design:hover { color: #e11d48; border-color: #e11d48; background: #fff1f3; }
 .certificate-design-page .studio-delete-design:focus-visible { outline: 2px solid #e11d48; outline-offset: 2px; }
+
+/* QR panel: one button, red when it adds the QR */
+.certificate-tool-panel .certificate-panel-action.is-primary { background: #e11d48; border-color: #e11d48; color: #fff; }
+.certificate-tool-panel .certificate-panel-action.is-primary:hover { background: #be123c; }

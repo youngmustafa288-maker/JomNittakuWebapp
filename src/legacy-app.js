@@ -433,7 +433,7 @@ export function initApp(config = {}) {
     function renderStudioPanel(coach) {
       const layout = getReportLayout(coach);
       if (certificateEditorTool === "templates") return `<div class="studio-panel-title"><h3>Templates</h3></div><div class="studio-mini-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="${layout.templateId===t.id?'active':''}" data-studio-template="${escapeHtml(t.id)}"><span class="studio-mini-thumb">${renderStudioMini(t.id)}</span><strong>${escapeHtml(t.name)}</strong>${layout.templateId===t.id?studioIcon('check'):''}</button>`).join('')}</div><button class="studio-panel-upload" data-action="studio-upload-background">${studioIcon('upload')}Upload design</button>`;
-      if (certificateEditorTool === "qr") return `<div class="studio-panel-title"><h3>QR code</h3></div><label class="studio-field">URL<input id="studioQrUrl" type="url" value="${escapeHtml(layout.qrUrl)}" placeholder="https://..." maxlength="600"></label><p id="studioQrError" class="studio-field-error" role="alert"></p><button class="primary-btn studio-btn studio-full" data-action="studio-apply-qr">Apply</button><button class="studio-panel-upload" data-action="studio-toggle-qr">${layout.layers.find(l=>l.id==='qr')?.visible===false?'Show QR':'Hide QR'}</button>`;
+      if (certificateEditorTool === "qr") { const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false; return `<div class="studio-panel-title"><h3>Add QR</h3></div><button class="${qrHidden?'primary-btn studio-btn studio-full':'studio-panel-upload'}" data-action="studio-toggle-qr">${qrHidden?'Add QR':'Hide QR'}</button>`; }
       if (certificateEditorTool === "uploads") return `<div class="studio-panel-title"><h3>Photos</h3></div><button class="studio-dropzone" data-action="studio-upload-picture">${studioIcon('upload')}<strong>Upload photo</strong><small>PNG, JPG, WebP · 5 MB</small></button><div class="studio-photo-targets"><button data-action="studio-upload-student" aria-label="Upload student photo">Student</button><button data-action="studio-upload-coach" aria-label="Upload coach photo">Coach</button></div>${layout.uploads.length?`<div class="studio-asset-grid">${layout.uploads.map(a=>`<button data-studio-asset="${escapeHtml(a.id)}" aria-label="Add ${escapeHtml(a.name)}"><img src="${escapeHtml(a.source)}" alt="${escapeHtml(a.name)}"><span>${escapeHtml(a.name)}</span></button>`).join('')}</div>`:'<div class="studio-empty-assets"><p>No photos</p></div>'}`;
       if (certificateEditorTool === "text") return `<div class="studio-panel-title"><h3>Text</h3></div><button class="studio-text-add" data-action="add-certificate-text">${studioIcon('plus')}Add text</button>`;
       return renderCertificateToolPanel(coach);
@@ -538,7 +538,7 @@ export function initApp(config = {}) {
           layout.variants={...layout.variants,[layout.templateId]:layoutSnapshot(layout)};
         }
         coach.reportLayout=layout;
-        if(await saveReportLayout(coach)) studioToast(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?'Updated':'Saved');
+        if(await saveReportLayout(coach)) studioToast(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?(layout.layers.find(l=>l.id==='qr')?.visible===false?'QR hidden':'QR added'):'Saved');
       } catch(error){studioToast(error.message || 'Unable to save. Please try again.');}
     }
 
@@ -2985,7 +2985,8 @@ export function initApp(config = {}) {
       }
       if (certificateEditorTool === "qr") {
         const layout=getReportLayout(coach);
-        return `<div class="certificate-tool-panel"><strong>QR code</strong><label class="certificate-qr-field">URL<input class="text-input" id="studioQrUrl" type="url" value="${escapeHtml(layout.qrUrl)}" placeholder="https://..." maxlength="600"></label><p class="certificate-qr-error" id="studioQrError" role="alert"></p><button class="certificate-panel-action" data-action="studio-apply-qr">Apply</button><button class="certificate-panel-action" data-action="studio-toggle-qr">${layout.layers.find(l=>l.id==='qr')?.visible===false?'Show QR':'Hide QR'}</button></div>`;
+        const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false;
+        return `<div class="certificate-tool-panel"><strong>Add QR</strong><button class="certificate-panel-action ${qrHidden?'is-primary':''}" data-action="studio-toggle-qr">${qrHidden?'Add QR':'Hide QR'}</button></div>`;
       }
 
       if (certificateEditorTool === "elements") return `<div class="certificate-tool-panel"><strong>Elements</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-shape"><span aria-hidden="true">□</span>Add shape</button></div>`;

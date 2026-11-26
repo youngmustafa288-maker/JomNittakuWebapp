@@ -1010,8 +1010,7 @@
 .certificate-design-page .studio-delete-design:hover { color: #e11d48; border-color: #e11d48; background: #fff1f3; }
 .certificate-design-page .studio-delete-design:focus-visible { outline: 2px solid #e11d48; outline-offset: 2px; }
 
-/* ==================================================================
-   Settings: Google Drive card and QR links card
+/* ===========================================================   Settings: Google Drive card and QR links card
    ================================================================== */
 .drive-card-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
 .drive-card-logo {
@@ -1157,3 +1156,7 @@
 }
 
 
+=======
+/* QR panel: one button, red when it adds the QR */
+.certificate-tool-panel .certificate-panel-action.is-primary { background: #e11d48; border-color: #e11d48; color: #fff; }
+.certificate-tool-panel .certificate-panel-action.is-primary:hover { background: #be123c; }

@@ -4,6 +4,7 @@ import "./certificate-studio.css";
 import "./certificate-editor.css";
 import "./report-template-picker.css";
 import "./coach-onboarding.css";
+import "./redesign.css";
 import { initApp } from "./legacy-app.js";
 
 const root = document.querySelector("#app");

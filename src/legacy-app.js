@@ -6,7 +6,7 @@ import { createDashboardStatePayload, createReportDriveRepository, normalizeRepo
 import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
 import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
 import { mountSportScene, LOGIN_SPORTS } from "./sport-scenes.js";
-import { createFirstReportTour } from "./first-report-tour.js";
+import { createGuidedTour, TOURS } from "./first-report-tour.js";
 import { createCoachOnboarding, needsCoachOnboarding, pendingSetupItems, normalizeSkipped, SETUP_ITEM_LABELS, setupItemIcon } from "./coach-onboarding.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
@@ -302,7 +302,10 @@ export function initApp(config = {}) {
     // Guided cursor tour for a coach's first report.
     const firstReportTourKey = coachId => `firstReportTourDone:${coachId}`;
     let firstReportTourInstance = null;
-    const getFirstReportTour = () => firstReportTourInstance || (firstReportTourInstance = createFirstReportTour({
+    // Counted so the tours know when a design or profile has been saved.
+    let designSaveCount = 0;
+    let profileSaveCount = 0;
+    const getFirstReportTour = () => firstReportTourInstance || (firstReportTourInstance = createGuidedTour({
       getContext: () => {
         const draft = wizardDraftId ? state.reportDrafts[wizardDraftId] : null;
         const coach = getOnboardingCoach();
@@ -312,18 +315,24 @@ export function initApp(config = {}) {
           picked: !!draft?.studentId,
           page: state.ui.page,
           hasStudents: !!coach && state.students.some(student => student.coachId === coach.id),
+          studentCount: coach ? state.students.filter(student => student.coachId === coach.id).length : 0,
+          studioView,
+          avatarMenuOpen: !!state.ui.avatarMenuOpen,
+          designSaves: designSaveCount,
+          profileSaves: profileSaveCount,
           studentModalStep: onboardingModal?.type === "student" ? Number(onboardingModal.step) || 1 : 0,
           reportCount: coach ? state.reports.filter(report => report.coachId === coach.id).length : 0
         };
       },
-      onEnd: () => {
+      onEnd: tourId => {
+        if (tourId !== "report") return;
         const coach = getOnboardingCoach();
         try { if (coach) localStorage.setItem(firstReportTourKey(coach.id), "1"); } catch { /* storage may be blocked */ }
       }
     }));
     function startFirstReportTour() {
       state.ui.page = "overview";
-      getFirstReportTour().start();
+      getFirstReportTour().start("report");
       scheduleRender();
     }
     // Starts once, for a set-up coach with Drive and a student but no reports.
@@ -334,7 +343,7 @@ export function initApp(config = {}) {
       if (state.driveConnection?.status !== "connected") return;
       if (state.reports.some(report => report.coachId === coach.id)) return;
       try { if (localStorage.getItem(firstReportTourKey(coach.id))) return; } catch { /* storage may be blocked */ }
-      getFirstReportTour().start();
+      getFirstReportTour().start("report");
     }
     let overviewDateFilter = "";
     let overviewMonthFilter = "";
@@ -651,6 +660,7 @@ export function initApp(config = {}) {
           layout.variants={...layout.variants,[layout.templateId]:layoutSnapshot(layout)};
         }
         coach.reportLayout=layout;
+        if(action==='studio-save'||action==='studio-save-copy')designSaveCount++;
         if(await saveReportLayout(coach)) studioToast(frameToast||(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?(layout.layers.find(l=>l.id==='qr')?.visible===false?'QR hidden':'QR added'):'Saved'));
       } catch(error){studioToast(error.message || 'Unable to save. Please try again.');}
     }
@@ -2605,6 +2615,7 @@ export function initApp(config = {}) {
         coaches: '<circle cx="12" cy="7" r="3.5"/><path d="M5 21c.8-4 3.5-6.5 7-6.5s6.2 2.5 7 6.5"/><path d="M9 14.8l3 3 3-3"/>',
         "certificate-design": '<circle cx="12" cy="9" r="6"/><path d="M8.5 14L7 22l5-3 5 3-1.5-8"/>',
         "centre-settings": '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+        tutorials: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z"/>',
         "centre-coaches": '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4h5M16 8h5M17 12h4"/>'
       };
       return `<svg class="sidebar-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[page] || paths.overview}</svg>`;
@@ -2937,6 +2948,26 @@ export function initApp(config = {}) {
           </div>
         </section>
       `;
+    }
+
+    function renderTutorialsPage() {
+      const icons = { report: "reports", students: "students", certificate: "certificate-design", profile: "coaches" };
+      const order = ["report", "students", "certificate", "profile"];
+      return `
+        <section class="page ${state.ui.page === "tutorials" ? "active" : ""}">
+          <div class="section-title tutorials-head"><h2>Tutorials</h2><p>Pick a guide. A pointer shows you where to click, one step at a time. You do the real thing as you go.</p></div>
+          <div class="tutorial-grid">
+            ${order.map(id => {
+              const tour = TOURS[id];
+              return `<article class="tutorial-card">
+                <span class="tutorial-icon">${sidebarNavIcon(icons[id])}</span>
+                <h3>${escapeHtml(tour.title)}</h3>
+                <p>${escapeHtml(tour.description)}</p>
+                <div class="tutorial-foot"><small>About ${tour.minutes} min · ${tour.steps.length} steps</small><button type="button" class="primary-btn" data-action="start-tour" data-tour="${id}">Start guide</button></div>
+              </article>`;
+            }).join("")}
+          </div>
+        </section>`;
     }
 
     function renderCoachProfilePage() {
@@ -3718,6 +3749,7 @@ export function initApp(config = {}) {
             ["students", "Students"],
             ["certificate-design", "Certificates"]
           ];
+      if (state.auth.role === "coach") navItems.push(["tutorials", "Tutorials"]);
       navItems.push(["centre-settings", state.auth.role === "dev" ? "Licensing Console" : state.auth.role === "centre_admin" ? "Centre & Drive" : "Settings"]);
       // Resolve the active page explicitly. The dev coach view is a separate
       // console surface and must never fall through to the dashboard overview.
@@ -3740,6 +3772,8 @@ export function initApp(config = {}) {
         pageContent = renderReportViewPage();
       } else if (state.ui.page === "certificate-design") {
         pageContent = renderCertificateDesignPage();
+      } else if (state.ui.page === "tutorials") {
+        pageContent = renderTutorialsPage();
       } else {
         pageContent = renderOverviewPage();
       }
@@ -3755,6 +3789,7 @@ export function initApp(config = {}) {
         : state.ui.page === "reports" ? `${plural(getVisibleReports().length, "report")} · ${plural(getVisibleDrafts().length, "draft")}`
         : state.ui.page === "students" ? `${plural(getVisibleStudents().filter(student => student.status !== "Inactive").length, "active student")}`
         : state.ui.page === "certificate-design" ? "Pick how your reports look to parents."
+        : state.ui.page === "tutorials" ? "Short guides that show you where to click."
         : state.ui.page === "centre-settings" && state.auth.role === "coach" ? "Storage, links and your setup guide."
         : `${centreName} Coach Reporting System`;
       const sidebarProfile = state.auth.role === "dev" ? { name: "Developer", photo: "" } : getUserProfile();
@@ -4900,6 +4935,7 @@ export function initApp(config = {}) {
       if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
       if (action?.startsWith("studio-")) return handleStudioAction(action, event.currentTarget);
       if (action === "first-report-tour") return startFirstReportTour();
+      if (action === "start-tour") { getFirstReportTour().start(event.currentTarget.dataset.tour); return; }
       if (action === "reload-page") return window.location.reload();
       if (action === "setup-open") return getCoachOnboarding().openAt(event.currentTarget.dataset.step || "profile");
       if (action === "setup-dismiss") {
@@ -6506,7 +6542,7 @@ export function initApp(config = {}) {
       const items = getSetupItems();
       return `<div class="profile-card centre-settings-card setup-guide-card" style="margin-bottom:16px;">
         <div class="section-title"><h2>Setup guide</h2><p>${items.length ? `${items.length} step${items.length === 1 ? "" : "s"} left. Pick up where you stopped.` : "Your setup is complete. You can go through the guide again anytime."}</p></div>
-        <div class="profile-actions"><button type="button" class="${items.length ? "primary-btn" : "secondary-btn"}" data-action="setup-open" data-step="${items[0] || "profile"}">${items.length ? "Finish setup" : "Open setup guide"}</button><button type="button" class="secondary-btn" data-action="first-report-tour">Show me how to make a report</button></div>
+        <div class="profile-actions"><button type="button" class="${items.length ? "primary-btn" : "secondary-btn"}" data-action="setup-open" data-step="${items[0] || "profile"}">${items.length ? "Finish setup" : "Open setup guide"}</button><button type="button" class="secondary-btn" data-nav="tutorials">Tutorials</button></div>
       </div>`;
     }
 
@@ -6640,6 +6676,7 @@ export function initApp(config = {}) {
       try {
         const savedCoach = await saveCoachRecord(coach);
         state.coaches = state.coaches.map(item => item.id === savedCoach.id ? savedCoach : item);
+        profileSaveCount++;
         persist();
         render();
       } catch (error) {

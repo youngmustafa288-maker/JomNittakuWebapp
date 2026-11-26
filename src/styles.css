@@ -2967,3 +2967,16 @@
 .student-edit-actions > span { display: flex; gap: 12px; margin-left: auto; }
 .student-delete-btn { color: #b42318; border-color: #f3c2c0; }
 .student-delete-btn:hover { background: #fef3f2; color: #912018; }
+
+/* Tutorials page: one card per guided tour. */
+.tutorials-head { margin-bottom: 18px; }
+.tutorial-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.tutorial-card { display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: #fff; border: 1px solid #e4e9f2; box-shadow: 0 8px 22px rgba(22, 42, 74, .06); transition: transform .2s, box-shadow .2s; }
+.tutorial-card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(22, 42, 74, .1); }
+.tutorial-icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; background: #fff1f4; color: #c81e45; }
+.tutorial-icon .sidebar-nav-icon { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tutorial-card h3 { margin: 6px 0 0; font-size: 1.1rem; color: #111827; }
+.tutorial-card p { margin: 0; color: #4b5563; line-height: 1.45; flex: 1; }
+.tutorial-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.tutorial-foot small { color: #60708f; }
+.frt-next { min-height: 38px; padding: 0 18px; }

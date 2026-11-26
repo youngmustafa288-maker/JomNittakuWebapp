@@ -902,3 +902,92 @@
   .dashboard .table-card:has(#reportsTable) .reports-filter-bar .filter-select { flex: 1 1 40%; width: auto; max-width: none; }
   .dashboard .table-card:has(#reportsTable) .table-topline { justify-content: flex-start; }
 }
+
+/* ==================================================================
+   Computer screens: everything a size bigger, growing on wide monitors
+   (phones and tablets keep the sizes above)
+   ================================================================== */
+@media (min-width: 1025px) {
+  .dashboard { grid-template-columns: clamp(260px, 16vw, 300px) minmax(0, 1fr); }
+
+  .dashboard .sidebar { padding: 26px 16px 18px; }
+  .sidebar-brand { padding: 4px 12px 26px; gap: 12px; }
+  .dashboard .sidebar-brand-mark { width: 40px; height: 40px; font-size: 15px; border-radius: 12px; }
+  .sidebar-brand-copy strong { font-size: 18px; }
+  .sidebar-brand-copy small,
+  .sidebar-profile-copy small { font-size: 13px; }
+  .dashboard .sidebar-nav { gap: 4px; }
+  .dashboard .sidebar-nav-item { min-height: 50px; padding: 12px 14px; font-size: clamp(15px, .85vw, 17px); gap: 14px; border-radius: 12px; }
+  .sidebar-nav-icon { width: 21px; height: 21px; }
+  .dashboard .sidebar-profile { padding: 14px; }
+  .dashboard .sidebar-profile-avatar { width: 42px; height: 42px; font-size: 14px; }
+  .sidebar-profile-copy strong { font-size: 15px; }
+
+  .dashboard .main { padding: 34px clamp(24px, 2.6vw, 52px) 56px; }
+  .dashboard .page-header { margin-bottom: 28px; }
+  .dashboard .header-copy h1 { font-size: clamp(32px, 2.3vw, 42px); }
+  .dashboard .header-copy p { font-size: clamp(15px, .95vw, 18px); }
+
+  .dashboard .primary-btn,
+  .dashboard .secondary-btn,
+  .dashboard .ghost-btn { min-height: 46px; padding: 11px 20px; font-size: 15px; border-radius: 12px; }
+  .dashboard .topbar-new-report { min-height: 50px; padding: 12px 22px; font-size: 16px; }
+  .dashboard .topbar-new-report svg { width: 18px; height: 18px; }
+
+  .dashboard .page.active { gap: 24px; }
+  .dashboard .section-card,
+  .dashboard .table-card,
+  .dashboard .profile-card { padding: clamp(22px, 1.5vw, 30px); border-radius: 18px; }
+  .dashboard .section-title h2,
+  .dashboard .table-card h3,
+  .dashboard .profile-card h2 { font-size: clamp(19px, 1.25vw, 23px); }
+  .dashboard .section-title p,
+  .dashboard .muted { font-size: 15px; }
+
+  .dashboard .stats-grid { gap: 20px; }
+  .dashboard .stat-card { padding: clamp(22px, 1.5vw, 30px); border-radius: 18px; }
+  .dashboard .stat-card h3 { font-size: clamp(14px, .9vw, 16px); }
+  .dashboard .stat-card .value { font-size: clamp(36px, 2.6vw, 48px); margin-top: 10px; }
+  .dashboard .stat-footnote { font-size: clamp(13px, .85vw, 15px); }
+
+  .dashboard .setup-reminder { padding: clamp(20px, 1.4vw, 28px); }
+  .setup-reminder-ring { width: 64px; height: 64px; }
+  .setup-reminder-ring span { width: 50px; height: 50px; font-size: 15px; }
+  .dashboard .setup-reminder-copy h3 { font-size: 19px; }
+  .dashboard .setup-reminder-head span { font-size: 15px; }
+  .dashboard .setup-reminder-items button { min-height: 46px; font-size: 15px; padding: 0 20px; }
+
+  .dashboard .search-input,
+  .dashboard .filter-select,
+  .dashboard .text-input { min-height: 48px; font-size: 15px; }
+  .dashboard .status-chip { min-height: 48px; padding: 0 20px; font-size: 15px; }
+  .dashboard .search-field svg { width: 20px; height: 20px; left: 16px; }
+  .dashboard .search-field .search-input { padding-left: 46px; }
+
+  .dashboard th { font-size: 14px; padding: 12px 14px; }
+  .dashboard td { font-size: clamp(15px, .95vw, 17px); padding: 16px 14px; }
+  .dashboard .person-cell .avatar,
+  .needs-attention .avatar { width: 42px; height: 42px; min-width: 42px; font-size: 15px; }
+  .dashboard .icon-btn { width: 42px; height: 42px; border-radius: 11px; }
+  .dashboard .icon-btn svg { width: 20px; height: 20px; }
+  .dashboard .badge,
+  .dashboard .status-pill { font-size: 13px; padding: 5px 12px; }
+  .dashboard .table-finish-btn { min-height: 40px; font-size: 14px; }
+  .dashboard .table-title-link { font-size: 16px; }
+
+  .overview-columns { grid-template-columns: minmax(0, 1fr) clamp(320px, 22vw, 420px); gap: 24px; }
+  .needs-attention-row { padding: 14px 0; gap: 12px; }
+  .needs-attention-copy strong { font-size: 16px; }
+  .needs-attention-copy small { font-size: 13px; }
+  .dashboard .needs-attention .secondary-btn { min-height: 40px; font-size: 14px; }
+
+  .students-card-table tbody { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+  .dashboard .students-card-table td.student-card { padding: 22px; gap: 16px; }
+  .dashboard .student-card-top .avatar { width: 56px; height: 56px; min-width: 56px; font-size: 17px; }
+  .student-card-name strong { font-size: 17px; }
+  .student-card-name small { font-size: 14px; }
+  .student-card-facts dt { font-size: 13px; }
+  .student-card-facts dd { font-size: 16px; }
+  .dashboard .student-card-actions > * { min-height: 42px; font-size: 14px; }
+  .dashboard .upload-chip { min-height: 40px; font-size: 14px; }
+}

@@ -124,10 +124,12 @@ export function initApp(config = {}) {
       const branch = coach?.branch && !["Unassigned", "Centre"].includes(coach.branch) ? coach.branch : "";
       return requestedCentre?.name || branch || "";
     }
+    // The old "Passion · Focus · Excellent" tagline is no longer printed.
+    const FOOTER_TAGLINE = /^\s*Passion\s*·\s*Focus\s*·\s*Ex\w*\s*$/i;
     function footerTextForCentre(text) {
       const centre = certificateCentreName();
-      if (!centre || String(text || "") !== DEFAULT_FOOTER_TEXT) return text;
-      return `${centre.toUpperCase()}\nPassion · Focus · Excellent`;
+      const value = String(text || "") === DEFAULT_FOOTER_TEXT && centre ? centre.toUpperCase() : String(text || "");
+      return value.split(/\n+/).filter(line => !FOOTER_TAGLINE.test(line)).join("\n");
     }
     const DEFAULT_LAYER_GEOMETRY = {
       ...ARTWORK_SLICES,
@@ -1838,7 +1840,7 @@ export function initApp(config = {}) {
               const [title = "", ...subtitleParts] = String(footerTextForCentre(layer.text) || "").split(/\n+/);
               // Long centre names shrink to stay on one line inside the bar.
               const scale = Math.max(0.4, Math.min(1, 8.5 / Math.max(1, title.trim().length)));
-              return `<span class="template-footer-title" style="font-size:${(3.5 * scale).toFixed(2)}cqw">${escapeHtml(title)}</span><span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>`;
+              return `<span class="template-footer-title" style="font-size:${(3.5 * scale).toFixed(2)}cqw">${escapeHtml(title)}</span>${subtitleParts.length ? `<span class="template-footer-subtitle">${escapeHtml(subtitleParts.join(" "))}</span>` : ""}`;
             })()
           : escapeHtml(layer.text || "");
         const isSelected = reportLayoutEditing && selectedReportOverlay === layer.id;
@@ -2769,7 +2771,7 @@ export function initApp(config = {}) {
                     </div>
                   </div>
                 </div>
-                <div class="report-bottom-bar">${escapeHtml((certificateCentreName() || "JomNittaku").toUpperCase())} - Passion · Focus · Excellent</div>
+                <div class="report-bottom-bar">${escapeHtml((certificateCentreName() || "JomNittaku").toUpperCase())}</div>
               </div>
             </div>
           </div>

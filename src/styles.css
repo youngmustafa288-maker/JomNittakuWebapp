@@ -1899,7 +1899,7 @@
     .template-footer-text::after {
       content:"";
       position:absolute;
-      top:43%;
+      top:50%;
       width:13%;
       height:1px;
       background:rgba(216,180,119,.8);

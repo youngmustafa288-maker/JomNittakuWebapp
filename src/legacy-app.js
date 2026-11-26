@@ -3284,6 +3284,7 @@ export function initApp(config = {}) {
                 ${step > 1 ? `<button class="secondary-btn" data-action="wizard-back">Back</button>` : ""}
               </div>
               <div style="display:flex;gap:12px;">
+                ${step > 1 ? `<button class="secondary-btn" data-action="wizard-save-draft">Save</button>` : ""}
                 ${step < 4
                   ? `<button class="primary-btn" data-action="wizard-next">Next</button>`
                   : `<button class="primary-btn" data-action="wizard-generate">Generate Final Report</button>`}
@@ -4655,6 +4656,7 @@ export function initApp(config = {}) {
       if (action === "new-report") return startReportFlow();
       if (action === "confirm-report-start") return confirmReportStart();
       if (action === "save-close-wizard") return closeWizard();
+      if (action === "wizard-save-draft") return saveWizardDraftNow(event.currentTarget);
       if (action === "wizard-next") return advanceWizard();
       if (action === "wizard-back") return retreatWizard();
       if (action === "wizard-go-step") return goToWizardStep(event.currentTarget.dataset.step);
@@ -5282,6 +5284,22 @@ export function initApp(config = {}) {
       persist();
       render();
       if (!isCertificatePreview) window.requestAnimationFrame(() => syncReportToDrive(savedReport));
+    }
+
+    // Save button on steps 2–4: saves now and keeps the report open.
+    async function saveWizardDraftNow(button) {
+      const draft = state.reportDrafts[wizardDraftId];
+      if (!draft) return;
+      updateWizardDraftFromInputs({ schedule: false });
+      if (button) { button.disabled = true; button.textContent = "Saving…"; }
+      try {
+        await flushDraftSave(draft);
+        updateReportSaveStatus("Saved");
+        if (button) { button.textContent = "Saved ✓"; setTimeout(() => { button.textContent = "Save"; button.disabled = false; }, 1500); }
+      } catch (error) {
+        updateReportSaveStatus(error?.message || "Couldn't save. Please try again.", true);
+        if (button) { button.textContent = "Save"; button.disabled = false; }
+      }
     }
 
     async function closeWizard() {

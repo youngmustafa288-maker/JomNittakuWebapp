@@ -1,7 +1,7 @@
 // Original certificate editor layout, extended with template and QR tools.
 export function renderCertificateEditor({renderStrip, renderPanel, renderToolbar, renderCanvas}) {
  return `<section class="page certificate-design-page certificate-original-editor certificate-reference-tools active">
- <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2></div><div class="certificate-header-actions"><button class="secondary-btn" data-action="studio-gallery">Templates</button><button class="primary-btn" data-action="studio-save">Save</button></div></div>
+ <div class="section-header certificate-design-header"><div class="section-title"><h2>Certificate Design</h2></div><div class="certificate-header-actions"><button class="secondary-btn" data-action="studio-gallery">Templates</button><button class="secondary-btn" data-action="studio-reset-layout">Reset layout</button><button class="primary-btn" data-action="studio-save">Save</button></div></div>
  <div class="certificate-editor-workspace">${renderStrip()}<aside class="certificate-editor-rail">${renderPanel()}</aside><div class="certificate-editor-main">${renderToolbar()}<main class="certificate-editor-stage">${renderCanvas()}</main></div></div>
  <input type="file" id="studioBackgroundUpload" accept="image/png,image/jpeg,image/webp" class="hidden"><input type="file" id="studioPictureUpload" accept="image/png,image/jpeg,image/webp" class="hidden"><div id="studioToast" class="certificate-editor-status" role="status" aria-live="polite"></div>
  </section>`;

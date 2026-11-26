@@ -558,3 +558,25 @@ test('old report design copies are upgraded: Arial fonts, QR moved off the frame
   assert.equal(layout.layers.find(l => l.id === 'coach-photo').left, 70);
   assert.equal(layout.layers.find(l => l.id === 'coach-photo').top, 30);
 });
+
+test('summary sections: Before/After on the left, Taught/Next on the right; old saved spots move, custom spots stay', () => {
+  const h = harness();
+  const fresh = h.api.normalizeReportLayout();
+  const at = (layout, id) => { const l = layout.layers.find(x => x.id === id); return [l.left, l.top]; };
+  assert.deepEqual(at(fresh, 'before-title'), [9.7, 42]);
+  assert.deepEqual(at(fresh, 'after-title'), [10.4, 50]);
+  assert.deepEqual(at(fresh, 'taught-title'), [53.1, 42]);
+  assert.deepEqual([fresh.whatTaught.left, fresh.whatTaught.top], [55.4, 44.9]);
+  const old = {
+    editorVersion: 2,
+    whatTaught: { left: 11.8, top: 44.9, width: 35.2 }, beforeCoaching: { left: 11.8, top: 52.8, width: 35.2 }, afterTraining: { left: 55.4, top: 44.9, width: 38.5 },
+    layers: [{ id: 'taught-title', left: 9.7, top: 42, width: 31, height: 2.4 }, { id: 'before-title', left: 9.7, top: 50, width: 34, height: 2.4 }, { id: 'after-title', left: 30, top: 20, width: 40, height: 2.4 }]
+  };
+  const moved = h.api.normalizeReportLayout(old);
+  assert.deepEqual(at(moved, 'taught-title'), [53.1, 42]);
+  assert.deepEqual(at(moved, 'before-title'), [9.7, 42]);
+  assert.deepEqual(at(moved, 'after-title'), [30, 20]);
+  assert.deepEqual([moved.beforeCoaching.left, moved.beforeCoaching.top], [11.8, 44.9]);
+  assert.deepEqual([moved.afterTraining.left, moved.afterTraining.top], [11.8, 52.8]);
+  assert.deepEqual(h.api.normalizeReportLayout(moved).layers.find(x => x.id === 'before-title').top, 42);
+});

@@ -528,7 +528,7 @@ test('certificate footer uses the centre name unless the coach wrote their own t
   const h = harness();
   h.api.state.auth = { role: 'coach', coachId: 'coach-x', userId: 'coach-x', centreId: 'c', email: '' };
   h.api.state.coaches = [{ id: 'coach-x', branch: 'LiverPool' }];
-  assert.match(h.api.footerTextForCentre('JOMNITTAKU\nPassion · Focus · Exilent'), /^LIVERPOOL\n/);
+  assert.equal(h.api.footerTextForCentre('JOMNITTAKU\nPassion · Focus · Exilent'), 'LIVERPOOL');
   assert.equal(h.api.footerTextForCentre('MY OWN TEXT'), 'MY OWN TEXT');
 });
 

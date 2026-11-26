@@ -49,9 +49,9 @@ export function initApp(config = {}) {
       time: { left: 17.9, top: 29.58, width: 23, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
       centre: { left: 17.9, top: 31.94, width: 25, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
       coach: { left: 24.25, top: 34.34, width: 19, fontSize: 2.7, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
-      whatTaught: { left: 11.8, top: 44.9, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      beforeCoaching: { left: 11.8, top: 52.8, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
-      afterTraining: { left: 55.4, top: 44.9, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      whatTaught: { left: 55.4, top: 44.9, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      beforeCoaching: { left: 11.8, top: 44.9, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
+      afterTraining: { left: 11.8, top: 52.8, width: 35.2, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       nextLesson: { left: 55.4, top: 52.8, width: 38.5, height: 5.16, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       remarks: { left: 10.1, top: 61.9, width: 79.5, height: 11.6, fontSize: 1.55, fontFamily: "Arial", color: "#111111", fontWeight: 400 },
       contact: { left: 34.55, top: 79.9, width: 31.2, fontSize: 2.3, fontFamily: "Arial", color: "#111111", fontWeight: 700 },
@@ -72,13 +72,15 @@ export function initApp(config = {}) {
       "coach-label": { left: 9.7, top: 34.2, width: 15, height: 2.2 },
       "session-divider": { left: 9.7, top: 37.7, width: 80, height: 0.7 },
       "training-title": { left: 9.7, top: 39, width: 29, height: 2.6 },
-      "taught-title": { left: 9.7, top: 42, width: 31, height: 2.4 },
+      // Left column: Before, then After. Right column: Taught, then Next.
+      // Bullet dots stay where the artwork had them; only the headings move.
+      "taught-title": { left: 53.1, top: 42, width: 31, height: 2.4 },
       "taught-dot-1": { left: 9.7, top: 44.6, width: 2.2, height: 1.8 },
       "taught-dot-2": { left: 9.7, top: 47, width: 2.2, height: 1.8 },
-      "before-title": { left: 9.7, top: 50, width: 34, height: 2.4 },
+      "before-title": { left: 9.7, top: 42, width: 34, height: 2.4 },
       "before-dot-1": { left: 9.7, top: 52.6, width: 2.2, height: 1.8 },
       "before-dot-2": { left: 9.7, top: 55, width: 2.2, height: 1.8 },
-      "after-title": { left: 53.8, top: 42, width: 40, height: 2.4 },
+      "after-title": { left: 10.4, top: 50, width: 40, height: 2.4 },
       "after-dot-1": { left: 53.8, top: 44.6, width: 2.2, height: 1.8 },
       "after-dot-2": { left: 53.8, top: 47, width: 2.2, height: 1.8 },
       "next-title": { left: 53.8, top: 50, width: 35, height: 2.4 },
@@ -664,8 +666,30 @@ export function initApp(config = {}) {
       return repaired;
     }
 
+    // Summary sections used to be Taught/Before on the left and After/Next on
+    // the right. Items still at those old default spots move to the new ones
+    // (Before/After left, Taught/Next right). Items a coach moved stay put.
+    const OLD_SUMMARY_SPOTS = {
+      "taught-title": [9.7, 42], "before-title": [9.7, 50], "after-title": [53.8, 42],
+      whatTaught: [11.8, 44.9], beforeCoaching: [11.8, 52.8], afterTraining: [55.4, 44.9]
+    };
+    function moveSummarySections(saved) {
+      if (!saved || typeof saved !== "object" || (saved.baseTemplateId && saved.baseTemplateId !== "classic")) return saved;
+      const atOldSpot = (id, item) => item && Number(item.left) === OLD_SUMMARY_SPOTS[id][0] && Number(item.top) === OLD_SUMMARY_SPOTS[id][1];
+      const next = { ...saved };
+      ["whatTaught", "beforeCoaching", "afterTraining"].forEach(key => {
+        if (atOldSpot(key, saved[key])) next[key] = { ...saved[key], left: DEFAULT_REPORT_LAYOUT[key].left, top: DEFAULT_REPORT_LAYOUT[key].top, width: DEFAULT_REPORT_LAYOUT[key].width };
+      });
+      if (Array.isArray(saved.layers)) next.layers = saved.layers.map(layer => {
+        if (!layer || !OLD_SUMMARY_SPOTS[layer.id] || !ARTWORK_SLICES[layer.id] || !atOldSpot(layer.id, layer)) return layer;
+        const spot = ARTWORK_SLICES[layer.id];
+        return { ...layer, left: spot.left, top: spot.top, width: spot.width };
+      });
+      return next;
+    }
+
     function normalizeReportLayout(saved = {}) {
-      saved = upgradeCertificateFonts(saved);
+      saved = moveSummarySections(upgradeCertificateFonts(saved));
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
       const legacyLayout = saved?.editorVersion !== 2;
       const savedLayers = Array.isArray(saved?.layers) ? saved.layers : [];
@@ -1618,16 +1642,16 @@ export function initApp(config = {}) {
             `).join("") : ""}
 
             ${renderPlainBulletOverlays(data.bullets.whatTaught, [
-              { left: 11.8, top: 44.9, width: 35.2, height: 4.4 },
-              { left: 11.8, top: 47.48, width: 35.2, height: 4.4 }
-            ], layout.whatTaught, "whatTaught")}
-            ${renderPlainBulletOverlays(data.bullets.beforeCoaching, [
-              { left: 11.8, top: 52.8, width: 35.2, height: 4.4 },
-              { left: 11.8, top: 55.35, width: 35.2, height: 4.4 }
-            ], layout.beforeCoaching, "beforeCoaching")}
-            ${renderPlainBulletOverlays(data.bullets.afterTraining, [
               { left: 55.4, top: 44.9, width: 38.5, height: 4.4 },
               { left: 55.4, top: 47.48, width: 38.5, height: 4.4 }
+            ], layout.whatTaught, "whatTaught")}
+            ${renderPlainBulletOverlays(data.bullets.beforeCoaching, [
+              { left: 11.8, top: 44.9, width: 35.2, height: 4.4 },
+              { left: 11.8, top: 47.48, width: 35.2, height: 4.4 }
+            ], layout.beforeCoaching, "beforeCoaching")}
+            ${renderPlainBulletOverlays(data.bullets.afterTraining, [
+              { left: 11.8, top: 52.8, width: 35.2, height: 4.4 },
+              { left: 11.8, top: 55.35, width: 35.2, height: 4.4 }
             ], layout.afterTraining, "afterTraining")}
             ${renderPlainBulletOverlays(data.bullets.nextLesson, [
               { left: 55.4, top: 52.8, width: 38.5, height: 4.4 },

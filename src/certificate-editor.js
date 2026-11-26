@@ -7,7 +7,7 @@ export function renderCertificateEditor({renderStrip, renderPanel, renderToolbar
  </section>`;
 }
 export function renderCertificateEditorTools(tool) {
- const tools = [['text','T','Text'],['uploads','+','Uploads']];
+ const tools = [['text','T','Text'],['uploads','+','Uploads'],['qr','▦','QR']];
  return `<nav class="certificate-tool-strip" aria-label="Certificate editor tools">${tools.map(([id,icon,label])=>`<button type="button" class="certificate-tool-button ${tool===id?'is-active':''}" data-certificate-tool="${id}" aria-pressed="${tool===id}"><span aria-hidden="true">${icon}</span><small>${label}</small></button>`).join('')}</nav>`;
 }
 

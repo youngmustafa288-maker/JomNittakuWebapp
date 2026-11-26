@@ -340,7 +340,7 @@ export function initApp(config = {}) {
       return makeTemplateLayout(normalizeReportLayout(), id);
     }
     // Puts every built-in item back where the template places it. The coach's
-    // own words, uploaded logo/images, QR on/off and added text boxes are kept.
+    // own words, uploaded logo/images and added text boxes are kept. The QR is shown again.
     function resetLayoutPositions(current) {
       const fresh = defaultStudioLayout(current.baseTemplateId);
       const savedById = new Map((current.layers || []).map(layer => [layer.id, layer]));
@@ -351,7 +351,6 @@ export function initApp(config = {}) {
         if (typeof saved.source === "string" && saved.source) kept.source = saved.source;
         if (Object.prototype.hasOwnProperty.call(ARTWORK_EDITABLE_TEXT, layer.id) && typeof saved.text === "string") kept.text = saved.text;
         if (layer.id === "footer-text-overlay" && typeof saved.text === "string") kept.text = saved.text;
-        if (layer.id === "qr") kept.visible = saved.visible !== false;
         return { ...layer, ...kept };
       });
       const added = (current.layers || []).filter(layer => !fresh.layers.some(item => item.id === layer.id));
@@ -492,7 +491,7 @@ export function initApp(config = {}) {
         }
         if(action==='studio-toggle-qr'){const layer=layout.layers.find(l=>l.id==='qr');layer.visible=layer.visible===false;selectedReportOverlay='qr';}
         if(action==='studio-reset-layout'){
-          if(!window.confirm('Put every item back in its original place? Your text, logo and QR choice are kept.'))return;
+          if(!window.confirm('Put every item back in its original place and show the QR code? Your text and logo are kept.'))return;
           coach.reportLayout=resetLayoutPositions(layout);selectedReportOverlay='';
           if(await saveReportLayout(coach)) studioToast('Layout reset');
           return;
@@ -1802,7 +1801,7 @@ export function initApp(config = {}) {
           // The old TTAM badge is no longer printed. The slot stays available
           // in the editor so a coach can drop in their own logo.
           const isEmptyBadge = layer.id === "certification-badge" && !layer.source;
-          if (isEmptyBadge && !reportLayoutEditing) return "";
+          if (isEmptyBadge) return "";
           const left = Number(layer.left ?? slice.left) || 0;
           const top = Number(layer.top ?? slice.top) || 0;
           const width = Number(layer.width ?? slice.width) || slice.width;

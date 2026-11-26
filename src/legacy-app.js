@@ -188,9 +188,9 @@ export function initApp(config = {}) {
 
     const LESSON_LABELS = ["Footwork Fundamentals", "Forehand Drive", "Backhand Control", "Serve Precision", "Spin Reading", "Match Strategy", "Transition Drill", "Consistency Circuit"];
     const REPORT_STATUSES = ["Generated"];
+    // New coaches start with one empty link row to fill in (platform + link).
     const DEFAULT_COACH_LINKS = [
-      { id: "reports", title: "View Reports", url: "/reports", icon: "▦", visible: true, order: 1 },
-      { id: "contact", title: "Contact Coach", url: "mailto:", icon: "✉", visible: true, order: 2 }
+      { id: "link-1", title: "", url: "", icon: "↗", visible: true, order: 1 }
     ];
     const supabase = hasSupabaseConfig()
       ? createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -433,7 +433,7 @@ export function initApp(config = {}) {
     function renderStudioPanel(coach) {
       const layout = getReportLayout(coach);
       if (certificateEditorTool === "templates") return `<div class="studio-panel-title"><h3>Templates</h3></div><div class="studio-mini-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="${layout.templateId===t.id?'active':''}" data-studio-template="${escapeHtml(t.id)}"><span class="studio-mini-thumb">${renderStudioMini(t.id)}</span><strong>${escapeHtml(t.name)}</strong>${layout.templateId===t.id?studioIcon('check'):''}</button>`).join('')}</div><button class="studio-panel-upload" data-action="studio-upload-background">${studioIcon('upload')}Upload design</button>`;
-      if (certificateEditorTool === "qr") return `<div class="studio-panel-title"><h3>QR code</h3></div><label class="studio-field">URL<input id="studioQrUrl" type="url" value="${escapeHtml(layout.qrUrl)}" placeholder="https://..." maxlength="600"></label><p id="studioQrError" class="studio-field-error" role="alert"></p><button class="primary-btn studio-btn studio-full" data-action="studio-apply-qr">Apply</button><button class="studio-panel-upload" data-action="studio-toggle-qr">${layout.layers.find(l=>l.id==='qr')?.visible===false?'Show QR':'Hide QR'}</button>`;
+      if (certificateEditorTool === "qr") { const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false; return `<div class="studio-panel-title"><h3>Add QR</h3></div><button class="${qrHidden?'primary-btn studio-btn studio-full':'studio-panel-upload'}" data-action="studio-toggle-qr">${qrHidden?'Add QR':'Hide QR'}</button>`; }
       if (certificateEditorTool === "uploads") return `<div class="studio-panel-title"><h3>Photos</h3></div><button class="studio-dropzone" data-action="studio-upload-picture">${studioIcon('upload')}<strong>Upload photo</strong><small>PNG, JPG, WebP · 5 MB</small></button><div class="studio-photo-targets"><button data-action="studio-upload-student" aria-label="Upload student photo">Student</button><button data-action="studio-upload-coach" aria-label="Upload coach photo">Coach</button></div>${layout.uploads.length?`<div class="studio-asset-grid">${layout.uploads.map(a=>`<button data-studio-asset="${escapeHtml(a.id)}" aria-label="Add ${escapeHtml(a.name)}"><img src="${escapeHtml(a.source)}" alt="${escapeHtml(a.name)}"><span>${escapeHtml(a.name)}</span></button>`).join('')}</div>`:'<div class="studio-empty-assets"><p>No photos</p></div>'}`;
       if (certificateEditorTool === "text") return `<div class="studio-panel-title"><h3>Text</h3></div><button class="studio-text-add" data-action="add-certificate-text">${studioIcon('plus')}Add text</button>`;
       return renderCertificateToolPanel(coach);
@@ -538,7 +538,7 @@ export function initApp(config = {}) {
           layout.variants={...layout.variants,[layout.templateId]:layoutSnapshot(layout)};
         }
         coach.reportLayout=layout;
-        if(await saveReportLayout(coach)) studioToast(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?'Updated':'Saved');
+        if(await saveReportLayout(coach)) studioToast(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?(layout.layers.find(l=>l.id==='qr')?.visible===false?'QR hidden':'QR added'):'Saved');
       } catch(error){studioToast(error.message || 'Unable to save. Please try again.');}
     }
 
@@ -2985,7 +2985,8 @@ export function initApp(config = {}) {
       }
       if (certificateEditorTool === "qr") {
         const layout=getReportLayout(coach);
-        return `<div class="certificate-tool-panel"><strong>QR code</strong><label class="certificate-qr-field">URL<input class="text-input" id="studioQrUrl" type="url" value="${escapeHtml(layout.qrUrl)}" placeholder="https://..." maxlength="600"></label><p class="certificate-qr-error" id="studioQrError" role="alert"></p><button class="certificate-panel-action" data-action="studio-apply-qr">Apply</button><button class="certificate-panel-action" data-action="studio-toggle-qr">${layout.layers.find(l=>l.id==='qr')?.visible===false?'Show QR':'Hide QR'}</button></div>`;
+        const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false;
+        return `<div class="certificate-tool-panel"><strong>Add QR</strong><button class="certificate-panel-action ${qrHidden?'is-primary':''}" data-action="studio-toggle-qr">${qrHidden?'Add QR':'Hide QR'}</button></div>`;
       }
 
       if (certificateEditorTool === "elements") return `<div class="certificate-tool-panel"><strong>Elements</strong><button type="button" class="certificate-panel-action" data-action="add-certificate-shape"><span aria-hidden="true">□</span>Add shape</button></div>`;
@@ -3678,24 +3679,39 @@ export function initApp(config = {}) {
         <section class="page ${state.ui.page === "centre-settings" ? "active" : ""}">
           ${isCoach ? renderSetupGuideSettingsCard() : ""}
           ${isCoach ? `<div class="profile-card centre-settings-card drive-connection-card ${drive.status === "connected" ? "is-connected" : ""}" style="margin-bottom:16px;">
-            <div class="section-title"><div class="drive-heading"><h2>My Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : ""}</div><p>Your report drafts and PDFs are saved to your own Google Drive.</p></div>
+            <div class="drive-card-head">
+              <span class="drive-card-logo"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg></span>
+              <div class="drive-card-title"><div class="drive-heading"><h2>My Google Drive</h2>${drive.status === "connected" ? `<span class="status-pill status-active">Connected</span>` : `<span class="status-pill drive-pill-off">Not connected</span>`}</div><p>Your report drafts and PDFs are saved to your own Google Drive.</p></div>
+            </div>
             ${driveConnectionError || drive.last_error ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(driveConnectionError || drive.last_error)}</p>` : ""}
-            ${drive.status === "connected" ? `<div class="review-card"><div class="review-row"><strong>Google account</strong><span>${escapeHtml(drive.google_account_email || "Connected")}</span></div><div class="review-row"><strong>Report folder</strong><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(drive.root_folder_name || "Open my Drive folder")}</a></div><div class="review-row"><strong>Last saved</strong><span>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString()) : "Not yet"}</span></div></div>
-              <div class="profile-actions"><button class="secondary-btn" data-action="connect-drive">Reconnect Drive</button><button class="ghost-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your own Google Drive to create and save reports without a centre admin connecting first.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect My Google Drive</span></button>`}
+            ${drive.status === "connected" ? `<div class="drive-info-grid">
+                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg></span><span class="drive-info-copy"><small>Google account</small><strong>${escapeHtml(drive.google_account_email || "Connected")}</strong></span></div>
+                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="drive-info-copy"><small>Report folder</small><a href="${escapeHtml(drive.root_folder_url || "#")}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(drive.root_folder_name || "Open my Drive folder")}">${escapeHtml(drive.root_folder_name || "Open my Drive folder")} ↗</a></span></div>
+                <div class="drive-info-tile"><span class="drive-info-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="drive-info-copy"><small>Last saved</small><strong>${drive.last_successful_sync_at ? escapeHtml(new Date(drive.last_successful_sync_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })) : "Not yet"}</strong></span></div>
+              </div>
+              <div class="profile-actions"><button class="secondary-btn" data-action="connect-drive">Reconnect Drive</button><button class="ghost-btn drive-disconnect-btn" data-action="disconnect-drive">Disconnect</button></div>` : `<p class="muted">Connect your own Google Drive to create and save reports without a centre admin connecting first.</p><button class="primary-btn drive-connect-btn" data-action="connect-drive"><svg class="drive-logo" viewBox="0 0 48 40" aria-hidden="true" focusable="false"><path fill="#0F9D58" d="M16 2h12l16 28H32z"/><path fill="#4285F4" d="M8 30h24l-6 10H2z"/><path fill="#F4B400" d="M16 2 2 30h12L28 2z"/></svg><span>Connect My Google Drive</span></button>`}
           </div>` : state.auth.role === "centre_admin" ? `<div class="profile-card centre-settings-card drive-connection-card" style="margin-bottom:16px;"><div class="section-title"><h2>Coach Google Drives</h2><p>Coaches authorize their own accounts. You do not need to connect a Drive for the centre.</p></div><p class="muted">${connectedCoachDriveIds.length} coach account(s) connected.</p></div>` : ""}
           <div class="profile-card centre-settings-card">
-            <div class="section-title"><h2>${isCoach ? "Coach Links" : "Centre Links"}</h2></div>
+            <div class="links-card-head">
+              <div class="section-title"><h2>${isCoach ? "Add links for your QR" : "Centre Links"}</h2>${isCoach ? `<p>When parents scan the QR on a report, they see a page with these links.</p>` : ""}</div>
+              ${isCoach ? `<button class="secondary-btn qr-preview-btn" type="button" data-action="preview-qr-page"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>How QR looks like</button>` : ""}
+            </div>
+            ${isCoach ? `<div class="links-field-labels" aria-hidden="true"><span>Platform</span><span>Link</span></div>` : ""}
             <div class="centre-links-editor">
               ${links.map(link => `
                 <div class="centre-link-row" data-link-id="${escapeHtml(link.id)}">
-                  <input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label || link.title || "")}" placeholder="Label">
-                  <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://...">
-                  <button class="ghost-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}">Delete</button>
+                  ${isCoach ? (() => {
+                    const current = String(link.label || link.title || "").trim();
+                    const options = LINK_PLATFORM_CHOICES.includes(current) || !current ? LINK_PLATFORM_CHOICES : [current, ...LINK_PLATFORM_CHOICES];
+                    return `<select class="filter-select centre-link-label" data-link-field="label" aria-label="Platform"><option value="" ${current ? "" : "selected"} disabled>Choose platform</option>${options.map(name => `<option value="${escapeHtml(name)}" ${name === current ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>`;
+                  })() : `<input class="text-input centre-link-label" data-link-field="label" value="${escapeHtml(link.label || link.title || "")}" placeholder="Label">`}
+                  <input class="text-input centre-link-url" data-link-field="url" type="url" value="${escapeHtml(link.url)}" placeholder="https://..." aria-label="Link">
+                  <button class="ghost-btn link-delete-btn" data-action="delete-centre-link" data-link-id="${escapeHtml(link.id)}" aria-label="Delete link" title="Delete link"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v7m6-7v7"/></svg></button>
                 </div>
               `).join("")}
             </div>
             <div class="profile-actions">
-              <button class="secondary-btn" data-action="add-centre-link">+ Add Link</button>
+              <button class="secondary-btn" data-action="add-centre-link">+ Add link</button>
               <button class="primary-btn" type="button" data-action="save-centre-profile">Save</button>
             </div>
           </div>
@@ -3877,6 +3893,8 @@ export function initApp(config = {}) {
       { id: "threads", label: "Threads", badge: "@", color: "#111111", test: /(^|\.)threads\.net$/i }
     ];
     // Which platform a link points to, for its icon. Unknown links are "website".
+    const LINK_PLATFORM_CHOICES = ["Facebook", "Instagram", "WhatsApp", "TikTok", "YouTube", "X", "Threads", "Website", "Email", "Phone"];
+
     function linkPlatform(url) {
       const text = String(url || "").trim();
       if (/^mailto:/i.test(text)) return { id: "email", label: "Email", badge: "@", color: "#c81e45" };
@@ -4920,6 +4938,7 @@ export function initApp(config = {}) {
         return render();
       }
       if (action === "save-centre-profile") return saveCentreProfileFromInputs();
+      if (action === "preview-qr-page") return openQrPagePreview();
       if (action === "add-coach-link") return addCoachLink();
       if (action === "student-upload") return triggerStudentUpload(event.currentTarget.dataset.studentId);
       if (action === "student-edit") return openStudentEditModal(event.currentTarget.dataset.studentId);
@@ -5782,6 +5801,63 @@ export function initApp(config = {}) {
         console.warn("Unable to save report PDF to Google Drive", error);
         if (state.ui.page === "report-view") scheduleRender();
       }
+    }
+
+    // Shows the page parents see after scanning the QR, using the links typed
+    // on screen right now (saved or not). Built straight into the DOM so the
+    // settings form keeps any unsaved edits.
+    function openQrPagePreview() {
+      document.querySelector(".qr-preview-overlay")?.remove();
+      const coach = getCurrentCoach();
+      const coachPhoto = safeImageUrl(coach.photo || coach.photo_url);
+      const links = [...document.querySelectorAll(".centre-link-row")].map((row, index) => ({
+        title: row.querySelector('[data-link-field="label"]')?.value.trim() || "",
+        url: row.querySelector('[data-link-field="url"]')?.value.trim() || "",
+        visible: true,
+        order: index + 1
+      }));
+      const typedLinks = links.filter(link => link.title || link.url);
+      const validLinks = publicCoachLinks(links);
+      const skipped = typedLinks.length - validLinks.length;
+      const useExamples = !validLinks.length;
+      const exampleLinks = [
+        { title: "Facebook", url: "https://facebook.com/", visible: true, order: 1 },
+        { title: "WhatsApp me", url: "https://wa.me/", visible: true, order: 2 },
+        { title: "Instagram", url: "https://instagram.com/", visible: true, order: 3 }
+      ];
+      const page = {
+        name: coach.name,
+        photo: coachPhoto || onboardingIllustration("coach"),
+        role: "Coach",
+        bio: coach.bio || "",
+        centre_name: requestedCentre?.name || "",
+        centre_logo: requestedCentre?.logo_url || "",
+        links: useExamples ? exampleLinks : validLinks
+      };
+      const notes = [
+        coachPhoto ? "" : "Sample photo shown: add your own photo in Profile.",
+        useExamples ? "Example links shown: add your own links and press Save." : "",
+        !useExamples && skipped > 0 ? `${skipped} link${skipped === 1 ? " is" : "s are"} hidden because ${skipped === 1 ? "it is" : "they are"} not a full web address (https://...).` : "",
+        !useExamples ? "Remember to press Save." : ""
+      ].filter(Boolean).join(" ");
+      const overlay = document.createElement("div");
+      overlay.className = "qr-preview-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-label", "How QR looks like");
+      overlay.innerHTML = `
+        <div class="qr-preview-box">
+          <div class="qr-preview-top"><strong>How QR looks like</strong><button type="button" class="qr-preview-close" aria-label="Close preview">&times;</button></div>
+          <p class="qr-preview-note">This is the page that opens when a parent scans the QR on a report. ${escapeHtml(notes)}</p>
+          <div class="qr-preview-phone"><div class="qr-preview-screen">${renderCoachLinkPage({ status: "ready", page })}</div></div>
+        </div>`;
+      const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+      const onKey = event => { if (event.key === "Escape") close(); };
+      overlay.addEventListener("click", event => { if (event.target === overlay || event.target.closest(".qr-preview-close")) close(); });
+      overlay.querySelectorAll(".qr-preview-screen a").forEach(link => link.addEventListener("click", event => event.preventDefault()));
+      document.addEventListener("keydown", onKey);
+      document.body.appendChild(overlay);
+      overlay.querySelector(".qr-preview-close")?.focus();
     }
 
     async function saveCentreProfileFromInputs() {

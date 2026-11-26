@@ -1009,3 +1009,154 @@
 .certificate-design-page .studio-delete-design svg { width: 16px; height: 16px; }
 .certificate-design-page .studio-delete-design:hover { color: #e11d48; border-color: #e11d48; background: #fff1f3; }
 .certificate-design-page .studio-delete-design:focus-visible { outline: 2px solid #e11d48; outline-offset: 2px; }
+
+/* ===========================================================   Settings: Google Drive card and QR links card
+   ================================================================== */
+.drive-card-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.drive-card-logo {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: 14px;
+  background: #f3f4f6;
+  display: grid;
+  place-items: center;
+}
+.drive-card-logo .drive-logo { width: 28px; height: 24px; }
+.drive-card-title { min-width: 0; }
+.dashboard .drive-card-title .drive-heading { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dashboard .drive-card-title h2 { margin: 0; }
+.dashboard .drive-card-title p { margin: 4px 0 0; color: var(--rd-mute); font-size: 14px; }
+.dashboard .drive-connection-card .status-pill.status-active { background: var(--rd-green-soft); color: var(--rd-green); }
+.dashboard .drive-pill-off { background: var(--rd-soft); color: var(--rd-mute); }
+.dashboard .drive-connection-card.is-connected { border-color: var(--rd-line); }
+
+.drive-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.drive-info-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--rd-line, #eceef2);
+  border-radius: 14px;
+  background: #fafafb;
+  animation: rd-rise .45s var(--rd-ease, ease) both;
+}
+.drive-info-tile:nth-child(2) { animation-delay: .06s; }
+.drive-info-tile:nth-child(3) { animation-delay: .12s; }
+.drive-info-icon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--rd-line, #eceef2);
+  display: grid;
+  place-items: center;
+  color: var(--rd-red, #e11d48);
+}
+.drive-info-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.drive-info-copy { display: grid; min-width: 0; line-height: 1.35; }
+.drive-info-copy small { color: var(--rd-mute, #6b7280); font-size: 12px; font-weight: 600; }
+.drive-info-copy strong,
+.drive-info-copy a { font-size: 14px; font-weight: 700; color: var(--rd-ink, #111827); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drive-info-copy a:hover { color: var(--rd-red, #e11d48); }
+.dashboard .drive-disconnect-btn:hover { color: var(--rd-red); border-color: var(--rd-red); background: var(--rd-red-soft); }
+
+/* QR links card */
+.links-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.dashboard .links-card-head .section-title p { margin-top: 4px; }
+.dashboard .qr-preview-btn { display: inline-flex; align-items: center; gap: 8px; }
+.dashboard .qr-preview-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.links-field-labels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 44px;
+  gap: 8px;
+  padding: 0 2px 6px;
+  color: var(--rd-mute, #6b7280);
+  font-size: 12px;
+  font-weight: 600;
+}
+.dashboard .centre-links-editor { display: grid; gap: 8px; margin-bottom: 14px; }
+.dashboard .centre-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 44px;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.dashboard .link-delete-btn {
+  width: 44px;
+  min-height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--rd-mute);
+}
+.dashboard .link-delete-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.dashboard .link-delete-btn:hover { color: var(--rd-red); border-color: var(--rd-red); background: var(--rd-red-soft); }
+
+/* "What parents see" preview */
+.qr-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(11, 15, 26, .5);
+  animation: rd-fade .2s ease both;
+  font-family: "Plus Jakarta Sans", "Outfit", system-ui, sans-serif;
+}
+.qr-preview-box {
+  width: min(420px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 22px;
+  padding: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .25);
+  animation: rd-pop .3s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+.qr-preview-top { display: flex; align-items: center; justify-content: space-between; }
+.qr-preview-top strong { font-size: 17px; }
+.qr-preview-close { width: 36px; height: 36px; border-radius: 50%; border: 0; background: #f3f4f6; font-size: 20px; line-height: 1; cursor: pointer; }
+.qr-preview-close:focus-visible { outline: 2px solid #e11d48; outline-offset: 2px; }
+.qr-preview-note { margin: 6px 0 14px; color: #6b7280; font-size: 13px; }
+.qr-preview-phone {
+  margin: 0 auto;
+  width: 300px;
+  max-width: 100%;
+  border: 10px solid #111827;
+  border-radius: 38px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(17, 24, 39, .22);
+}
+.qr-preview-screen { height: 520px; overflow-y: auto; scrollbar-width: none; }
+.qr-preview-screen .link-page { min-height: 100%; padding: 30px 16px 22px; }
+.qr-preview-screen .link-page-photo { width: 88px; height: 88px; }
+.qr-preview-screen .link-page h1 { font-size: 1.3rem; }
+.qr-preview-screen .link-btn { min-height: 48px; padding: 0 44px; }
+@keyframes rd-fade { from { opacity: 0; } }
+
+@media (max-width: 720px) {
+  .links-field-labels { display: none; }
+  .dashboard .centre-link-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .dashboard .centre-link-row .centre-link-url { grid-column: 1 / -1; grid-row: 2; }
+  .dashboard .centre-link-row { padding-bottom: 10px; border-bottom: 1px solid var(--rd-line); }
+  .dashboard .qr-preview-btn { width: 100%; justify-content: center; }
+}
+
+
+=======
+/* QR panel: one button, red when it adds the QR */
+.certificate-tool-panel .certificate-panel-action.is-primary { background: #e11d48; border-color: #e11d48; color: #fff; }
+.certificate-tool-panel .certificate-panel-action.is-primary:hover { background: #be123c; }

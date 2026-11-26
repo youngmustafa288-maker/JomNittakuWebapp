@@ -502,3 +502,114 @@
 .dashboard .page.active > .profile-card,
 .dashboard .page.active > .table-card { margin-bottom: 0 !important; }
 .dashboard .drive-connect-btn { margin-top: 12px; }
+
+/* ==================================================================
+   Overview layout closer to the mock-up
+   ================================================================== */
+
+/* Setup card: ring, text and steps on one row */
+.dashboard .setup-reminder {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px 20px;
+}
+.dashboard .setup-reminder-head { display: contents; }
+.dashboard .setup-reminder-ring { grid-column: 1; }
+.dashboard .setup-reminder-copy { grid-column: 2; min-width: 0; }
+.dashboard .setup-reminder-copy h3 { margin: 0; font-size: 16px; }
+.dashboard .setup-reminder-items { grid-column: 3; grid-row: 1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.dashboard .setup-reminder-items button { min-height: 40px; padding: 0 16px; }
+.dashboard .setup-reminder-items button b { display: none; }
+.dashboard .setup-reminder-close { grid-column: 4; grid-row: 1; align-self: center; }
+.dashboard .setup-reminder-bar { display: none; }
+
+@property --rd-ring { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+.setup-reminder-ring {
+  --rd-ring: 0%;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--rd-red, #e11d48) var(--rd-ring), #f3f4f6 0);
+  animation: rd-ring-fill 1.2s .3s cubic-bezier(.2, .8, .2, 1) forwards;
+}
+.setup-reminder-ring span {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 13px;
+}
+@keyframes rd-ring-fill { to { --rd-ring: var(--setup-done); } }
+
+/* Stat footnote tones */
+.dashboard .stat-footnote.warn { color: var(--rd-amber); font-weight: 600; }
+.dashboard .stat-footnote.negative { color: var(--rd-mute); }
+
+/* Recent reports + Needs attention side by side */
+.overview-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 20px;
+  align-items: start;
+}
+.overview-columns > * { animation: rd-rise .55s var(--rd-ease, ease) .2s both; }
+
+.dashboard .person-cell { gap: 10px; }
+.dashboard .person-cell .avatar,
+.needs-attention .avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+.person-cell-copy { display: grid; line-height: 1.3; min-width: 0; }
+.person-cell-copy small { color: var(--rd-mute, #6b7280); font-size: 12px; font-weight: 500; }
+.dashboard td .person-cell strong { color: var(--rd-ink); }
+.dashboard td:first-child:has(.person-cell) { color: var(--rd-ink); }
+.overview-empty { text-align: center; padding: 28px 12px !important; }
+
+.needs-attention .section-title { margin-bottom: 8px; }
+.needs-attention-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--rd-line, #eceef2);
+  animation: rd-row .4s ease both;
+}
+.needs-attention-row:nth-of-type(2) { animation-delay: .05s; }
+.needs-attention-row:nth-of-type(3) { animation-delay: .1s; }
+.needs-attention-row:nth-of-type(4) { animation-delay: .15s; }
+.needs-attention-copy { flex: 1; display: grid; min-width: 0; line-height: 1.3; }
+.needs-attention-copy strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.needs-attention-copy small { color: var(--rd-mute, #6b7280); font-size: 12px; }
+.dashboard .needs-attention .secondary-btn { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+.needs-attention-empty { color: var(--rd-mute, #6b7280); font-size: 14px; margin: 8px 0 0; }
+
+.dashboard .table-finish-btn { min-height: 36px; padding: 6px 14px; font-size: 13px; }
+.dashboard td:last-child { text-align: right; }
+
+@media (max-width: 1280px) {
+  .overview-columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 720px) {
+  .dashboard .setup-reminder { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .dashboard .setup-reminder-items { grid-column: 1 / -1; grid-row: 2; justify-content: stretch; }
+  .dashboard .setup-reminder-items button { flex: 1 1 auto; justify-content: center; }
+  .dashboard .setup-reminder-close { grid-column: 3; }
+  .dashboard td:last-child { text-align: left; }
+}
+
+/* Reports page: the page header already shows the title and Generate Report */
+.dashboard .table-card:has(#reportsTable) .table-topline .section-title,
+.dashboard .table-card:has(#reportsTable) .table-topline .primary-btn { display: none; }
+.dashboard .table-card:has(#reportsTable) .table-topline { justify-content: flex-end; margin-bottom: 10px; }

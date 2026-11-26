@@ -2211,14 +2211,39 @@ export function initApp(config = {}) {
       const reportsThisMonth = getVisibleReportsForMonth(CURRENT_MONTH_PREFIX).length;
       const reportsLastMonth = getVisibleReportsForMonth(getPreviousMonthPrefix()).length;
       const activeStudents = getVisibleStudents().filter(student => student.status !== "Inactive").length;
+      const reportsLoading = reportStoreStatus === "loading" || reportUsingLocalCache;
+      const draftCount = getVisibleDrafts().length;
+      const totalReports = getVisibleReports().length;
       const stats = [
-        { title: "Reports Created This Month", value: reportStoreStatus === "loading" || reportUsingLocalCache ? "…" : reportsThisMonth, footnote: reportStoreStatus === "loading" || reportUsingLocalCache ? "Checking Google Drive totals…" : formatPercentChange(reportsThisMonth, reportsLastMonth), tone: reportsThisMonth >= reportsLastMonth ? "positive" : "negative" },
-        { title: "Total Students", value: activeStudents, footnote: "" }
+        { title: "Reports this month", value: reportsLoading ? "…" : reportsThisMonth, footnote: reportsLoading ? "Checking Google Drive totals…" : `Last month: ${reportsLastMonth}`, tone: reportsThisMonth >= reportsLastMonth ? "positive" : "" },
+        { title: "Drafts to finish", value: draftCount, footnote: draftCount ? "Finish and send to parents" : "All caught up", tone: draftCount ? "warn" : "" },
+        { title: "Active students", value: activeStudents, footnote: "" },
+        { title: "Total reports", value: reportsLoading ? "…" : totalReports, footnote: "All time" }
       ];
       if (state.auth.role === "admin") {
         stats.push({ title: "Total Coaches", value: coachAccountCount, footnote: "" });
       }
       return stats;
+    }
+
+    function getVisibleDrafts() {
+      return Object.values(state.reportDrafts || {})
+        .filter(draft => state.auth.role !== "coach" || draft.coachId === state.auth.coachId);
+    }
+
+    // Students with no report in the last 14 days (or none at all), oldest first.
+    function getStudentsNeedingReport(limit = 5) {
+      const lastByStudent = {};
+      getVisibleReports().forEach(report => {
+        if (!lastByStudent[report.studentId] || report.date > lastByStudent[report.studentId]) lastByStudent[report.studentId] = report.date;
+      });
+      const cutoff = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+      return getVisibleStudents()
+        .filter(student => student.status !== "Inactive")
+        .map(student => ({ student, last: lastByStudent[student.id] || "" }))
+        .filter(item => !item.last || item.last < cutoff)
+        .sort((a, b) => (a.last || "").localeCompare(b.last || ""))
+        .slice(0, limit);
     }
 
     function sortReportsDesc(reports) {
@@ -2404,7 +2429,7 @@ export function initApp(config = {}) {
             <article class="stat-card">
               <h3>${stat.title}</h3>
               <div class="value">${stat.value}</div>
-              <div class="stat-footnote ${stat.tone || ""}">${stat.footnote || ""}</div>
+              <div class="stat-footnote ${stat.tone || ""}">${escapeHtml(String(stat.footnote || ""))}</div>
             </article>
           `).join("")}
         </section>
@@ -2419,10 +2444,11 @@ export function initApp(config = {}) {
           ${renderSetupReminders()}
           ${renderStats()}
           ${reportStoreStatus === "loading" ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive. You can use the dashboard while they load.</p>' : reportStoreError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)} <button class="plain-link" data-nav="reports">Open reports</button></p>` : ""}
+          <div class="overview-columns">
           <div class="table-card">
             <div class="table-topline">
               <div class="section-title">
-                <h2>Recent Reports</h2>
+                <h2>Recent reports</h2>
               </div>
               <button class="plain-link table-title-link" data-nav="reports">View all <span aria-hidden="true">→</span></button>
             </div>
@@ -2452,33 +2478,49 @@ export function initApp(config = {}) {
               <table>
                 <thead>
                   <tr>
-                    <th>REF #</th>
                     <th>STUDENT</th>
                     <th>LESSON</th>
                     <th>DATE & TIME</th>
-                    <th>REPORT STATUS</th>
+                    <th>STATUS</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${visibleReports.map(report => {
+                  ${visibleReports.length ? visibleReports.map(report => {
                     const student = getStudentById(report.studentId);
                     return `
                       <tr>
-                        <td>${report.ref}</td>
-                        <td>${student.name}</td>
-                        <td>Lesson ${report.lessonNumber}</td>
+                        <td><div class="person-cell">${avatarMarkup(student?.name || "Student", student?.photo)}<span class="person-cell-copy"><strong>${escapeHtml(student?.name || "Student")}</strong><small>${escapeHtml(report.ref)}</small></span></div></td>
+                        <td>Lesson ${escapeHtml(report.lessonNumber)}</td>
                         <td>${formatDate(report.date)}, ${formatTime(report.time)}</td>
                         <td>${statusBadge(report.status)}</td>
-                        <td><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report">→</button></td>
+                        <td><button class="icon-btn" data-action="view-report" data-report-id="${report.id}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button></td>
                       </tr>
                     `;
-                  }).join("")}
+                  }).join("") : `<tr><td colspan="5" class="muted overview-empty">No reports yet. Tap Generate Report to make your first one.</td></tr>`}
                 </tbody>
               </table>
             </div>
           </div>
+          ${renderNeedsAttention()}
+          </div>
         </section>
+      `;
+    }
+
+    function renderNeedsAttention() {
+      if (state.auth.role === "dev") return "";
+      const items = getStudentsNeedingReport();
+      return `
+        <aside class="table-card needs-attention">
+          <div class="section-title"><h2>Needs attention</h2><p>Students due for a report.</p></div>
+          ${items.length ? items.map(({ student, last }) => `
+            <div class="needs-attention-row">
+              ${avatarMarkup(student.name, student.photo)}
+              <span class="needs-attention-copy"><strong>${escapeHtml(student.name)}</strong><small>${last ? `Last report ${escapeHtml(formatDate(last))}` : "No report yet"}</small></span>
+              <button class="secondary-btn" data-action="new-report">Report</button>
+            </div>`).join("") : `<p class="needs-attention-empty">All caught up. Every student has a recent report.</p>`}
+        </aside>
       `;
     }
 
@@ -3488,7 +3530,9 @@ export function initApp(config = {}) {
       }
       const centreName = requestedCentre?.name || "JomNittaku";
       const activeNav = navItems.find(([page]) => page === state.ui.page);
-      const pageTitle = state.ui.page === "overview" ? "Overview"
+      const firstName = String((state.auth.role === "dev" ? "" : getUserProfile().name) || "").trim().split(/\s+/)[0] || "Coach";
+      const hour = new Date().getHours();
+      const pageTitle = state.ui.page === "overview" ? `${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}, ${firstName}`
         : state.ui.page === "report-view" ? "Report"
         : state.ui.page === "profile" || state.ui.page === "settings" ? "Profile"
         : activeNav ? activeNav[1] : "Overview";
@@ -3514,7 +3558,7 @@ export function initApp(config = {}) {
               <div class="header-copy">
                 <span class="mobile-brand" aria-hidden="true"><span class="sidebar-brand-mark">JN</span>JomNittaku</span>
                 <h1>${escapeHtml(pageTitle)} ${state.ui.page === "overview" ? centreSportEmojiMarkup(requestedCentre?.sport) : ""}</h1>
-                <p>${escapeHtml(centreName)} Coach Reporting System</p>
+                <p>${state.ui.page === "overview" ? escapeHtml(new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })) + " · " + escapeHtml(centreName) : `${escapeHtml(centreName)} Coach Reporting System`}</p>
               </div>
               ${renderTopbar()}
             </header>
@@ -4862,12 +4906,14 @@ export function initApp(config = {}) {
         return `
           <tr>
             <td>${escapeHtml(report.ref)}</td>
-            <td>${escapeHtml(student?.name || "Not selected")}</td>
+            <td><div class="person-cell">${avatarMarkup(student?.name || "?", student?.photo)}<strong>${escapeHtml(student?.name || "Not selected")}</strong></div></td>
             <td>${escapeHtml(coach?.name || "Unknown")}</td>
             <td>${report.lessonNumber ? `Lesson ${escapeHtml(report.lessonNumber)}` : "—"}</td>
             <td>${report.date ? `${formatDate(report.date)}, ${formatTime(report.time)}` : "—"}</td>
             <td>${statusBadge(report.status)}</td>
-            <td><button class="icon-btn" data-action="${report.isDraft ? "continue-report-draft" : "view-report"}" data-${report.isDraft ? "draft" : "report"}-id="${escapeHtml(report.id)}" aria-label="${report.isDraft ? "Continue draft" : "View report"}">→</button></td>
+            <td>${report.isDraft
+              ? `<button class="primary-btn table-finish-btn" data-action="continue-report-draft" data-draft-id="${escapeHtml(report.id)}" aria-label="Continue draft">Finish</button>`
+              : `<button class="icon-btn" data-action="view-report" data-report-id="${escapeHtml(report.id)}" aria-label="View report"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>`}</td>
           </tr>
         `;
       }).join("");
@@ -6041,7 +6087,8 @@ export function initApp(config = {}) {
         </div>` : ""}
         ${others.length && !setupCardDismissed ? `<section class="table-card setup-reminder" aria-label="Finish your setup">
           <div class="setup-reminder-head">
-            <div><h3>Finish your setup</h3><span>${done} of ${total} done</span></div>
+            <div class="setup-reminder-ring" style="--setup-done:${Math.round((done / total) * 100)}%" aria-hidden="true"><span>${done}/${total}</span></div>
+            <div class="setup-reminder-copy"><h3>Finish your setup</h3><span>${done} of ${total} done · ${items.length} step${items.length === 1 ? "" : "s"} left</span></div>
             <button type="button" class="icon-btn setup-reminder-close" data-action="setup-dismiss" aria-label="Close setup reminder">&times;</button>
           </div>
           <div class="setup-reminder-bar"><span style="width:${(done / total) * 100}%"></span></div>

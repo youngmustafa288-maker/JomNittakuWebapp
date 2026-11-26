@@ -2910,14 +2910,14 @@
 /* Bigger app on laptop and desktop screens. Text sizes use rem, so raising
    the root size scales the whole interface; the fixed-width columns grow with it. */
 @media (min-width: 1024px) {
-  html { font-size: 112.5%; }
-  .dashboard { grid-template-columns: 290px minmax(0, 1fr); }
-  .certificate-editor-workspace { grid-template-columns: 86px 280px minmax(0, 1fr); }
+  html { font-size: 118.75%; }
+  .dashboard { grid-template-columns: 300px minmax(0, 1fr); }
+  .certificate-editor-workspace { grid-template-columns: 92px 300px minmax(0, 1fr); }
 }
 @media (min-width: 1600px) {
-  html { font-size: 125%; }
-  .dashboard { grid-template-columns: 320px minmax(0, 1fr); }
-  .certificate-editor-workspace { grid-template-columns: 96px 310px minmax(0, 1fr); }
+  html { font-size: 131.25%; }
+  .dashboard { grid-template-columns: 335px minmax(0, 1fr); }
+  .certificate-editor-workspace { grid-template-columns: 100px 330px minmax(0, 1fr); }
 }
 
 

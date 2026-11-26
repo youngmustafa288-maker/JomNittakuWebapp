@@ -2219,6 +2219,11 @@ export function initApp(config = {}) {
     function bindAuthStateListener() {
       if (!supabase) return;
       supabase.auth.onAuthStateChange((event, session) => {
+        // Hourly token refreshes, and the SIGNED_IN Supabase sends again when
+        // the tab is focused, don't change who is signed in. Rebuilding the
+        // whole page for them looked like a random refresh, so skip them.
+        if (event === "TOKEN_REFRESHED") return;
+        if (event === "SIGNED_IN" && session?.user?.id && session.user.id === state.auth.userId) return;
         window.setTimeout(async () => {
           // Bootstrap and password sign-in already restore this same session.
           if (authInitializing || isSigningIn) return;
@@ -4100,6 +4105,15 @@ export function initApp(config = {}) {
         selectionStart: typeof activeElement?.selectionStart === "number" ? activeElement.selectionStart : null,
         selectionEnd: typeof activeElement?.selectionEnd === "number" ? activeElement.selectionEnd : null,
       };
+      // Re-rendering replaces the page, which would jump scrollable panels
+      // (editor stage, side panels, tables) back to the top. Remember them.
+      const scrollKey = el => `${el.tagName}.${[...el.classList].sort().join(".")}`;
+      const savedScroll = new Map();
+      const samePage = app.dataset.renderedPage === String(state.ui.page);
+      if (samePage) app.querySelectorAll("*").forEach(el => {
+        if (el.scrollTop || el.scrollLeft) savedScroll.set(scrollKey(el), [el.scrollTop, el.scrollLeft]);
+      });
+      const pageScroll = [window.scrollX, window.scrollY];
       const loginForm = app.querySelector(".login-form");
       const loginFormState = loginForm
         ? {
@@ -4153,6 +4167,12 @@ export function initApp(config = {}) {
       app.innerHTML = publicCoach ? renderPublicCoachPage(publicCoach) : state.auth.role ? renderDashboard() : renderLogin();
       if (publicCoach) return;
       attachEvents();
+      if (savedScroll.size) app.querySelectorAll("*").forEach(el => {
+        const saved = savedScroll.get(scrollKey(el));
+        if (saved) { el.scrollTop = saved[0]; el.scrollLeft = saved[1]; }
+      });
+      if (samePage && (window.scrollX !== pageScroll[0] || window.scrollY !== pageScroll[1])) window.scrollTo(pageScroll[0], pageScroll[1]);
+      app.dataset.renderedPage = String(state.ui.page);
       Object.entries(reportFilterState.values).forEach(([id, value]) => {
         const input = document.getElementById(id);
         if (input) input.value = value;

@@ -2366,6 +2366,19 @@ export function initApp(config = {}) {
       `;
     }
 
+    function sidebarNavIcon(page) {
+      const paths = {
+        overview: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+        reports: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h7M9 8h3"/>',
+        students: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.3 0 4 1.5 4.5 4"/>',
+        coaches: '<circle cx="12" cy="7" r="3.5"/><path d="M5 21c.8-4 3.5-6.5 7-6.5s6.2 2.5 7 6.5"/><path d="M9 14.8l3 3 3-3"/>',
+        "certificate-design": '<circle cx="12" cy="9" r="6"/><path d="M8.5 14L7 22l5-3 5 3-1.5-8"/>',
+        "centre-settings": '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+        "centre-coaches": '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4h5M16 8h5M17 12h4"/>'
+      };
+      return `<svg class="sidebar-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[page] || paths.overview}</svg>`;
+    }
+
     function renderTopbar() {
       const profile = getUserProfile();
       return `
@@ -3473,20 +3486,37 @@ export function initApp(config = {}) {
       } else {
         pageContent = renderOverviewPage();
       }
+      const centreName = requestedCentre?.name || "JomNittaku";
+      const activeNav = navItems.find(([page]) => page === state.ui.page);
+      const pageTitle = state.ui.page === "overview" ? "Overview"
+        : state.ui.page === "report-view" ? "Report"
+        : state.ui.page === "profile" || state.ui.page === "settings" ? "Profile"
+        : activeNav ? activeNav[1] : "Overview";
+      const sidebarProfile = state.auth.role === "dev" ? { name: "Developer", photo: "" } : getUserProfile();
+      const sidebarPhoto = safeImageUrl(sidebarProfile.photo);
       return `
         <div class="dashboard">
           <aside class="sidebar">
+            <div class="sidebar-brand">
+              <span class="sidebar-brand-mark" aria-hidden="true">JN</span>
+              <span class="sidebar-brand-copy"><strong>JomNittaku</strong><small>${escapeHtml(centreName)}</small></span>
+            </div>
             <nav class="sidebar-nav" aria-label="Dashboard sections">
-              ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${label}</button>`).join("")}
+              ${navItems.map(([page, label]) => `<button class="sidebar-nav-item ${state.ui.page === page ? "active" : ""}" data-nav="${page}">${sidebarNavIcon(page)}<span class="sidebar-nav-label">${label}</span><span class="sidebar-nav-short" aria-hidden="true">${{ "certificate-design": "Certificates", "centre-settings": "Settings", "centre-coaches": "Coaches" }[page] || label}</span></button>`).join("")}
             </nav>
+            <div class="sidebar-profile" aria-hidden="true">
+              <span class="sidebar-profile-avatar" ${sidebarPhoto ? `style="background-image:url('${escapeHtml(sidebarPhoto)}');"` : ""}>${sidebarPhoto ? "" : escapeHtml(initials(sidebarProfile.name || "Coach"))}</span>
+              <span class="sidebar-profile-copy"><strong>${escapeHtml(sidebarProfile.name || "Coach")}</strong><small>${escapeHtml(centreName)}</small></span>
+            </div>
           </aside>
           <main class="main">
-            ${renderTopbar()}
             <header class="page-header">
               <div class="header-copy">
-                <h1>Academy Overview ${centreSportEmojiMarkup(requestedCentre?.sport)}</h1>
-              <p>${escapeHtml(requestedCentre?.name || "JomNittaku")} Coach Reporting System</p>
+                <span class="mobile-brand" aria-hidden="true"><span class="sidebar-brand-mark">JN</span>JomNittaku</span>
+                <h1>${escapeHtml(pageTitle)} ${state.ui.page === "overview" ? centreSportEmojiMarkup(requestedCentre?.sport) : ""}</h1>
+                <p>${escapeHtml(centreName)} Coach Reporting System</p>
               </div>
+              ${renderTopbar()}
             </header>
             ${renderHybridNotice()}
             ${pageContent}

@@ -695,8 +695,25 @@ export function initApp(config = {}) {
       return next;
     }
 
+    // Older versions turned every Save on Classic/Performance/Heritage into a
+    // hidden "<Template> — my design" copy, so the template card kept showing
+    // the old layout. If the coach is on such a copy, put it back on the
+    // template it came from. Only coach layouts (which carry "designs") are
+    // touched; report snapshots are left as they are.
+    function foldAccidentalDesignCopy(saved) {
+      if (!saved || !Array.isArray(saved.designs) || !/^design-/i.test(String(saved.templateId || ""))) return saved;
+      const base = REPORT_TEMPLATES.find(template => template.id === (saved.baseTemplateId || "classic"));
+      if (!base || String(saved.designName || "") !== `${base.name} — my design`) return saved;
+      const { [saved.templateId]: dropped, ...variants } = saved.variants || {};
+      return {
+        ...saved, templateId: base.id, designName: base.name,
+        designs: saved.designs.filter(design => design.id !== saved.templateId),
+        variants
+      };
+    }
+
     function normalizeReportLayout(saved = {}) {
-      saved = moveSummarySections(upgradeCertificateFonts(saved));
+      saved = moveSummarySections(upgradeCertificateFonts(foldAccidentalDesignCopy(saved)));
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
       const legacyLayout = saved?.editorVersion !== 2;
       const savedLayers = Array.isArray(saved?.layers) ? saved.layers : [];

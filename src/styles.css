@@ -2879,19 +2879,18 @@
     .login-screen.has-scene .brand-copy .muted { margin-top: 8px; line-height: 1.5; }
     @keyframes login-card-in { from { opacity: 0; transform: translateY(24px) scale(.98); } }
     @keyframes login-pop { 0% { opacity: 0; transform: scale(.4); } 70% { transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
-    /* The whole scene stays visible: beside the card on wide screens, below it on narrow ones. */
+    /* The card sits in the middle; the sport scene fills the background behind it. */
     @media (min-width: 900px) {
       .login-screen.has-scene { place-items: center; padding: 32px; }
       .sport-scene { inset: 0; }
     }
     @media (max-width: 899px) {
-      .login-screen.has-scene { align-items: start; padding-bottom: 46vh; }
-      .sport-scene { top: auto; height: 44vh; }
+      .login-screen.has-scene { place-items: center; padding: 64px 18px 32px; }
+      .sport-scene { inset: 0; }
     }
     @media (max-width: 560px) {
-      .login-screen.has-scene { padding: 64px 14px 40vh; }
+      .login-screen.has-scene { padding: 64px 14px 32px; }
       .login-screen.has-scene .login-panel.login-card { padding: 20px 20px 24px; }
-      .sport-scene { height: 38vh; }
     }
     @media (prefers-reduced-motion: reduce) {
       .login-screen.has-scene .login-panel.login-card, .login-logo-badge { animation: none; }

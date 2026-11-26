@@ -278,7 +278,7 @@
 .cob-phone-screen { width: 100%; height: 100%; border-radius: 21px; overflow: hidden; background: #f6f8fc; position: relative; pointer-events: none; }
 /* The real link page is laid out at phone width, then scaled down to fit. */
 /* zoom (not transform: scale) so text is drawn sharp at its final size. */
-.cob-phone-screen .link-page { position: absolute; top: 0; left: 0; width: 375px; min-height: 0; height: 710px; padding: 28px 16px; zoom: .6; }
+.cob-phone-screen .link-page { position: absolute; top: 0; left: 0; width: 375px; min-height: 0; height: 757px; padding: 28px 16px; zoom: .6; }
 .cob-phone-screen .link-page * { animation: none !important; }
 @media (max-width: 720px) {
   .cob-qr.has-phone { grid-template-columns: 1fr; }

@@ -2881,8 +2881,8 @@
     @keyframes login-pop { 0% { opacity: 0; transform: scale(.4); } 70% { transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
     /* The whole scene stays visible: beside the card on wide screens, below it on narrow ones. */
     @media (min-width: 900px) {
-      .login-screen.has-scene { place-items: center start; padding-left: clamp(40px, 8vw, 140px); }
-      .sport-scene { left: clamp(460px, 42%, 640px); right: 2%; top: 10%; bottom: 8%; }
+      .login-screen.has-scene { place-items: center; padding: 32px; }
+      .sport-scene { inset: 0; }
     }
     @media (max-width: 899px) {
       .login-screen.has-scene { align-items: start; padding-bottom: 46vh; }

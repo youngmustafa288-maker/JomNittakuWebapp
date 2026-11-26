@@ -106,7 +106,7 @@ test("QR step shows link examples and the done step shows the finished certifica
   assert.match(qrHtml, /Add a QR code/);
   assert.match(qrHtml, /My link page/);
   assert.match(qrHtml, /No QR/);
-  assert.match(qrHtml, /data-qr-cert="true" data-url="https:\/\/example\.test\/coach\/ahmad"/);
+  assert.doesNotMatch(qrHtml, /data-qr-cert/);
   assert.match(qrHtml, /Add a link/);
   assert.doesNotMatch(qrHtml, /Custom link/);
   assert.match(qrHtml, /What parents see after scanning/);

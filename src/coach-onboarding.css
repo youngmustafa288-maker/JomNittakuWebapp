@@ -265,7 +265,8 @@
 .cob-qr-tip p { margin: 0; }
 .cob-qr-tip strong { color: var(--cob-ink); }
 /* QR step: certificate, then the page parents see after scanning. */
-.cob-qr.has-phone { grid-template-columns: minmax(0, 1fr) 400px; }
+.cob-qr.has-phone { grid-template-columns: minmax(0, 1fr) 200px; }
+.cob-qr:not(.has-phone) { grid-template-columns: 1fr; }
 .cob-qr-previews { display: flex; align-items: center; justify-content: center; gap: 10px; position: sticky; top: 0; }
 .cob-qr-previews .cob-qr-cert { position: static; width: 170px; flex: none; }
 .cob-qr:not(.has-phone) .cob-qr-previews .cob-qr-cert { width: 230px; }

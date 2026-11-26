@@ -461,7 +461,6 @@ export function createCoachOnboarding(deps) {
   }
 
   function screenQr() {
-    const target = qrTarget();
     const modes = [["page", "My link page"], ["none", "No QR"]];
     let form;
     if (ui.qr.mode === "page") {
@@ -481,16 +480,12 @@ export function createCoachOnboarding(deps) {
       </div>
       <div class="cob-qr ${ui.qr.mode === "page" ? "has-phone" : ""}">
         <div class="cob-qr-form">${form}</div>
-        <div class="cob-qr-previews">
-          <figure class="cob-qr-cert">
-            <div class="cob-paper" data-cob-qr-cert>${deps.renderQrCertificate({ visible: ui.qr.mode !== "none", url: target || deps.coachPageUrl() })}</div>
-          </figure>
-          ${ui.qr.mode === "page" ? `<span class="cob-qr-arrow" aria-hidden="true">${icon("arrow")}<small>Scan</small></span>
+        ${ui.qr.mode === "page" ? `<div class="cob-qr-previews">
           <figure class="cob-phone-figure">
             <div class="cob-phone" aria-label="Preview of your link page"><div class="cob-phone-screen" data-cob-phone>${phonePreview()}</div></div>
             <figcaption>What parents see after scanning</figcaption>
-          </figure>` : ""}
-        </div>
+          </figure>
+        </div>` : ""}
       </div>`;
   }
 

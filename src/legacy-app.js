@@ -6,6 +6,7 @@ import { createDashboardStatePayload, createReportDriveRepository, normalizeRepo
 import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
 import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
 import { mountSportScene, LOGIN_SPORTS } from "./sport-scenes.js";
+import { createFirstReportTour } from "./first-report-tour.js";
 import { createCoachOnboarding, needsCoachOnboarding, pendingSetupItems, normalizeSkipped, SETUP_ITEM_LABELS, setupItemIcon } from "./coach-onboarding.js";
 
 const BASE_URL = "https://jom-nittaku-webapp.vercel.app";
@@ -279,7 +280,7 @@ export function initApp(config = {}) {
       saveProfile: values => saveOnboardingProfile(values),
       currentTemplateId: () => getReportLayout(getOnboardingCoach()).templateId,
       applyTemplate: (templateId, brand, options) => applyOnboardingTemplate(templateId, brand, options),
-      startFirstReport: () => { firstReportGuide = true; startReportFlow().catch(error => alert(error.message || "Unable to start a report.")); },
+      startFirstReport: () => startFirstReportTour(),
       currentQr: () => getOnboardingQr(),
       coachPageUrl: () => { const coach = getOnboardingCoach(); return coach ? coachPublicUrl(coach) : ""; },
       linkPlatform: url => linkPlatform(url),
@@ -296,8 +297,41 @@ export function initApp(config = {}) {
       render: () => scheduleRender()
     }));
     let previewDriveConnected = false;
-    // Set when a coach finishes the setup guide and starts their first report.
-    let firstReportGuide = false;
+    // Guided cursor tour for a coach's first report.
+    const firstReportTourKey = coachId => `firstReportTourDone:${coachId}`;
+    let firstReportTourInstance = null;
+    const getFirstReportTour = () => firstReportTourInstance || (firstReportTourInstance = createFirstReportTour({
+      getContext: () => {
+        const draft = wizardDraftId ? state.reportDrafts[wizardDraftId] : null;
+        const coach = getOnboardingCoach();
+        return {
+          wizardOpen: !!draft,
+          step: Number(draft?.step) || 1,
+          picked: !!draft?.studentId,
+          hasReport: !!coach && state.reports.some(report => report.coachId === coach.id)
+        };
+      },
+      onEnd: () => {
+        const coach = getOnboardingCoach();
+        try { if (coach) localStorage.setItem(firstReportTourKey(coach.id), "1"); } catch { /* storage may be blocked */ }
+      }
+    }));
+    function startFirstReportTour() {
+      state.ui.page = "overview";
+      getFirstReportTour().start();
+      scheduleRender();
+    }
+    // Starts once, for a set-up coach with Drive and a student but no reports.
+    function maybeStartFirstReportTour() {
+      if (firstReportTourInstance?.isActive() || state.auth.role !== "coach" || reportStoreStatus !== "ready") return;
+      const coach = getOnboardingCoach();
+      if (!coach?.onboarding_completed_at || coachOnboardingInstance?.isOpen()) return;
+      if (state.driveConnection?.status !== "connected") return;
+      if (!state.students.some(student => student.coachId === coach.id)) return;
+      if (state.reports.some(report => report.coachId === coach.id)) return;
+      try { if (localStorage.getItem(firstReportTourKey(coach.id))) return; } catch { /* storage may be blocked */ }
+      getFirstReportTour().start();
+    }
     let overviewDateFilter = "";
     let overviewMonthFilter = "";
     let overviewWeekFilter = "week1";
@@ -2247,6 +2281,7 @@ export function initApp(config = {}) {
     }
 
     async function logout() {
+      firstReportTourInstance?.stop();
       // The setup reminder comes back on the next login.
       setupCardDismissed = false;
       try { sessionStorage.removeItem("setupCardDismissed"); } catch { /* storage may be blocked */ }
@@ -2606,7 +2641,6 @@ export function initApp(config = {}) {
       return `
         <section class="page ${state.ui.page === "overview" ? "active" : ""}">
           ${renderSetupReminders()}
-          ${renderFirstReportPrompt()}
           ${renderStats()}
           ${reportStoreStatus === "loading" ? '<p class="report-drive-notice" role="status">Loading reports from Google Drive. You can use the dashboard while they load.</p>' : reportStoreError ? `<p class="report-drive-notice is-error" role="alert">${escapeHtml(reportStoreError)} <button class="plain-link" data-nav="reports">Open reports</button></p>` : ""}
           <div class="overview-columns">
@@ -3398,20 +3432,6 @@ export function initApp(config = {}) {
       return true;
     }
 
-    // A short tip on each step while a coach makes their first report.
-    function renderFirstReportTip(coach, step) {
-      const hasReports = state.reports.some(report => report.coachId === coach?.id);
-      if (!firstReportGuide && (state.auth.role !== "coach" || hasReports || reportStoreStatus !== "ready")) return "";
-      const tips = {
-        1: ["Pick your student", "Choose the student you just coached."],
-        2: ["Check the lesson", "Today's date and time are filled in. Change them if needed."],
-        3: ["What happened in class", "Write short points: what you taught, how they did, and what to work on next."],
-        4: ["A note for the parents", "Add a few words for the parents, then finish. Your certificate is made for you."]
-      };
-      const [title, text] = tips[step] || tips[1];
-      return `<div class="first-report-tip" role="note"><span class="first-report-tip-badge">Your first report · ${step} of 4</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></div>`;
-    }
-
     function renderReportWizard() {
       const draft = wizardDraftId ? state.reportDrafts[wizardDraftId] : null;
       if (!draft) {
@@ -3453,7 +3473,6 @@ export function initApp(config = {}) {
             <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
             <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || reportSaveMessage())}</p>
             ${renderHybridNotice()}
-            ${renderFirstReportTip(coach, step)}
             <div class="wizard-steps">
               ${[
                 ["Step 1", "Select Student"],
@@ -4217,6 +4236,7 @@ export function initApp(config = {}) {
         // Covers server-rendered tables (e.g. overview "Recent Reports")
         // that have no hydrate step of their own.
         stampTableLabels();
+        maybeStartFirstReportTour();
       }
       for (const formState of [loginFormState, reportFilterState].filter(Boolean)) {
         Object.entries(formState.values).forEach(([id, value]) => {
@@ -4872,7 +4892,6 @@ export function initApp(config = {}) {
       if(action==="simple-copy-layer")return copyCertificateEditorLayer();
       if(action==="simple-delete-layer")return deleteCertificateEditorLayer();
       if (action?.startsWith("studio-")) return handleStudioAction(action, event.currentTarget);
-      if (action === "first-report-start") { firstReportGuide = true; return startReportFlow().catch(error => alert(error.message || "Unable to start a report.")); }
       if (action === "reload-page") return window.location.reload();
       if (action === "setup-open") return getCoachOnboarding().openAt(event.currentTarget.dataset.step || "profile");
       if (action === "setup-dismiss") {
@@ -6485,28 +6504,6 @@ export function initApp(config = {}) {
             ${others.map(id => `<button type="button" data-action="setup-open" data-step="${id}">${setupItemIcon(id)}<span>${escapeHtml(SETUP_ITEM_LABELS[id])}</span><b aria-hidden="true">&rsaquo;</b></button>`).join("")}
           </div>
         </section>` : ""}`;
-    }
-
-    // After setup, until the coach makes a report: a short guided start.
-    function renderFirstReportPrompt() {
-      if (state.auth.role !== "coach" || reportStoreStatus !== "ready") return "";
-      const coach = getOnboardingCoach();
-      if (!coach?.onboarding_completed_at || coachOnboardingInstance?.isOpen()) return "";
-      if (state.reports.some(report => report.coachId === coach.id)) return "";
-      if (state.driveConnection?.status !== "connected") return "";
-      const hasStudents = state.students.some(student => student.coachId === coach.id);
-      const steps = ["Pick your student", "Check the lesson date", "Write what you taught", "Add a note for parents"];
-      return `<section class="table-card first-report-card" aria-label="Make your first report">
-        <div class="first-report-card-copy">
-          <span class="first-report-tip-badge">Next step</span>
-          <h3>Make your first report</h3>
-          <p>We'll guide you through it. It takes about 2 minutes, and the certificate is made for you.</p>
-          <ol>${steps.map(step => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
-        </div>
-        ${hasStudents
-          ? `<button type="button" class="primary-btn" data-action="first-report-start">Start my first report</button>`
-          : `<button type="button" class="primary-btn" data-action="setup-open" data-step="students">Add a student first</button>`}
-      </section>`;
     }
 
     async function onboardingConnectDrive() {

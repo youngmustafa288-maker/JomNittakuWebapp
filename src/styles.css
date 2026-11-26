@@ -2902,3 +2902,8 @@
 
     .sidebar-brand-mark.has-logo { background: #fff; padding: 2px; overflow: hidden; }
     .sidebar-brand-mark.has-logo img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: inherit; }
+
+    /* Photo frames (Certificate Design → Photo frames) */
+    .template-photo-card.is-square .template-photo-frame { border-radius: 0; }
+    .template-photo-card.is-circle .template-photo-frame { border-radius: 50%; aspect-ratio: 1 / 1; }
+    .template-photo-card.is-circle .template-photo { border-radius: 50%; }

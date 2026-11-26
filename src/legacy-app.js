@@ -452,10 +452,29 @@ export function initApp(config = {}) {
       reportLayoutEditing = prior; selectedReportOverlay = selection;
       return html;
     }
+    // "Photo frames" tool: show/hide each photo, labels, frame shape and colour.
+    function renderPhotoFramesPanel(layout, compact = false) {
+      const frames = normalizePhotoFrames(layout.photoFrames);
+      const shown = id => layout.layers.find(layer => layer.id === id)?.visible !== false;
+      const toggle = (id, label) => `<label class="studio-frame-toggle"><input type="checkbox" data-action="studio-frame-photo" data-photo="${id}" ${shown(id) ? "checked" : ""}><span>${label}</span></label>`;
+      return `${compact ? `<strong>Photo frames</strong><p class="studio-frame-intro">How the student and coach photos look on every report.</p>` : `<div class="studio-panel-title"><h3>Photo frames</h3><p>How the student and coach photos look on every report.</p></div>`}
+        <div class="studio-frame-group">
+          ${toggle("student-photo", "Student photo")}
+          ${toggle("coach-photo", "Coach photo")}
+          <label class="studio-frame-toggle"><input type="checkbox" data-action="studio-frame-labels" ${frames.labels ? "checked" : ""}><span>Show labels</span></label>
+        </div>
+        <p class="studio-frame-subtitle">Frame shape</p>
+        <div class="studio-frame-shapes" role="radiogroup" aria-label="Frame shape">${Object.entries(PHOTO_FRAME_SHAPES).map(([id, name]) => `<button type="button" role="radio" aria-checked="${frames.shape === id}" class="${frames.shape === id ? "is-active" : ""}" data-action="studio-frame-shape" data-shape="${id}"><i class="studio-shape-icon is-${id}" aria-hidden="true"></i>${name}</button>`).join("")}</div>
+        <p class="studio-frame-subtitle">Frame colour</p>
+        <div class="studio-frame-colours" role="radiogroup" aria-label="Frame colour">${Object.entries(PHOTO_FRAME_COLOURS).map(([id, [name, colour]]) => `<button type="button" role="radio" aria-checked="${frames.colour === id}" aria-label="${name}" title="${name}" class="${frames.colour === id ? "is-active" : ""} ${id === "none" ? "is-none" : ""}" style="--swatch:${colour}" data-action="studio-frame-colour" data-colour="${id}"></button>`).join("")}</div>
+        <p class="studio-frame-tip">Drag a photo on the certificate to move it, or pull its corner to resize.</p>`;
+    }
+
     function renderStudioPanel(coach) {
       const layout = getReportLayout(coach);
       if (certificateEditorTool === "templates") return `<div class="studio-panel-title"><h3>Templates</h3></div><div class="studio-mini-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="${layout.templateId===t.id?'active':''}" data-studio-template="${escapeHtml(t.id)}"><span class="studio-mini-thumb">${renderStudioMini(t.id)}</span><strong>${escapeHtml(t.name)}</strong>${layout.templateId===t.id?studioIcon('check'):''}</button>`).join('')}</div><button class="studio-panel-upload" data-action="studio-upload-background">${studioIcon('upload')}Upload design</button>`;
       if (certificateEditorTool === "qr") { const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false; return `<div class="studio-panel-title"><h3>Add QR</h3></div><button class="${qrHidden?'primary-btn studio-btn studio-full':'studio-panel-upload'}" data-action="studio-toggle-qr">${qrHidden?'Add QR':'Hide QR'}</button>`; }
+      if (certificateEditorTool === "frames") return renderPhotoFramesPanel(layout);
       if (certificateEditorTool === "uploads") return `<div class="studio-panel-title"><h3>Photos</h3></div><button class="studio-dropzone" data-action="studio-upload-picture">${studioIcon('upload')}<strong>Upload photo</strong><small>PNG, JPG, WebP · 5 MB</small></button><div class="studio-photo-targets"><button data-action="studio-upload-student" aria-label="Upload student photo">Student</button><button data-action="studio-upload-coach" aria-label="Upload coach photo">Coach</button></div>${layout.uploads.length?`<div class="studio-asset-grid">${layout.uploads.map(a=>`<button data-studio-asset="${escapeHtml(a.id)}" aria-label="Add ${escapeHtml(a.name)}"><img src="${escapeHtml(a.source)}" alt="${escapeHtml(a.name)}"><span>${escapeHtml(a.name)}</span></button>`).join('')}</div>`:'<div class="studio-empty-assets"><p>No photos</p></div>'}`;
       if (certificateEditorTool === "text") return `<div class="studio-panel-title"><h3>Text</h3></div><button class="studio-text-add" data-action="add-certificate-text">${studioIcon('plus')}Add text</button>`;
       return renderCertificateToolPanel(coach);
@@ -545,6 +564,11 @@ export function initApp(config = {}) {
           layout.qrUrl=value;layout.layers.find(l=>l.id==='qr').visible=true;selectedReportOverlay='qr';
         }
         if(action==='studio-toggle-qr'){const layer=layout.layers.find(l=>l.id==='qr');layer.visible=layer.visible===false;selectedReportOverlay='qr';}
+        let frameToast='';
+        if(action==='studio-frame-photo'){const id=trigger?.dataset.photo;const layer=layout.layers.find(l=>l.id===id);if(layer){layer.visible=layer.visible===false;selectedReportOverlay=layer.visible===false?'':id;frameToast=`${id==='student-photo'?'Student':'Coach'} photo ${layer.visible===false?'hidden':'shown'}`;}}
+        if(action==='studio-frame-labels'){const frames=normalizePhotoFrames(layout.photoFrames);layout.photoFrames={...frames,labels:!frames.labels};frameToast=layout.photoFrames.labels?'Labels shown':'Labels hidden';}
+        if(action==='studio-frame-shape'){const shape=trigger?.dataset.shape;layout.photoFrames={...normalizePhotoFrames(layout.photoFrames),shape};frameToast='Frame shape updated';}
+        if(action==='studio-frame-colour'){const colour=trigger?.dataset.colour;layout.photoFrames={...normalizePhotoFrames(layout.photoFrames),colour};frameToast='Frame colour updated';}
         if(action==='studio-reset-layout'){
           if(!window.confirm('Put every item back in its original place and show the QR code? Your text and logo are kept.'))return;
           coach.reportLayout=resetLayoutPositions(layout);selectedReportOverlay='';
@@ -560,7 +584,7 @@ export function initApp(config = {}) {
           layout.variants={...layout.variants,[layout.templateId]:layoutSnapshot(layout)};
         }
         coach.reportLayout=layout;
-        if(await saveReportLayout(coach)) studioToast(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?(layout.layers.find(l=>l.id==='qr')?.visible===false?'QR hidden':'QR added'):'Saved');
+        if(await saveReportLayout(coach)) studioToast(frameToast||(action==='studio-apply-qr'?'QR updated':action==='studio-toggle-qr'?(layout.layers.find(l=>l.id==='qr')?.visible===false?'QR hidden':'QR added'):'Saved'));
       } catch(error){studioToast(error.message || 'Unable to save. Please try again.');}
     }
 
@@ -758,6 +782,18 @@ export function initApp(config = {}) {
       };
     }
 
+    // Photo frames: how the student and coach photos look on the certificate.
+    const PHOTO_FRAME_SHAPES = { rounded: "Rounded", square: "Square", circle: "Circle" };
+    const PHOTO_FRAME_COLOURS = { light: ["Light", "#d5d9e0"], white: ["White", "#ffffff"], red: ["Red", "#c81e45"], navy: ["Navy", "#162a4a"], gold: ["Gold", "#c9a96b"], none: ["None", "transparent"] };
+    function normalizePhotoFrames(value) {
+      const frames = value && typeof value === "object" ? value : {};
+      return {
+        shape: PHOTO_FRAME_SHAPES[frames.shape] ? frames.shape : "rounded",
+        colour: PHOTO_FRAME_COLOURS[frames.colour] ? frames.colour : "light",
+        labels: frames.labels !== false
+      };
+    }
+
     function normalizeReportLayout(saved = {}) {
       saved = moveSummarySections(upgradeCertificateFonts(foldAccidentalDesignCopy(saved)));
       const keyed = Object.fromEntries(Object.entries(DEFAULT_REPORT_LAYOUT).map(([key, value]) => [key, { ...value, ...(saved?.[key] || {}) }]));
@@ -797,6 +833,7 @@ export function initApp(config = {}) {
           }))
         : [];
       return { ...keyed, layers, uploads, editorVersion: 2, fontVersion: 4,
+        photoFrames: normalizePhotoFrames(saved?.photoFrames),
         templateId: String(saved?.templateId || "classic"),
         baseTemplateId: ["classic","performance","heritage"].includes(saved?.baseTemplateId) ? saved.baseTemplateId : (["performance","heritage"].includes(saved?.templateId) ? saved.templateId : "classic"),
         designName: String(saved?.designName || "Classic").slice(0,80),
@@ -1634,13 +1671,16 @@ export function initApp(config = {}) {
       };
     }
 
-    function renderTemplatePhoto(photo, label) {
+    function renderTemplatePhoto(photo, label, frames = null) {
+      const frame = normalizePhotoFrames(frames);
+      const colour = PHOTO_FRAME_COLOURS[frame.colour][1];
+      const frameStyle = frame.colour === "light" ? "" : frame.colour === "none" ? "border-color:transparent;" : `border:0.45cqw solid ${colour};`;
       return `
-        <div class="template-photo-card">
-          <div class="template-photo-frame">
+        <div class="template-photo-card is-${frame.shape}${frame.labels ? "" : " no-label"}">
+          <div class="template-photo-frame" style="${frameStyle}">
             <img class="template-photo" src="${photo || `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(PHOTO_PLACEHOLDER_SVG)}`}" alt="">
           </div>
-          <div class="template-photo-label">${label}</div>
+          ${frame.labels ? `<div class="template-photo-label">${label}</div>` : ""}
         </div>
       `;
     }
@@ -1722,8 +1762,8 @@ export function initApp(config = {}) {
             ${renderEditableOverlay("centre", escapeHtml(data.session.centre), layout.centre, "white-space:nowrap;")}
             ${renderEditableOverlay("coach", escapeHtml(data.session.coachName), layout.coach, "white-space:nowrap;")}
 
-            ${renderEditablePhoto("student-photo", layout.layers.find(l=>l.id==="student-photo")?.source || data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"))}
-            ${renderEditablePhoto("coach-photo", layout.layers.find(l=>l.id==="coach-photo")?.source || data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"))}
+            ${renderEditablePhoto("student-photo", layout.layers.find(l=>l.id==="student-photo")?.source || data.studentPhoto, "STUDENT", layout.layers.find(layer => layer.id === "student-photo"), layout.photoFrames)}
+            ${renderEditablePhoto("coach-photo", layout.layers.find(l=>l.id==="coach-photo")?.source || data.coachPhoto, "COACH", layout.layers.find(layer => layer.id === "coach-photo"), layout.photoFrames)}
 
             ${layout.baseTemplateId === "classic" ? REPORT_TEMPLATE_BULLET_MASKS.map(mask => `
               <div class="template-bullet-mask" style="left:${mask.left}%;top:${mask.top}%;"></div>
@@ -2412,11 +2452,11 @@ export function initApp(config = {}) {
       return `<div class="centre-lock-overlay"><div class="centre-lock-modal" role="dialog" aria-modal="true" aria-labelledby="centre-lock-title"><div class="brand-logo-crop centre-lock-logo"><img class="brand-logo" src="${escapeHtml(logo)}" alt="${escapeHtml(requestedCentre?.name || "Centre")} logo"></div><p class="brand-system-title">Centre activation required</p><h2 id="centre-lock-title">Unlock ${escapeHtml(requestedCentre?.name || "your centre")}</h2><p class="muted">You are signed in. Enter the activation key provided by your administrator to unlock the dashboard.</p><form class="login-form" data-centre-activation-form><div class="field"><label for="centreActivationCode">Activation key</label><input id="centreActivationCode" class="text-input" autocomplete="one-time-code" autocapitalize="characters" required></div>${activationError ? `<p class="form-error" role="alert">${escapeHtml(activationError)}</p>` : ""}<button class="primary-btn" type="submit" ${isActivatingCentre ? "disabled" : ""}>${isActivatingCentre ? "Activating..." : "Unlock dashboard"}</button><button class="ghost-btn" type="button" data-action="centre-activation-logout">Sign out</button></form></div></div>`;
     }
 
-    function renderEditablePhoto(id, photo, label, layer) {
+    function renderEditablePhoto(id, photo, label, layer, frames = null) {
       if (layer?.visible === false) return "";
       const geometry = layer || DEFAULT_LAYER_GEOMETRY[id];
       const style = `left:${geometry.left}%;top:${geometry.top}%;width:${geometry.width}%;height:${geometry.height}%;`;
-      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label)}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
+      return `<div class="template-editable-photo report-overlay-item ${reportLayoutEditing ? "is-editing" : ""} ${reportLayoutEditing && selectedReportOverlay === id ? "is-selected" : ""} ${geometry.locked === true ? "is-locked" : ""}" data-overlay-id="${id}" style="${style}">${renderTemplatePhoto(photo, label, frames)}${reportLayoutEditing ? renderCertificateResizeHandles() : ""}</div>`;
     }
 
     function renderEditableQr(layer, qrUrl) {
@@ -3027,6 +3067,7 @@ export function initApp(config = {}) {
         const layout=getReportLayout(coach);
         return `<div class="certificate-tool-panel"><strong>Templates</strong><div class="certificate-template-list">${[...REPORT_TEMPLATES,...layout.designs].map(t=>`<button class="certificate-template-choice ${layout.templateId===t.id?'is-selected':''}" data-studio-template="${escapeHtml(t.id)}"><span class="certificate-template-thumbnail">${renderStudioMini(t.id)}</span><span>${escapeHtml(t.name)}</span></button>`).join('')}</div><button class="certificate-panel-action certificate-template-upload" data-action="studio-upload-background">Upload design</button></div>`;
       }
+      if (certificateEditorTool === "frames") return `<div class="certificate-tool-panel studio-frames-panel">${renderPhotoFramesPanel(getReportLayout(coach), true)}</div>`;
       if (certificateEditorTool === "qr") {
         const layout=getReportLayout(coach);
         const qrHidden = layout.layers.find(l=>l.id==='qr')?.visible===false;
@@ -4239,6 +4280,10 @@ export function initApp(config = {}) {
           }
         });
         app.addEventListener("change", event => {
+          if (event.target.matches('input[data-action^="studio-frame-"]')) {
+            handleStudioAction(event.target.dataset.action, event.target);
+            return;
+          }
           if (event.target.matches('input[name="reportTemplate"]')) {
             selectDraftTemplate(event.target.value);
             return;
@@ -5792,10 +5837,12 @@ export function initApp(config = {}) {
           });
 
           clonedReportTemplate.querySelectorAll(".template-photo-frame").forEach(frame => {
+            // Circle frames stay round in the download (square box).
+            const frameHeight = frame.closest(".template-photo-card.is-circle") ? photoCardWidthPx : photoCardHeightPx;
             frame.style.width = "100%";
-            frame.style.height = `${photoCardHeightPx}px`;
-            frame.style.minHeight = `${photoCardHeightPx}px`;
-            frame.style.maxHeight = `${photoCardHeightPx}px`;
+            frame.style.height = `${frameHeight}px`;
+            frame.style.minHeight = `${frameHeight}px`;
+            frame.style.maxHeight = `${frameHeight}px`;
           });
 
           clonedReportTemplate.querySelectorAll(".template-photo").forEach((photo, index) => {

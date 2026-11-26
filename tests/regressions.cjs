@@ -132,7 +132,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
       renderReportLayoutToolbar, beginCertificateTextEditing, fitCustomCertificateHeadingText,
       updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage, render,
       fetchCentreBySlugWith: (client, slug) => fetchCentreBySlug(slug, client),
-      renderCoachLinkPage, publicCoachLinks, linkPlatform, footerTextForCentre, headingTextForCentre, renderLogin, sidebarBrandMark, hybridNoticeContent,
+      renderCoachLinkPage, publicCoachLinks, linkPlatform, footerTextForCentre, headingTextForCentre, renderLogin, sidebarBrandMark, renderTemplatePhoto, normalizePhotoFrames, renderPhotoFramesPanel, hybridNoticeContent,
       finalizeWizard, closeWizard, ensureHybridWorkspace, resetHybridSession,
       get wizardId() { return wizardDraftId; },
       get reportError() { return reportStoreError; },
@@ -613,4 +613,21 @@ test('certificate headings, logo slot and login use the centre brand and sport',
   assert.match(login, /Test Centre/);
   assert.doesNotMatch(login, /JomNittaku/);
   assert.doesNotMatch(h.api.sidebarBrandMark(), /JN/);
+});
+
+test('photo frames: settings are saved with the design and change how photos look', () => {
+  const h = harness();
+  const fresh = h.api.normalizeReportLayout();
+  assert.equal(JSON.stringify(fresh.photoFrames), JSON.stringify({ shape: 'rounded', colour: 'light', labels: true }));
+  const saved = h.api.normalizeReportLayout({ photoFrames: { shape: 'circle', colour: 'gold', labels: false } });
+  assert.equal(JSON.stringify(saved.photoFrames), JSON.stringify({ shape: 'circle', colour: 'gold', labels: false }));
+  assert.equal(JSON.stringify(h.api.normalizePhotoFrames({ shape: 'star', colour: '<x>' })), JSON.stringify({ shape: 'rounded', colour: 'light', labels: true }));
+  const photo = h.api.renderTemplatePhoto('', 'COACH', saved.photoFrames);
+  assert.match(photo, /is-circle/);
+  assert.match(photo, /#c9a96b/);
+  assert.doesNotMatch(photo, /template-photo-label/);
+  assert.match(h.api.renderTemplatePhoto('', 'COACH'), /template-photo-label">COACH/);
+  const panel = h.api.renderPhotoFramesPanel(saved);
+  assert.match(panel, /data-action="studio-frame-shape" data-shape="circle"/);
+  assert.match(panel, /aria-checked="true"[^>]*data-action="studio-frame-colour" data-colour="gold"/);
 });

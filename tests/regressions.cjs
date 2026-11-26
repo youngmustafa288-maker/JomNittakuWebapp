@@ -14,6 +14,7 @@ const certTemplatesSource = fs.readFileSync(path.join(__dirname, '../src/certifi
 const certStudioSource = fs.readFileSync(path.join(__dirname, '../src/certificate-studio.js'), 'utf8');
 const templatePickerSource = fs.readFileSync(path.join(__dirname, '../src/report-template-picker.js'), 'utf8');
 const onboardingSource = fs.readFileSync(path.join(__dirname, '../src/coach-onboarding.js'), 'utf8');
+const sportScenesSource = fs.readFileSync(path.join(__dirname, '../src/sport-scenes.js'), 'utf8');
 const headings = ['brand-name', 'brand-subtitle', 'brand-tagline', 'report-title-art'];
 
 class Element {
@@ -79,7 +80,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
   const sessionStorage = memoryStorage();
   const calls = [], history = [], sessionUrls = [];
   let clientOptions;
-  const centre = { id: 'centre-1', slug: 'test-centre', name: 'Test Centre', status: 'active', activated_at: '2026-01-01' };
+  const centre = { id: 'centre-1', slug: 'test-centre', name: 'Test Centre', sport: 'Badminton', status: 'active', activated_at: '2026-01-01' };
   const coach = { id: 'coach-1', email: 'coach@example.test', name: 'Test Coach', centre_id: centre.id };
   const defaultUser = { id: coach.id, email: coach.email, app_metadata: { centre_id: centre.id }, user_metadata: {} };
   if (user === true) user = defaultUser;
@@ -131,7 +132,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
       renderReportLayoutToolbar, beginCertificateTextEditing, fitCustomCertificateHeadingText,
       updateSelectedReportLayout, handleAction, attachEvents, renderCentreSettingsPage, render,
       fetchCentreBySlugWith: (client, slug) => fetchCentreBySlug(slug, client),
-      renderCoachLinkPage, publicCoachLinks, linkPlatform, footerTextForCentre, hybridNoticeContent,
+      renderCoachLinkPage, publicCoachLinks, linkPlatform, footerTextForCentre, headingTextForCentre, renderLogin, sidebarBrandMark, hybridNoticeContent,
       finalizeWizard, closeWizard, ensureHybridWorkspace, resetHybridSession,
       get wizardId() { return wizardDraftId; },
       get reportError() { return reportStoreError; },
@@ -166,6 +167,7 @@ function harness({ url = 'https://example.test/', bootstrap = false, user = null
     cleanModule(certStudioSource),
     cleanModule(templatePickerSource),
     cleanModule(onboardingSource),
+    cleanModule(sportScenesSource),
     cleanModule(driveSource),
     cleanModule(localSource),
     code
@@ -598,4 +600,17 @@ test('an old accidental "— my design" copy is folded back into its template; r
   assert.equal(out.variants['design-abc'], undefined);
   const copy = h.api.normalizeReportLayout({ ...saved, templateId: 'design-keep', designName: 'Classic copy' });
   assert.equal(copy.templateId, 'design-keep');
+});
+
+test('certificate headings, logo slot and login use the centre brand and sport', async () => {
+  const h = harness({ url: 'https://example.test/centre/test-centre', bootstrap: true, user: true });
+  await settled(h);
+  assert.equal(h.api.headingTextForCentre({ id: 'brand-name', text: 'Dao Sports Method' }), 'Test Centre');
+  assert.equal(h.api.headingTextForCentre({ id: 'brand-name', text: 'My Own Club' }), 'My Own Club');
+  assert.equal(h.api.headingTextForCentre({ id: 'brand-subtitle', text: 'TABLE TENNIS TRAINING' }), 'BADMINTON TRAINING');
+  const login = h.api.renderLogin();
+  assert.match(login, /data-sport-scene="Badminton"/);
+  assert.match(login, /Test Centre/);
+  assert.doesNotMatch(login, /JomNittaku/);
+  assert.doesNotMatch(h.api.sidebarBrandMark(), /JN/);
 });

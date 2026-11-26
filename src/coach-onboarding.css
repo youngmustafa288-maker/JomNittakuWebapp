@@ -196,6 +196,18 @@
 .setup-guide-card .primary-btn, .setup-guide-card .secondary-btn { margin-top: 14px; }
 @keyframes cob-grow { from { width: 0; } }
 
+/* "Make it yours" on the design step */
+.cob-mine { margin: 0 0 16px; border: 1px solid var(--cob-line); border-radius: 16px; background: var(--slate-50, #f6f8fc); }
+.cob-mine-toggle { width: 100%; cursor: pointer; padding: 12px 16px; border: 0; background: transparent; font: inherit; font-weight: 600; color: var(--cob-ink); display: flex; align-items: center; gap: 8px; text-align: left; }
+.cob-mine-toggle::before { content: "+"; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: #fff; color: var(--cob-red); border: 1px solid var(--cob-line); font-weight: 700; transition: transform .25s; flex: none; }
+.cob-mine.is-open .cob-mine-toggle::before { transform: rotate(45deg); }
+.cob-mine-toggle span { color: var(--cob-muted); font-weight: 400; }
+.cob-mine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; padding: 0 16px; animation: cob-rise .35s var(--cob-ease) both; }
+.cob-mine-grid .cob-field { margin-top: 8px; }
+.cob-mine .cob-note { margin: 10px 16px 14px; text-align: left; }
+.cob-paper.is-updated { animation: cob-flash .6s ease; }
+@keyframes cob-flash { 0% { box-shadow: 0 0 0 4px rgba(200, 30, 69, .35), 0 14px 30px rgba(15, 26, 51, .12); } 100% { box-shadow: 0 14px 30px rgba(15, 26, 51, .12); } }
+
 /* phones: full screen, big buttons at the bottom, swipe between certificates */
 @media (max-width: 640px) {
   .cob { padding: 0; place-items: stretch; background: #fff; }
@@ -206,6 +218,7 @@
   .cob-back span { display: none; }
   .cob-back { width: 56px; padding: 0; }
   .cob-field-row { grid-template-columns: 1fr; gap: 0; }
+  .cob-mine-grid { grid-template-columns: 1fr; }
   .cob-templates button { min-width: 0; padding: 0 6px; font-size: 14px; }
   .cob-seg:not(.is-always) { display: flex; margin-bottom: 14px; padding: 4px; border-radius: 14px; background: var(--cob-soft); }
   .cob-seg:not(.is-always) button { flex: 1; min-height: 38px; border: 0; border-radius: 10px; background: transparent; color: var(--cob-muted); font: inherit; font-weight: 500; transition: background .25s, color .25s; }

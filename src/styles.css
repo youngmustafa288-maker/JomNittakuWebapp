@@ -2860,3 +2860,45 @@
     .time-picker { display: flex; align-items: center; gap: 8px; }
     .time-picker select { flex: 1; min-width: 0; }
     .time-picker > span { font-weight: 700; color: #60708f; }
+
+    /* ---------- Login: light card over the centre's sport scene ---------- */
+    .login-screen.has-scene { position: relative; overflow: hidden; min-height: 100vh; min-height: 100dvh; padding: 72px 18px 32px; background: radial-gradient(circle at 15% 10%, #fdecef 0, transparent 45%), radial-gradient(circle at 90% 90%, #e6eefb 0, transparent 50%), #f8fafd; }
+    .sport-scene { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+    .sport-scene svg { width: 100%; height: 100%; display: block; }
+    .login-screen.has-scene .login-panel.login-card { position: relative; z-index: 1; width: min(400px, 100%); padding: 22px 28px 28px; border-radius: 24px; background: rgba(255, 255, 255, .92); border: 1px solid #e4e9f2; box-shadow: 0 22px 50px rgba(22, 42, 74, .12); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); text-align: center; animation: login-card-in .7s cubic-bezier(.2, .8, .2, 1) both; }
+    .login-logo-badge { width: 96px; height: 96px; margin: -70px auto 6px; border-radius: 50%; background: #fff; border: 4px solid #c81e45; box-shadow: 0 12px 26px rgba(200, 30, 69, .18); display: grid; place-items: center; overflow: hidden; animation: login-pop .7s cubic-bezier(.2, .8, .2, 1) both .2s; }
+    .login-logo-badge img { width: 100%; height: 100%; object-fit: contain; padding: 8px; box-sizing: border-box; }
+    .login-card-head h1 { margin: 8px 0 2px; color: #111827; font-size: clamp(1.4rem, 5vw, 1.7rem); font-weight: 800; letter-spacing: 0; text-transform: none; }
+    .login-card-head p { margin: 0 0 18px; color: #60708f; font-size: .92rem; }
+    .login-screen.has-scene .login-form { display: grid; gap: 12px; text-align: left; }
+    .login-screen.has-scene .login-form .field { margin: 0; }
+    .login-screen.has-scene .google-btn { width: 100%; min-height: 50px; border-radius: 14px; background: #fff; }
+    .login-screen.has-scene .login-divider { margin: 2px 0; }
+    .login-screen.has-scene .primary-btn { width: 100%; min-height: 50px; border-radius: 14px; }
+    .login-screen.has-scene .brand-copy h1 { color: #111827; text-transform: none; letter-spacing: 0; font-size: 1.4rem; margin-top: 6px; }
+    .login-screen.has-scene .brand-copy .muted { margin-top: 8px; line-height: 1.5; }
+    @keyframes login-card-in { from { opacity: 0; transform: translateY(24px) scale(.98); } }
+    @keyframes login-pop { 0% { opacity: 0; transform: scale(.4); } 70% { transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
+    /* The whole scene stays visible: beside the card on wide screens, below it on narrow ones. */
+    @media (min-width: 900px) {
+      .login-screen.has-scene { place-items: center start; padding-left: clamp(40px, 8vw, 140px); }
+      .sport-scene { left: clamp(460px, 42%, 640px); right: 2%; top: 10%; bottom: 8%; }
+    }
+    @media (max-width: 899px) {
+      .login-screen.has-scene { align-items: start; padding-bottom: 46vh; }
+      .sport-scene { top: auto; height: 44vh; }
+    }
+    @media (max-width: 560px) {
+      .login-screen.has-scene { padding: 64px 14px 40vh; }
+      .login-screen.has-scene .login-panel.login-card { padding: 20px 20px 24px; }
+      .sport-scene { height: 38vh; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .login-screen.has-scene .login-panel.login-card, .login-logo-badge { animation: none; }
+    }
+
+    .dev-sport-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .dev-sport-edit select { width: auto; min-width: 150px; min-height: 40px; }
+
+    .sidebar-brand-mark.has-logo { background: #fff; padding: 2px; overflow: hidden; }
+    .sidebar-brand-mark.has-logo img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: inherit; }

@@ -232,6 +232,16 @@ Deno.serve(async (request) => {
     await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "centre.logo-updated", metadata: {} });
     return json({ ok: true, logo_url: logoUrl });
   }
+  if (action === "update-centre-sport") {
+    const centreId = String(body.centre_id || "");
+    const sport = String(body.sport || "").trim().slice(0, 40);
+    if (!centreId || !sport) return json({ error: "centre_id and sport are required" }, 400);
+    const { error } = await admin.from("centres").update({ sport, updated_at: new Date().toISOString() }).eq("id", centreId);
+    if (error) return json({ error: error.message }, 500);
+    await admin.from("audit_logs").insert({ actor_id: user.id, centre_id: centreId, action: "centre.sport-updated", metadata: { sport } });
+    return json({ ok: true, sport });
+  }
+
   if (action === "delete-centre") {
     const centreId = String(body.centre_id || "");
     if (!centreId) return json({ error: "centre_id is required" }, 400);

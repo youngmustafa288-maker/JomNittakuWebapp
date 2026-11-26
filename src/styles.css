@@ -2920,3 +2920,9 @@
   .dashboard { grid-template-columns: 320px minmax(0, 1fr); }
   .certificate-editor-workspace { grid-template-columns: 96px 310px minmax(0, 1fr); }
 }
+
+/* Tips shown while a coach makes their first report. */
+.first-report-tip { margin: 0 0 14px; padding: 12px 16px; border-radius: 14px; background: #fff5f7; border: 1px solid #f6cbd5; }
+.first-report-tip-badge { display: inline-block; margin-bottom: 4px; color: #c81e45; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.first-report-tip strong { display: block; color: #111827; font-size: 1rem; }
+.first-report-tip p { margin: 2px 0 0; color: #4b5563; font-size: .9rem; line-height: 1.45; }

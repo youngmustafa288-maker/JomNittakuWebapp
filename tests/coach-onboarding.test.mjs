@@ -151,7 +151,8 @@ test("design step offers Make it yours with the centre defaults as hints", () =>
   assert.match(html, /Make it yours/);
   assert.match(html, /placeholder="LiverPool"/);
   assert.match(html, /data-cob-input="brand.slogan"/);
-  // The example gets the coach's words; the base template does not.
+  // Either can be chosen, so both show the coach's words.
   assert.ok(seen.some(([mode, brand]) => mode === "example" && brand && "heading" in brand));
-  assert.ok(seen.some(([mode, brand]) => mode === "base" && !brand));
+  assert.ok(seen.some(([mode, brand]) => mode === "base" && brand && "heading" in brand));
+  assert.doesNotMatch(html, /Compare the base template|The example updates as you type|The empty design before|With your words, photos/);
 });

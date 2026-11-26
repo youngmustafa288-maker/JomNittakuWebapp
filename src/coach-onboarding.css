@@ -286,3 +286,12 @@
   .cob-phone { width: 150px; height: 290px; }
   .cob-phone-screen .link-page { transform: scale(.357); height: 768px; }
 }
+
+/* Base template / Example are now a choice. */
+.cob-cert.is-choice { cursor: pointer; padding: 10px; border-radius: 18px; border: 2px solid transparent; transition: border-color .25s, background .25s; }
+.cob-cert.is-choice:hover { background: var(--cob-soft); }
+.cob-cert.is-choice.is-chosen { border-color: var(--cob-red); background: #fff5f7; }
+.cob-cert.is-choice figcaption { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.cob-choice-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #b9c4d7; box-sizing: border-box; flex: none; transition: border .2s; }
+.cob-cert.is-chosen .cob-choice-dot { border: 5px solid var(--cob-red); }
+.cob-cert.is-choice figcaption strong { display: inline; }

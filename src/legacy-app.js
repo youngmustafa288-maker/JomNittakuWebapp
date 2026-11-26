@@ -278,7 +278,8 @@ export function initApp(config = {}) {
       uploadPhoto: file => uploadProfileImage(file, "coach", getOnboardingCoach().id),
       saveProfile: values => saveOnboardingProfile(values),
       currentTemplateId: () => getReportLayout(getOnboardingCoach()).templateId,
-      applyTemplate: (templateId, brand) => applyOnboardingTemplate(templateId, brand),
+      applyTemplate: (templateId, brand, options) => applyOnboardingTemplate(templateId, brand, options),
+      startFirstReport: () => { firstReportGuide = true; startReportFlow().catch(error => alert(error.message || "Unable to start a report.")); },
       currentQr: () => getOnboardingQr(),
       coachPageUrl: () => { const coach = getOnboardingCoach(); return coach ? coachPublicUrl(coach) : ""; },
       linkPlatform: url => linkPlatform(url),
@@ -295,6 +296,8 @@ export function initApp(config = {}) {
       render: () => scheduleRender()
     }));
     let previewDriveConnected = false;
+    // Set when a coach finishes the setup guide and starts their first report.
+    let firstReportGuide = false;
     let overviewDateFilter = "";
     let overviewMonthFilter = "";
     let overviewWeekFilter = "week1";
@@ -3394,6 +3397,20 @@ export function initApp(config = {}) {
       return true;
     }
 
+    // A short tip on each step while a coach makes their first report.
+    function renderFirstReportTip(coach, step) {
+      const hasReports = state.reports.some(report => report.coachId === coach?.id);
+      if (!firstReportGuide && (state.auth.role !== "coach" || hasReports || reportStoreStatus !== "ready")) return "";
+      const tips = {
+        1: ["Pick your student", "Choose the student you just coached."],
+        2: ["Check the lesson", "Today's date and time are filled in. Change them if needed."],
+        3: ["What happened in class", "Write short points: what you taught, how they did, and what to work on next."],
+        4: ["A note for the parents", "Add a few words for the parents, then finish. Your certificate is made for you."]
+      };
+      const [title, text] = tips[step] || tips[1];
+      return `<div class="first-report-tip" role="note"><span class="first-report-tip-badge">Your first report · ${step} of 4</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></div>`;
+    }
+
     function renderReportWizard() {
       const draft = wizardDraftId ? state.reportDrafts[wizardDraftId] : null;
       if (!draft) {
@@ -3402,7 +3419,7 @@ export function initApp(config = {}) {
         return `
           <div id="wizardModal" class="modal-backdrop open">
             <div class="modal-card">
-              <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">Ã—</button></div>
+              <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
               <div class="section-title"><h2>Generate Report</h2><p>Select the coach responsible for this lesson.</p></div>
               <div class="field"><label for="reportStartCoach">Coach</label><select id="reportStartCoach" class="filter-select"><option value="">Select a coach</option>${coaches.map(coach => `<option value="${escapeHtml(coach.id)}">${escapeHtml(coach.name)}</option>`).join("")}</select></div>
               ${coaches.length ? "" : '<p class="report-drive-notice is-error" role="alert">No eligible coaches are available in this workspace.</p>'}
@@ -3435,6 +3452,7 @@ export function initApp(config = {}) {
             <div class="wizard-close-row"><button class="ghost-btn" type="button" aria-label="Close report wizard" data-action="save-close-wizard">×</button></div>
             <p id="reportSaveStatus" class="report-drive-notice ${reportStoreError ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(reportStoreError || reportSaveMessage())}</p>
             ${renderHybridNotice()}
+            ${renderFirstReportTip(coach, step)}
             <div class="wizard-steps">
               ${[
                 ["Step 1", "Select Student"],
@@ -6210,7 +6228,7 @@ export function initApp(config = {}) {
       // "Make it yours": the coach's own heading and slogan replace the defaults
       // on the example. Empty boxes keep the default words.
       const brand = options?.brand || null;
-      if (brand && !base) {
+      if (brand) {
         const heading = String(brand.heading || "").trim();
         const slogan = String(brand.slogan || "").trim();
         layout.layers.forEach(layer => {
@@ -6330,6 +6348,7 @@ export function initApp(config = {}) {
         slogan: text("brand-tagline"),
         contact: coach?.centreContact && coach.centreContact !== "+60 12-345 6789" ? coach.centreContact : "",
         address: coach?.branchAddress && coach.branchAddress !== "Centre address" ? coach.branchAddress : "",
+        style: ["student-photo", "coach-photo"].every(id => layout.layers.find(item => item.id === id)?.visible === false) ? "base" : "example",
         defaults: {
           heading: certificateCentreName() || ARTWORK_EDITABLE_TEXT["brand-name"],
           slogan: ARTWORK_EDITABLE_TEXT["brand-tagline"],
@@ -6339,7 +6358,7 @@ export function initApp(config = {}) {
       };
     }
 
-    async function applyOnboardingTemplate(templateId, brand = null) {
+    async function applyOnboardingTemplate(templateId, brand = null, options = {}) {
       const coach = getOnboardingCoach();
       if (!coach) throw new Error("Your coach profile could not be found.");
       const current = getReportLayout(coach);
@@ -6357,6 +6376,10 @@ export function initApp(config = {}) {
         });
         if (String(brand.contact || "").trim()) coach.centreContact = String(brand.contact).trim();
         if (String(brand.address || "").trim()) coach.branchAddress = String(brand.address).trim();
+      }
+      // "Base template": no student/coach photos. "Example": photos shown.
+      if (options.style === "base" || options.style === "example") {
+        next.layers = next.layers.map(layer => ["student-photo", "coach-photo"].includes(layer.id) ? { ...layer, visible: options.style === "example" } : layer);
       }
       coach.reportLayout = { ...next, variants, designs: current.designs || [], uploads: current.uploads || [] };
       if (isCertificatePreview) return;

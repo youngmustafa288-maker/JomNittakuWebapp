@@ -237,6 +237,8 @@ export function initApp(config = {}) {
     // The centre this account belongs to, when it differs from the centre
     // link being opened. Used to point people to the right place.
     let authHomeCentre = null;
+    // Why a new Google account couldn't join the centre (shown on the login card).
+    let joinError = "";
     let requestedCentre = null;
     // { status: "loading" | "ready" | "missing" | "error", page }
     let publicCoachPage = null;
@@ -2184,14 +2186,15 @@ export function initApp(config = {}) {
         // moved to another centre or given a different role.
         const canJoin = !membershipError && !list.length && requestedCentre && isGoogleUser
           && !["dev", "admin", "centre_admin"].includes(String(appRole || ""));
+        joinError = "";
         if (canJoin) {
-          try {
-            const result = await invokePrivileged("dev-console", { action: "provision-google-member", centre_id: requestedCentre.id });
-            centreMembership = result.membership || null;
-            if (centreMembership) centreId = centreMembership.centre_id;
-          } catch (error) {
-            if (error?.code === "other_centre" && error.centre) authHomeCentre = error.centre;
-            console.warn("Unable to provision Google centre membership", error);
+          const joined = await joinCentreAsCoach(requestedCentre.id);
+          if (joined.membership) {
+            centreMembership = joined.membership;
+            centreId = centreMembership.centre_id;
+          } else {
+            if (joined.homeCentre) authHomeCentre = joined.homeCentre;
+            joinError = joined.error || "";
           }
         }
       }
@@ -2265,10 +2268,48 @@ export function initApp(config = {}) {
       }
       if (!state.auth.role) {
         await supabase.auth.signOut();
-        loginError = requestedCentre
-          ? `This account isn't part of ${requestedCentre.name} yet. Ask your centre admin to add you.`
-          : "This account isn't part of a centre yet. Sign in from your centre's link, or ask your centre admin to add you.";
+        loginError = authHomeCentre?.name && requestedCentre
+          ? `This account belongs to ${authHomeCentre.name}, not ${requestedCentre.name}. Use your centre's own link to sign in.`
+          : joinError && requestedCentre
+            ? `Couldn't join ${requestedCentre.name}: ${joinError}`
+            : requestedCentre
+              ? (isGoogleUser
+                ? `This account can't join ${requestedCentre.name}. Ask your centre admin for help.`
+                : `This account isn't part of ${requestedCentre.name} yet. New coaches can sign up with Google.`)
+              : "This account isn't part of a centre yet. Open your centre's link and sign in with Google to join.";
       }
+    }
+
+    // A brand-new Google account joins the centre whose link it opened, as a
+    // coach. Tries the server function first, then the database function
+    // (so sign-up still works if the server function is out of date).
+    // Never moves an account that already belongs to another centre.
+    async function joinCentreAsCoach(centreId) {
+      let lastError = "";
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const result = await invokePrivileged("dev-console", { action: "provision-google-member", centre_id: centreId });
+          if (result?.membership) return { membership: result.membership };
+        } catch (error) {
+          if (error?.code === "other_centre") return { homeCentre: error.centre || { name: "", slug: "" } };
+          if (error?.code === "has_role") return { error: "this account is a staff account." };
+          lastError = error?.message || "";
+          console.warn("Unable to provision Google centre membership", error);
+        }
+      }
+      const { data, error } = await supabase.rpc("join_centre_as_coach", { target_centre: centreId });
+      if (!error) {
+        const row = Array.isArray(data) ? data[0] : data;
+        if (row?.centre_id) return { membership: { centre_id: row.centre_id, user_id: row.user_id, role: row.role || "coach" } };
+      }
+      if (error && /other_centre/.test(error.message || "")) {
+        let homeCentre = { name: "", slug: "" };
+        try { homeCentre = { ...homeCentre, ...JSON.parse(error.hint || error.details || "{}") }; } catch { /* keep blank */ }
+        return { homeCentre };
+      }
+      if (error) console.warn("Unable to join centre with the database function", error);
+      const missingFunction = error && (error.code === "PGRST202" || /join_centre_as_coach/.test(error.message || ""));
+      return { error: missingFunction ? (lastError || "sign-up isn't set up yet. Please tell your centre admin.") : (error?.message || lastError || "please try again.") };
     }
 
     function bindAuthStateListener() {
@@ -3862,7 +3903,7 @@ export function initApp(config = {}) {
               <div class="field"><label for="editStudentPhone">Phone Number</label><input id="editStudentPhone" class="text-input" value="${escapeHtml(student.parentHp)}"></div>
               <div class="field"><label for="editStudentLessons">Lesson</label><input id="editStudentLessons" class="text-input" type="number" min="0" value="${student.lessons}"></div>
             </div>
-            <div class="onboarding-actions student-edit-actions"><button class="ghost-btn student-delete-btn" data-action="delete-student">Delete student</button><span><button class="ghost-btn" data-action="close-student-edit">Cancel</button><button class="primary-btn" data-action="save-student-edit">Save Changes</button></span></div>
+            <div class="onboarding-actions student-edit-actions"><button class="ghost-btn student-delete-btn" data-action="delete-student"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v7m6-7v7"/></svg><span>Delete student</span></button><span><button class="ghost-btn" data-action="close-student-edit">Cancel</button><button class="primary-btn" data-action="save-student-edit">Save Changes</button></span></div>
           </div>
         </div>
       `;
@@ -5185,7 +5226,7 @@ export function initApp(config = {}) {
       if (action === "student-edit-photo") return triggerStudentUpload(event.currentTarget.dataset.studentId);
       if (action === "close-student-edit") return closeStudentEditModal();
       if (action === "save-student-edit") return saveStudentEdit();
-      if (action === "delete-student") return deleteStudent();
+      if (action === "delete-student") return deleteStudent(event.currentTarget.dataset.studentId || studentEditModal?.studentId || "");
       if (action === "add-student") return openAddStudentModal();
       if (action === "close-onboarding") return closeOnboardingModal();
       if (action === "onboarding-continue") return continueOnboarding();
@@ -5354,6 +5395,7 @@ export function initApp(config = {}) {
               </div>
               <div class="student-card-actions">
                 <button class="secondary-btn" data-action="student-edit" data-student-id="${student.id}">Edit</button>
+                <button class="icon-btn student-trash-btn" data-action="delete-student" data-student-id="${student.id}" title="Delete student" aria-label="Delete ${escapeHtml(student.name)}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v7m6-7v7"/></svg></button>
                 ${state.auth.role && state.auth.role !== "dev" ? `<button class="primary-btn" data-action="new-report">New report</button>` : ""}
               </div>
             </td>
@@ -5398,8 +5440,8 @@ export function initApp(config = {}) {
       }
     }
 
-    async function deleteStudent() {
-      const student = studentEditModal && getStudentById(studentEditModal.studentId);
+    async function deleteStudent(studentId) {
+      const student = studentId && getStudentById(studentId);
       if (!student) return;
       if (!window.confirm(`Delete ${student.name}? They will be removed from your student list. Reports you already made are kept.`)) return;
       try {
@@ -6898,7 +6940,13 @@ export function initApp(config = {}) {
         centreRouteUnavailable = true;
       }
       const isDriveCallbackPath = window.location.pathname === "/api/auth/google-drive/callback";
-      if (supabase && (window.location.pathname === "/auth/callback" || isDriveCallbackPath)) {
+      // If the callback link isn't on Supabase's allowed redirect list, Google
+      // sign-in comes back to the home page instead. Treat that as the callback
+      // too, so the centre the person started from isn't lost.
+      const returnedFromOAuth = !centrePath && !requestedCentre
+        && /[?&]code=|[?&#]access_token=|[?&#]error(_description)?=/.test(`${window.location.search}${window.location.hash}`)
+        && Boolean(sessionStorage.getItem("pendingCentreSlug"));
+      if (supabase && (window.location.pathname === "/auth/callback" || isDriveCallbackPath || returnedFromOAuth)) {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         driveOAuthCode = driveCallback ? callbackParams.get("code") || "" : "";
@@ -6988,7 +7036,7 @@ export function initApp(config = {}) {
               driveConnectionError = callbackError;
               if (state.auth.role === "coach") state.ui.page = "centre-settings";
             }
-            if (window.location.pathname === "/auth/callback" || isDriveCallbackPath) {
+            if (window.location.pathname === "/auth/callback" || isDriveCallbackPath || returnedFromOAuth) {
               window.history.replaceState({}, document.title, requestedCentre?.slug
                 ? `/centre/${encodeURIComponent(requestedCentre.slug)}` : "/");
               sessionStorage.removeItem("pendingCentreSlug");

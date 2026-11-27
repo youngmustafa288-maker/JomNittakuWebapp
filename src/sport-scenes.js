@@ -156,16 +156,136 @@ function frameFor(cfg, state, dt, now) {
     }
     extra = waves + `<g transform="translate(${x},${y})" opacity=".55"><ellipse cx="0" cy="0" rx="34" ry="9" fill="${C.navy}"/><circle cx="36" cy="-2" r="9" fill="${C.red}"/><path d="M10 -6 q${(16 * Math.sin(now / 180)).toFixed(1)} -26 34 -4" stroke="${C.navy}" stroke-width="6" fill="none" stroke-linecap="round"/></g>`
       + Array.from({ length: 6 }, (_, i) => `<circle cx="${x - 50 - i * 16}" cy="${(y + 3 * Math.sin(now / 200 + i)).toFixed(1)}" r="${4 - i * 0.5}" fill="#fff" opacity="${0.8 - i * 0.12}"/>`).join("");
-  } else {
-    // Mixed: a few different balls drifting gently, for "Other" and the main login.
-    const balls = ["tt", "football", "basket", "tennis", "volley", "shuttle", "takraw"];
-    extra = balls.map((kind, i) => {
-      const x = (100 + i * 105 + 30 * Math.sin(now / 2600 + i)) % 800;
-      const y = 120 + ((i * 53) % 260) + 22 * Math.sin(now / 1700 + i * 1.7);
-      return ballSvg(kind, x.toFixed(1), y.toFixed(1), ((now / 40 + i * 50) % 360).toFixed(0)).replace('opacity=".9"', 'opacity=".45"').replace('opacity=".85"', 'opacity=".45"');
-    }).join("");
   }
+  // "Mixed" (Other sport and the main login) has no fixed scene: the
+  // bouncing balls layer below is the whole animation.
   return { pos, rot, extra };
+}
+
+// ---------- Bouncing balls over the whole screen ----------
+// The side-on scene is drawn at 800x500, so on a tall phone screen it shrinks
+// to a thin strip. This layer uses the real screen size instead, so the balls
+// stay big and move around the top and bottom of the phone too.
+const MIXED_BALLS = ["tt", "football", "basket", "tennis", "volley", "shuttle", "takraw", "pickle"];
+
+function ballKindsFor(cfg) {
+  if (cfg.kind === "swim") return ["bubble"];
+  if (cfg.kind === "mixed" || !cfg.ball) return MIXED_BALLS;
+  return [cfg.ball];
+}
+
+function bouncingBallSvg(ball) {
+  if (ball.kind === "bubble") {
+    return `<g transform="translate(${ball.x.toFixed(1)},${ball.y.toFixed(1)})"><circle r="${ball.r.toFixed(1)}" fill="#dcecfb" stroke="#9fc3ea" stroke-width="2" opacity=".75"/><circle cx="${(-ball.r * 0.35).toFixed(1)}" cy="${(-ball.r * 0.35).toFixed(1)}" r="${(ball.r * 0.22).toFixed(1)}" fill="#fff" opacity=".9"/></g>`;
+  }
+  const base = ball.kind === "shuttle" ? 14 : BALL_RADIUS[ball.kind] || 9;
+  const s = ball.r / base;
+  return `<g transform="translate(${ball.x.toFixed(1)},${ball.y.toFixed(1)}) scale(${s.toFixed(3)})">${ballSvg(ball.kind, 0, 0, ball.rot.toFixed(0))}</g>`;
+}
+
+function createBouncingBalls(host, cfg, reduce) {
+  const layer = document.createElement("div");
+  layer.className = "sport-balls";
+  layer.setAttribute("aria-hidden", "true");
+  host.appendChild(layer);
+  const kinds = ballKindsFor(cfg);
+  let w = host.clientWidth || window.innerWidth || 400;
+  let h = host.clientHeight || window.innerHeight || 700;
+  const small = w < 600;
+  const count = small ? 7 : 10;
+  const radius = () => Math.max(14, Math.min(30, Math.min(w, h) * (small ? 0.05 : 0.03)));
+  let seed = 7;
+  const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  const balls = Array.from({ length: count }, (_, i) => {
+    const r = radius() * (0.8 + rand() * 0.45);
+    const angle = rand() * Math.PI * 2;
+    const speed = (small ? 70 : 90) + rand() * 60;
+    return {
+      kind: kinds[i % kinds.length],
+      r,
+      x: r + rand() * Math.max(1, w - 2 * r),
+      y: r + rand() * Math.max(1, h - 2 * r),
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      rot: rand() * 360
+    };
+  });
+
+  function paint() {
+    layer.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" focusable="false">${balls.map(bouncingBallSvg).join("")}</svg>`;
+  }
+
+  function step(dt) {
+    const sec = dt / 1000;
+    balls.forEach(ball => {
+      // Slowly ease back to a playful speed after a tap pushes a ball hard.
+      const speed = Math.hypot(ball.vx, ball.vy);
+      const target = small ? 95 : 115;
+      if (speed > target * 1.3) { ball.vx *= 0.985; ball.vy *= 0.985; }
+      ball.x += ball.vx * sec;
+      ball.y += ball.vy * sec;
+      ball.rot += ball.vx * sec * 2.2;
+      if (ball.x < ball.r) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+      if (ball.x > w - ball.r) { ball.x = w - ball.r; ball.vx = -Math.abs(ball.vx); }
+      if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+      if (ball.y > h - ball.r) { ball.y = h - ball.r; ball.vy = -Math.abs(ball.vy); }
+    });
+    // Balls bump into each other.
+    for (let i = 0; i < balls.length; i += 1) {
+      for (let j = i + 1; j < balls.length; j += 1) {
+        const a = balls[i], b = balls[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy), min = a.r + b.r;
+        if (!dist || dist >= min) continue;
+        const nx = dx / dist, ny = dy / dist;
+        const overlap = (min - dist) / 2;
+        a.x -= nx * overlap; a.y -= ny * overlap;
+        b.x += nx * overlap; b.y += ny * overlap;
+        const rel = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+        if (rel > 0) {
+          a.vx -= rel * nx; a.vy -= rel * ny;
+          b.vx += rel * nx; b.vy += rel * ny;
+        }
+      }
+    }
+  }
+
+  // Tapping the background pushes nearby balls away.
+  const screen = host.parentElement;
+  function onTap(event) {
+    const box = host.getBoundingClientRect();
+    const px = event.clientX - box.left, py = event.clientY - box.top;
+    balls.forEach(ball => {
+      const dx = ball.x - px, dy = ball.y - py;
+      const dist = Math.hypot(dx, dy) || 1;
+      const reach = Math.max(160, Math.min(w, h) * 0.45);
+      if (dist > reach) return;
+      const push = 420 * (1 - dist / reach);
+      ball.vx += (dx / dist) * push;
+      ball.vy += (dy / dist) * push;
+    });
+  }
+  if (!reduce) screen?.addEventListener("pointerdown", onTap);
+
+  function resize() {
+    w = host.clientWidth || w;
+    h = host.clientHeight || h;
+    balls.forEach(ball => {
+      ball.x = Math.min(Math.max(ball.r, ball.x), Math.max(ball.r, w - ball.r));
+      ball.y = Math.min(Math.max(ball.r, ball.y), Math.max(ball.r, h - ball.r));
+    });
+    paint();
+  }
+  window.addEventListener("resize", resize);
+
+  paint();
+  return {
+    tick(dt) { step(dt); paint(); },
+    stop() {
+      screen?.removeEventListener("pointerdown", onTap);
+      window.removeEventListener("resize", resize);
+    }
+  };
 }
 
 // Mounts a scene into `host`. Returns a stop() function.
@@ -194,19 +314,26 @@ export function mountSportScene(host, sport) {
     if (netEl) netEl.setAttribute("transform", state.netShake ? `translate(${state.netShake.toFixed(1)},0)` : "");
   }
 
+  const bouncing = createBouncingBalls(host, cfg, reduce);
+
   if (reduce) {
     state.t = 0.35;
     paint(0, 0);
-    return () => {};
+    return () => bouncing.stop();
   }
   let raf = 0, last = performance.now(), stopped = false;
+  const stop = () => { stopped = true; cancelAnimationFrame(raf); bouncing.stop(); };
   const loop = now => {
     if (stopped) return;
-    if (!host.isConnected) { stopped = true; return; }
-    if (!document.hidden) paint(Math.min(50, now - last), now);
+    if (!host.isConnected) { stop(); return; }
+    if (!document.hidden) {
+      const dt = Math.min(50, now - last);
+      paint(dt, now);
+      bouncing.tick(dt);
+    }
     last = now;
     raf = requestAnimationFrame(loop);
   };
   raf = requestAnimationFrame(loop);
-  return () => { stopped = true; cancelAnimationFrame(raf); };
+  return stop;
 }

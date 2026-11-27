@@ -1166,3 +1166,11 @@
 .dashboard .sidebar-brand-mark.has-logo,
 .mobile-brand .sidebar-brand-mark.has-logo { background: #fff; padding: 2px; overflow: hidden; border: 1px solid rgba(27, 42, 74, .12); }
 .sidebar-brand-mark.has-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+/* Trash icon: quick delete on each student card */
+.dashboard .student-card-actions > .student-trash-btn { flex: 0 0 auto; width: 38px; padding: 0; color: #b42318; border-color: #f3c2c0; background: #fff; }
+.dashboard .student-card-actions > .student-trash-btn:hover { background: #fef3f2; color: #912018; border-color: #b42318; }
+.dashboard .student-trash-btn svg,
+.student-delete-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.student-delete-btn { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 760px) { .dashboard .student-card-actions > .student-trash-btn { width: 42px; } }

@@ -4124,6 +4124,7 @@ export function initApp(config = {}) {
       return `<div class="onboarding-backdrop open"><div class="onboarding-modal dev-centre-detail-modal" role="dialog" aria-modal="true" aria-labelledby="dev-centre-detail-title">
         <div class="onboarding-head"><div class="section-title"><h2 id="dev-centre-detail-title">${escapeHtml(centre.name)} details</h2><p>Review centre access, licensing, and activation state.</p></div><button class="close-btn" data-action="close-centre-details" aria-label="Close details">X</button></div>
         <div class="review-card dev-centre-detail-grid">
+          <div class="review-row"><strong>Name</strong><span class="dev-sport-edit"><input id="dev-centre-name" class="text-input" maxlength="80" aria-label="Centre name" value="${escapeHtml(centre.name || "")}"><button class="secondary-btn" data-action="rename-centre" data-centre-id="${centre.id}">Save name</button></span></div>
           <div class="review-row"><strong>Sport</strong><span class="dev-sport-edit"><select id="dev-centre-sport" class="text-input" aria-label="Centre sport">${LOGIN_SPORTS.map(option => `<option ${String(centre.sport || "").toLowerCase() === option.toLowerCase() ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}${centre.sport && !LOGIN_SPORTS.some(option => option.toLowerCase() === String(centre.sport).toLowerCase()) ? `<option selected>${escapeHtml(centre.sport)}</option>` : ""}</select><button class="secondary-btn" data-action="update-centre-sport" data-centre-id="${centre.id}">Save sport</button></span></div>
           <div class="review-row"><strong>Centre logo</strong><span>${centre.logo_url ? "Configured" : "Not configured"}</span></div>
           ${centre.logo_url ? `<div class="review-row"><strong>Logo preview</strong><img class="dev-centre-logo-preview" src="${escapeHtml(centre.logo_url)}" alt="${escapeHtml(centre.name)} logo preview"></div>` : ""}
@@ -5074,6 +5075,28 @@ export function initApp(config = {}) {
         }
       })();
       if (action === "centre-activation-logout") return logout();
+      if (action === "rename-centre") {
+        const centreId = event.currentTarget.dataset.centreId;
+        const name = (document.getElementById("dev-centre-name")?.value || "").trim();
+        if (!centreId) return;
+        if (!name) return alert("Enter a centre name.");
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Saving…";
+        supabase.rpc("rename_centre", { target_centre: centreId, new_name: name })
+          .then(({ error }) => {
+            if (error) {
+              const missing = error.code === "PGRST202" || /rename_centre/.test(error.message || "");
+              throw new Error(missing
+                ? "Renaming needs a one-time database update. Run supabase/migrations/20261127_000027_rename_centre.sql in Supabase, then try again."
+                : error.message);
+            }
+            return refreshPrivilegedState();
+          })
+          .catch(error => alert(error.message || "Unable to rename the centre."))
+          .finally(() => render());
+        return;
+      }
       if (action === "update-centre-sport") {
         const centreId = event.currentTarget.dataset.centreId;
         const sport = document.getElementById("dev-centre-sport")?.value || "";

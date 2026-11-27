@@ -239,6 +239,31 @@ export function initApp(config = {}) {
     let authHomeCentre = null;
     // Why a new Google account couldn't join the centre (shown on the login card).
     let joinError = "";
+    // The centre a Google sign-in started from. Kept in both tab and device
+    // storage for 15 minutes, because the sign-in can come back in a fresh
+    // tab or to the home page instead of the callback link.
+    const PENDING_CENTRE_KEY = "pendingCentreSlug";
+    function savePendingCentre(slug) {
+      const value = JSON.stringify({ slug, at: Date.now() });
+      try { sessionStorage.setItem(PENDING_CENTRE_KEY, value); } catch { /* storage may be blocked */ }
+      try { localStorage.setItem(PENDING_CENTRE_KEY, value); } catch { /* storage may be blocked */ }
+    }
+    function readPendingCentre() {
+      for (const store of [() => sessionStorage, () => localStorage]) {
+        try {
+          const raw = store().getItem(PENDING_CENTRE_KEY);
+          if (!raw) continue;
+          let saved;
+          try { saved = JSON.parse(raw); } catch { saved = { slug: raw, at: Date.now() }; }
+          if (saved?.slug && Date.now() - Number(saved.at || 0) < 15 * 60 * 1000) return String(saved.slug);
+        } catch { /* storage may be blocked */ }
+      }
+      return "";
+    }
+    function clearPendingCentre() {
+      try { sessionStorage.removeItem(PENDING_CENTRE_KEY); } catch { /* storage may be blocked */ }
+      try { localStorage.removeItem(PENDING_CENTRE_KEY); } catch { /* storage may be blocked */ }
+    }
     let requestedCentre = null;
     // { status: "loading" | "ready" | "missing" | "error", page }
     let publicCoachPage = null;
@@ -2101,7 +2126,7 @@ export function initApp(config = {}) {
       const callbackPath = requestedCentre?.slug
         ? `/auth/callback?centre=${encodeURIComponent(requestedCentre.slug)}`
         : "/auth/callback";
-      if (requestedCentre?.slug) sessionStorage.setItem("pendingCentreSlug", requestedCentre.slug);
+      if (requestedCentre?.slug) savePendingCentre(requestedCentre.slug);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo: `${window.location.origin}${callbackPath}` }
@@ -5032,7 +5057,7 @@ export function initApp(config = {}) {
           driveConnectionError = "";
           const result = await invokePrivileged("google-drive-oauth", { action: "connect", centre_id: state.auth.centreId });
           if (!result?.authorization_url) throw new Error("Google Drive did not return an authorization URL.");
-          if (requestedCentre?.slug) sessionStorage.setItem("pendingCentreSlug", requestedCentre.slug);
+          if (requestedCentre?.slug) savePendingCentre(requestedCentre.slug);
           window.location.assign(result.authorization_url);
         } catch (error) {
           const message = error.message || "Unable to start Google Drive connection.";
@@ -6625,7 +6650,7 @@ export function initApp(config = {}) {
       driveConnectionError = "";
       const result = await invokePrivileged("google-drive-oauth", { action: "connect", centre_id: state.auth.centreId });
       if (!result?.authorization_url) throw new Error("Google Drive did not return a sign-in link. Try again.");
-      if (requestedCentre?.slug) sessionStorage.setItem("pendingCentreSlug", requestedCentre.slug);
+      if (requestedCentre?.slug) savePendingCentre(requestedCentre.slug);
       window.location.assign(result.authorization_url);
       // Keep the button busy while the browser leaves the page.
       await new Promise(() => {});
@@ -6945,22 +6970,24 @@ export function initApp(config = {}) {
       // If the callback link isn't on Supabase's allowed redirect list, Google
       // sign-in comes back to the home page instead. Treat that as the callback
       // too, so the centre the person started from isn't lost.
+      // (Supabase may already have cleared the sign-in code from the URL, so
+      // only the saved centre, from the last 15 minutes, is checked.)
       const returnedFromOAuth = !centrePath && !requestedCentre
-        && /[?&]code=|[?&#]access_token=|[?&#]error(_description)?=/.test(`${window.location.search}${window.location.hash}`)
-        && Boolean(sessionStorage.getItem("pendingCentreSlug"));
+        && /^\/(auth\/callback\/?)?$/.test(window.location.pathname)
+        && Boolean(readPendingCentre());
       if (supabase && (window.location.pathname === "/auth/callback" || isDriveCallbackPath || returnedFromOAuth)) {
         const callbackParams = new URLSearchParams(window.location.search);
         callbackError = callbackParams.get("error_description") || callbackParams.get("error") || "";
         driveOAuthCode = driveCallback ? callbackParams.get("code") || "" : "";
         driveOAuthState = driveCallback ? callbackParams.get("state") || "" : "";
-        const callbackCentreSlug = callbackParams.get("centre") || driveOAuthState.split("|")[1] || sessionStorage.getItem("pendingCentreSlug");
+        const callbackCentreSlug = callbackParams.get("centre") || driveOAuthState.split("|")[1] || readPendingCentre();
         if (callbackCentreSlug) {
           const { centre: data, error: lookupError } = await fetchCentreBySlug(callbackCentreSlug);
           if (lookupError) {
             centreRouteLoadFailed = true;
           } else if (data?.status === "active") {
             requestedCentre = data;
-            sessionStorage.removeItem("pendingCentreSlug");
+            clearPendingCentre();
             // Let Supabase consume its own sign-in callback before removing
             // the code. Drive callbacks are cleaned up after the exchange.
           } else {
@@ -7041,7 +7068,7 @@ export function initApp(config = {}) {
             if (window.location.pathname === "/auth/callback" || isDriveCallbackPath || returnedFromOAuth) {
               window.history.replaceState({}, document.title, requestedCentre?.slug
                 ? `/centre/${encodeURIComponent(requestedCentre.slug)}` : "/");
-              sessionStorage.removeItem("pendingCentreSlug");
+              clearPendingCentre();
             }
             state.centreProfile = await loadPublicCentreProfile();
           } else {

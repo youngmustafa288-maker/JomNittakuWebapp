@@ -240,6 +240,17 @@ export function initApp(config = {}) {
     let authHomeCentre = null;
     // Why a new Google account couldn't join the centre (shown on the login card).
     let joinError = "";
+    // Dev and admin accounts can sign in from any link. They always use their
+    // own dashboard, so a centre page is swapped for the main page.
+    function leaveCentrePageIfStaff() {
+      if (!["dev", "admin"].includes(state.auth.role) || !requestedCentre) return false;
+      requestedCentre = null;
+      authHomeCentre = null;
+      loginError = "";
+      clearPendingCentre();
+      try { window.history.replaceState({}, document.title, "/"); } catch { /* ignore */ }
+      return true;
+    }
     // Login password: the eye button shows or hides what was typed.
     let loginPasswordVisible = false;
     if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.addEventListener("click", event => {
@@ -2031,6 +2042,7 @@ export function initApp(config = {}) {
         return render();
       }
       await applyAuthUser(data.user);
+      leaveCentrePageIfStaff();
       if (requestedCentre && (!state.auth.centreId || state.auth.centreId !== requestedCentre.id)) {
         await supabase.auth.signOut();
         state.auth = { role: null, coachId: null, userId: null, centreId: null, email: "" };
@@ -2374,6 +2386,7 @@ export function initApp(config = {}) {
           // Bootstrap and password sign-in already restore this same session.
           if (authInitializing || isSigningIn) return;
           await applyAuthUser(session?.user || null);
+          leaveCentrePageIfStaff();
           await Promise.all([
             refreshCoachesFromSupabase(),
             refreshStudentsFromSupabase(),
@@ -7065,6 +7078,7 @@ export function initApp(config = {}) {
             const { data, error } = await initialSessionPromise;
             if (error && !callbackError) callbackError = error.message;
             await applyAuthUser(data.session?.user || null);
+            leaveCentrePageIfStaff();
             if (state.auth.centreId) {
               const tenantState = await loadState(`centre:${state.auth.centreId}`);
               const liveAuth = state.auth;

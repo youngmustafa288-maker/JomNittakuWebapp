@@ -2987,7 +2987,7 @@
     /* Login password: eye button inside the box */
     .password-wrap { position: relative; }
     .password-wrap .text-input { padding-right: 48px; width: 100%; box-sizing: border-box; }
-    .password-eye { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; background: transparent; color: #60708f; cursor: pointer; }
+    .password-eye { position: absolute; z-index: 3; top: 50%; right: 6px; transform: translateY(-50%); width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; background: transparent; color: #60708f; cursor: pointer; }
     .password-eye:hover { background: #f1f4f9; color: #111827; }
     .password-eye:focus-visible { outline: 2px solid #c81e45; outline-offset: 1px; }
     .password-eye svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }

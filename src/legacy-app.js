@@ -240,6 +240,28 @@ export function initApp(config = {}) {
     let authHomeCentre = null;
     // Why a new Google account couldn't join the centre (shown on the login card).
     let joinError = "";
+    // Login password: the eye button shows or hides what was typed.
+    let loginPasswordVisible = false;
+    document.addEventListener("click", event => {
+      const toggle = event.target.closest?.("[data-password-toggle]");
+      if (!toggle) return;
+      event.preventDefault();
+      loginPasswordVisible = !loginPasswordVisible;
+      const input = toggle.parentElement?.querySelector("input");
+      if (input) {
+        const { selectionStart, selectionEnd } = input;
+        input.type = loginPasswordVisible ? "text" : "password";
+        input.focus();
+        try { input.setSelectionRange(selectionStart, selectionEnd); } catch { /* not supported */ }
+      }
+      toggle.setAttribute("aria-pressed", String(loginPasswordVisible));
+      const label = loginPasswordVisible ? "Hide password" : "Show password";
+      toggle.setAttribute("aria-label", label);
+      toggle.title = label;
+      toggle.innerHTML = loginPasswordVisible
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.6 6.6C3.9 8.3 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+    });
     // The centre a Google sign-in started from. Kept in both tab and device
     // storage for 15 minutes, because the sign-in can come back in a fresh
     // tab or to the home page instead of the callback link.
@@ -2561,7 +2583,12 @@ export function initApp(config = {}) {
               </div>
               <div class="field">
                 <label for="loginPassword">Password</label>
-                <input id="loginPassword" class="text-input" type="password" autocomplete="current-password" required>
+                <div class="password-wrap">
+                  <input id="loginPassword" class="text-input" type="${loginPasswordVisible ? "text" : "password"}" autocomplete="current-password" required>
+                  <button type="button" class="password-eye" data-password-toggle aria-label="${loginPasswordVisible ? "Hide password" : "Show password"}" aria-pressed="${loginPasswordVisible}" title="${loginPasswordVisible ? "Hide password" : "Show password"}">${loginPasswordVisible
+                    ? '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10 10 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.6 6.6C3.9 8.3 2 12 2 12s4 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/></svg>'
+                    : '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'}</button>
+                </div>
               </div>
               ${loginError ? `<p class="form-error" role="alert">${escapeHtml(loginError)}</p>` : ""}
               <button class="primary-btn" type="submit" ${isSigningIn ? "disabled" : ""}>${isSigningIn ? "Signing in..." : "Sign in"}</button>

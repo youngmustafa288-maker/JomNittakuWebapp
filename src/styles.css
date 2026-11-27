@@ -2211,7 +2211,7 @@
     }
 
     .template-report-qr-pocket::before {
-      content: "SCAN NIE";
+      content: "SCAN ME";
       position: absolute;
       right: 0;
       bottom: 100%;

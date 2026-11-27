@@ -7,6 +7,9 @@ import "./coach-onboarding.css";
 import "./redesign.css";
 import { initApp } from "./legacy-app.js";
 
+// Styles are loaded by now (imported above), so show the page.
+document.documentElement.classList.add("styles-ready");
+
 const root = document.querySelector("#app");
 root.classList.add("app-shell");
 root.innerHTML = '<div class="app-loading" role="status" aria-live="polite">Loading…</div>';

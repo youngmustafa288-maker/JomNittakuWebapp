@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JomNittaku · Coach Reports</title>
+    <!-- Hide the page until the app's styles load, so slow phones don't
+         flash plain white text. Shown after 3s anyway as a safety net. -->
+    <style>html{visibility:hidden;background:#f8fafd}html.styles-ready{visibility:visible}</style>
+    <script>setTimeout(function(){document.documentElement.classList.add("styles-ready")},3000)</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

@@ -242,7 +242,7 @@ export function initApp(config = {}) {
     let joinError = "";
     // Login password: the eye button shows or hides what was typed.
     let loginPasswordVisible = false;
-    document.addEventListener("click", event => {
+    if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.addEventListener("click", event => {
       const toggle = event.target.closest?.("[data-password-toggle]");
       if (!toggle) return;
       event.preventDefault();

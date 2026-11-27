@@ -2281,22 +2281,10 @@ export function initApp(config = {}) {
     }
 
     // A brand-new Google account joins the centre whose link it opened, as a
-    // coach. Tries the server function first, then the database function
-    // (so sign-up still works if the server function is out of date).
+    // coach. Uses the database function first (no server deploy needed), and
+    // the dev-console server function only if that isn't installed.
     // Never moves an account that already belongs to another centre.
     async function joinCentreAsCoach(centreId) {
-      let lastError = "";
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          const result = await invokePrivileged("dev-console", { action: "provision-google-member", centre_id: centreId });
-          if (result?.membership) return { membership: result.membership };
-        } catch (error) {
-          if (error?.code === "other_centre") return { homeCentre: error.centre || { name: "", slug: "" } };
-          if (error?.code === "has_role") return { error: "this account is a staff account." };
-          lastError = error?.message || "";
-          console.warn("Unable to provision Google centre membership", error);
-        }
-      }
       const { data, error } = await supabase.rpc("join_centre_as_coach", { target_centre: centreId });
       if (!error) {
         const row = Array.isArray(data) ? data[0] : data;
@@ -2307,9 +2295,23 @@ export function initApp(config = {}) {
         try { homeCentre = { ...homeCentre, ...JSON.parse(error.hint || error.details || "{}") }; } catch { /* keep blank */ }
         return { homeCentre };
       }
-      if (error) console.warn("Unable to join centre with the database function", error);
+      if (error && /has_role/.test(error.message || "")) return { error: "this account is a staff account." };
       const missingFunction = error && (error.code === "PGRST202" || /join_centre_as_coach/.test(error.message || ""));
-      return { error: missingFunction ? (lastError || "sign-up isn't set up yet. Please tell your centre admin.") : (error?.message || lastError || "please try again.") };
+      if (error && !missingFunction) {
+        console.warn("Unable to join centre with the database function", error);
+        return { error: error.message || "please try again." };
+      }
+      // Database function not installed yet: fall back to the server function.
+      try {
+        const result = await invokePrivileged("dev-console", { action: "provision-google-member", centre_id: centreId });
+        if (result?.membership) return { membership: result.membership };
+        return { error: "please try again." };
+      } catch (fnError) {
+        if (fnError?.code === "other_centre") return { homeCentre: fnError.centre || { name: "", slug: "" } };
+        if (fnError?.code === "has_role") return { error: "this account is a staff account." };
+        console.warn("Unable to provision Google centre membership", fnError);
+        return { error: `${fnError?.message || "please try again."} (Run the join_centre_as_coach SQL in Supabase to fix sign-up.)` };
+      }
     }
 
     function bindAuthStateListener() {

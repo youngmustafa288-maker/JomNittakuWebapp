@@ -6,6 +6,7 @@ import { createDashboardStatePayload, createReportDriveRepository, normalizeRepo
 import { reportTemplateOptions, renderReportTemplateChoices } from "./report-template-picker.js";
 import { createIndexedDbReportStore, createHybridReportWorkspace, reportWorkspaceKey } from "./report-local.js";
 import { mountSportScene, LOGIN_SPORTS } from "./sport-scenes.js";
+import { cleanLogoFile } from "./logo-cleanup.js";
 import { createGuidedTour, TOURS } from "./first-report-tour.js";
 import { createCoachOnboarding, needsCoachOnboarding, pendingSetupItems, normalizeSkipped, SETUP_ITEM_LABELS, setupItemIcon } from "./coach-onboarding.js";
 
@@ -4747,7 +4748,7 @@ export function initApp(config = {}) {
         const centreId = event.target.dataset.centreId;
         if (!file || !centreId) return;
         try {
-          const logoUrl = await uploadProfileImage(file, "centre-logo", centreId);
+          const logoUrl = await uploadProfileImage(await cleanLogoFile(file), "centre-logo", centreId);
           await invokePrivileged("dev-console", { action: "update-centre-logo", centre_id: centreId, logo_url: logoUrl });
           await refreshPrivilegedState();
           render();
@@ -4758,13 +4759,15 @@ export function initApp(config = {}) {
         }
       });
 
-      document.getElementById("centre-onboarding-logo")?.addEventListener("change", event => {
+      document.getElementById("centre-onboarding-logo")?.addEventListener("change", async event => {
         const [file] = event.target.files || [];
         if (!file || !centreOnboardingModal) return;
         if (!file.type.startsWith("image/")) return alert("Choose an image file.");
         if (file.size > 5 * 1024 * 1024) return alert("Images must be 5 MB or smaller.");
-        centreOnboardingModal.values.logoFile = file;
-        centreOnboardingModal.values.logoPreview = URL.createObjectURL(file);
+        const cleaned = await cleanLogoFile(file);
+        if (!centreOnboardingModal) return;
+        centreOnboardingModal.values.logoFile = cleaned;
+        centreOnboardingModal.values.logoPreview = URL.createObjectURL(cleaned);
         render();
       });
 
@@ -6288,11 +6291,12 @@ export function initApp(config = {}) {
       const coach = getCurrentCoach();
       if (!coach) return;
       try {
-        const url = await uploadProfileImage(file, "certificate", coach.id);
+        const logo = await cleanLogoFile(file);
+        const url = await uploadProfileImage(logo, "certificate", coach.id);
         const layout = getReportLayout(coach);
         const layer = (layout.layers || []).find(entry => entry.id === targetId);
         if (!layer) throw new Error("The logo layer is unavailable.");
-        addCertificateUpload(layout, url, file.name);
+        addCertificateUpload(layout, url, logo.name);
         layer.source = url;
         layer.objectFit = "contain";
         layer.objectPosition = "center";
@@ -6793,7 +6797,7 @@ export function initApp(config = {}) {
         if (input) centreOnboardingModal.values[key] = input.value.trim();
       });
       const logoInput = document.getElementById("centre-onboarding-logo");
-      if (logoInput?.files?.[0]) centreOnboardingModal.values.logoFile = logoInput.files[0];
+      if (logoInput?.files?.[0] && !centreOnboardingModal.values.logoFile) centreOnboardingModal.values.logoFile = logoInput.files[0];
     }
 
     function continueCentreOnboarding() {
@@ -6820,7 +6824,7 @@ export function initApp(config = {}) {
           password: `${crypto.randomUUID()}${crypto.randomUUID()}`
         });
         if (values.logoFile && result?.centre?.id) {
-          const logoUrl = await uploadProfileImage(values.logoFile, "centre-logo", result.centre.id);
+          const logoUrl = await uploadProfileImage(await cleanLogoFile(values.logoFile), "centre-logo", result.centre.id);
           await invokePrivileged("dev-console", { action: "update-centre-logo", centre_id: result.centre.id, logo_url: logoUrl });
         }
         centreOnboardingModal.result = result;
